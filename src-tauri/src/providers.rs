@@ -193,7 +193,10 @@ pub struct ProviderTestResult {
     pub detail: String,
 }
 
-/// Minimal Responses API probe: POST `{base_url}/responses` with a tiny payload.
+/// Kind-aware connectivity check.
+/// - openai / custom-openai → POST `{base}/responses` (Responses API)
+/// - anthropic-key → POST `{base}/messages` (Anthropic Messages)
+/// - subscription / login kinds → confirm CLI-login path (no HTTP probe)
 pub async fn test_connection(
     app: &AppHandle,
     provider_id: &str,
@@ -206,6 +209,29 @@ pub async fn test_connection(
         .ok_or_else(|| format!("unknown provider {provider_id}"))?
         .clone();
 
+    match provider.kind {
+        ProviderKind::CodexLogin => {
+            return Ok(ProviderTestResult {
+                ok: true,
+                status: 0,
+                detail: "Uses Codex CLI login (chatgpt). Run `codex` once in a terminal to sign in — Glyphra does not store a key."
+                    .into(),
+            });
+        }
+        ProviderKind::ClaudeSubscription => {
+            return Ok(ProviderTestResult {
+                ok: true,
+                status: 0,
+                detail: "Uses Claude Code subscription login. Run `claude` once to sign in — Glyphra does not store a key."
+                    .into(),
+            });
+        }
+        ProviderKind::AnthropicKey => {
+            return test_anthropic(app, &provider).await;
+        }
+        ProviderKind::OpenaiKey | ProviderKind::CustomOpenai => {}
+    }
+
     let base = provider
         .base_url
         .as_deref()
@@ -217,11 +243,14 @@ pub async fn test_connection(
         return Ok(ProviderTestResult {
             ok: false,
             status: 0,
-            detail: "No API key stored for this provider.".into(),
+            detail: "No API key stored. Save a key first, then test again.".into(),
         });
     }
 
-    let model = provider.model.unwrap_or_else(|| "gpt-5".into());
+    let model = provider
+        .model
+        .clone()
+        .unwrap_or_else(|| "gpt-4.1-mini".into());
     let body = json!({
         "model": model,
         "input": "ping",
@@ -231,13 +260,69 @@ pub async fn test_connection(
     let client = reqwest::Client::new();
     let response = client
         .post(&url)
-        .bearer_auth(secret)
+        .bearer_auth(&secret)
         .header("content-type", "application/json")
         .json(&body)
         .send()
         .await
         .map_err(|err| format!("request failed: {err}"))?;
 
+    let status = response.status().as_u16();
+    let text = response.text().await.unwrap_or_default();
+    let detail = text.chars().take(240).collect::<String>();
+    let hint = if !(200..300).contains(&status) {
+        " Endpoint must support OpenAI Responses API (not Chat Completions)."
+    } else {
+        ""
+    };
+    Ok(ProviderTestResult {
+        ok: (200..300).contains(&status),
+        status,
+        detail: if detail.is_empty() {
+            format!("HTTP {status}{hint}")
+        } else {
+            format!("{detail}{hint}")
+        },
+    })
+}
+
+async fn test_anthropic(
+    app: &AppHandle,
+    provider: &ProviderRecord,
+) -> Result<ProviderTestResult, String> {
+    let secret = vault::read_secret(app, &provider.id)?.unwrap_or_default();
+    if secret.is_empty() {
+        return Ok(ProviderTestResult {
+            ok: false,
+            status: 0,
+            detail: "No Anthropic API key stored.".into(),
+        });
+    }
+    let base = provider
+        .base_url
+        .as_deref()
+        .unwrap_or("https://api.anthropic.com/v1")
+        .trim_end_matches('/');
+    let url = format!("{base}/messages");
+    let model = provider
+        .model
+        .clone()
+        .unwrap_or_else(|| "claude-sonnet-4-20250514".into());
+    let body = json!({
+        "model": model,
+        "max_tokens": 16,
+        "messages": [{"role": "user", "content": "ping"}]
+    });
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header("x-api-key", &secret)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {err}"))?;
     let status = response.status().as_u16();
     let text = response.text().await.unwrap_or_default();
     let detail = text.chars().take(240).collect::<String>();

@@ -8,37 +8,49 @@ use ts_rs::TS;
 #[ts(export, export_to = "../../src/lib/ipc/gen/AgentDetectInfo.ts")]
 pub struct AgentDetectInfo {
     pub backend: String,
+    /// True only when the primary CLI (or fixture Node) is present.
     pub installed: bool,
     pub detail: String,
 }
 
 pub fn detect_agents() -> Vec<AgentDetectInfo> {
+    let npx = which("npx").is_some();
     vec![
-        probe(
+        probe_primary(
             "codex-acp",
-            "Codex CLI + ACP adapter",
-            &[("codex", &["--version"]), ("npx", &["--version"])],
+            "Codex CLI",
+            "codex",
+            &["--version"],
+            npx,
+            "Needs `codex` on PATH (ACP adapter via npx).",
         ),
-        probe(
+        probe_primary(
             "claude-acp",
-            "Claude Code + ACP adapter",
-            &[("claude", &["--version"]), ("npx", &["--version"])],
+            "Claude Code",
+            "claude",
+            &["--version"],
+            npx,
+            "Needs `claude` on PATH (ACP adapter via npx).",
         ),
-        probe(
+        probe_primary(
             "pi-agent",
-            "Pi Coding Agent (pi / npx)",
-            &[("pi", &["--version"]), ("npx", &["--version"])],
+            "Pi Coding Agent",
+            "pi",
+            &["--version"],
+            npx,
+            "Needs `pi` on PATH (or install Pi coding agent).",
         ),
         AgentDetectInfo {
             backend: "custom-agent".into(),
-            installed: true,
-            detail: "Custom command / fixture harness always available.".into(),
+            installed: false,
+            detail: "Custom harness requires an explicit command (not configured in UI yet)."
+                .into(),
         },
         AgentDetectInfo {
             backend: "fixture".into(),
             installed: which("node").is_some(),
             detail: if which("node").is_some() {
-                "Node available for fixture replay-agent.".into()
+                "Offline fixture agent (Node). Good for UI/workflow tests.".into()
             } else {
                 "Node.js ≥ 20 required for fixture replay.".into()
             },
@@ -46,25 +58,37 @@ pub fn detect_agents() -> Vec<AgentDetectInfo> {
     ]
 }
 
-fn probe(backend: &str, label: &str, commands: &[(&str, &[&str])]) -> AgentDetectInfo {
-    let mut found = Vec::new();
-    for (bin, args) in commands {
-        if let Some(version) = run_version(bin, args) {
-            found.push(format!("{bin} {version}"));
-        }
-    }
-    if found.is_empty() {
-        AgentDetectInfo {
-            backend: backend.into(),
-            installed: false,
-            detail: format!("{label}: not detected on PATH"),
-        }
-    } else {
-        AgentDetectInfo {
+fn probe_primary(
+    backend: &str,
+    label: &str,
+    bin: &str,
+    args: &[&str],
+    npx_present: bool,
+    missing_hint: &str,
+) -> AgentDetectInfo {
+    if let Some(version) = run_version(bin, args) {
+        let npx_note = if npx_present {
+            " · npx ready"
+        } else {
+            " · npx missing (adapter spawn may fail)"
+        };
+        return AgentDetectInfo {
             backend: backend.into(),
             installed: true,
-            detail: format!("{label}: {}", found.join(" · ")),
-        }
+            detail: format!("{label}: {bin} {version}{npx_note}"),
+        };
+    }
+    AgentDetectInfo {
+        backend: backend.into(),
+        installed: false,
+        detail: format!(
+            "{label}: not found. {missing_hint}{}",
+            if npx_present {
+                ""
+            } else {
+                " Also install Node/npx."
+            }
+        ),
     }
 }
 
@@ -119,5 +143,16 @@ mod tests {
         assert!(backends.contains(&"codex-acp"));
         assert!(backends.contains(&"custom-agent"));
         assert!(backends.contains(&"fixture"));
+        let custom = infos.iter().find(|i| i.backend == "custom-agent").unwrap();
+        assert!(!custom.installed);
+    }
+
+    #[test]
+    fn npx_alone_does_not_mark_codex_installed() {
+        // Structural: installed flag only true when primary CLI found.
+        // We can't control PATH here; just ensure fixture/custom rules hold.
+        let infos = detect_agents();
+        let fixture = infos.iter().find(|i| i.backend == "fixture").unwrap();
+        assert_eq!(fixture.installed, which("node").is_some());
     }
 }

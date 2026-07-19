@@ -13,19 +13,20 @@ export default function ProvidersSection() {
   const providers = useProviderStore((s) => s.providers);
   const loading = useProviderStore((s) => s.loading);
   const testingId = useProviderStore((s) => s.testingId);
-  const testDetail = useProviderStore((s) => s.testDetail);
+  const testResults = useProviderStore((s) => s.testResults);
   const error = useProviderStore((s) => s.error);
   const refresh = useProviderStore((s) => s.refresh);
   const upsert = useProviderStore((s) => s.upsert);
   const remove = useProviderStore((s) => s.remove);
   const test = useProviderStore((s) => s.test);
-  const addOpenRouter = useProviderStore((s) => s.addOpenRouter);
+  const openRouterPreset = useProviderStore((s) => s.openRouterPreset);
 
   const [name, setName] = useState("Custom OpenAI");
   const [baseUrl, setBaseUrl] = useState("https://openrouter.ai/api/v1");
   const [model, setModel] = useState("openai/gpt-4.1-mini");
   const [secret, setSecret] = useState("");
   const [kind, setKind] = useState<ProviderKind>("custom-openai");
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -33,6 +34,22 @@ export default function ProvidersSection() {
 
   const needsEndpoint = kind === "custom-openai" || kind === "openai-key";
   const needsSecret = kind !== "codex-login" && kind !== "claude-subscription";
+
+  const save = async () => {
+    setFormError(null);
+    if (needsSecret && !secret.trim()) {
+      setFormError(t("settings.secretRequired"));
+      return;
+    }
+    await upsert({
+      kind,
+      name,
+      baseUrl: needsEndpoint ? baseUrl : null,
+      model: needsEndpoint ? model : null,
+      secret: secret || null,
+    });
+    setSecret("");
+  };
 
   return (
     <div className="space-y-4">
@@ -76,18 +93,11 @@ export default function ProvidersSection() {
         {!needsSecret && (
           <p className="text-[10px] leading-relaxed text-ink-3">{t("settings.subscriptionHint")}</p>
         )}
+        {formError && <p className="text-[11px] text-danger">{formError}</p>}
         <div className="flex gap-1.5 pt-0.5">
           <button
             type="button"
-            onClick={() =>
-              void upsert({
-                kind,
-                name,
-                baseUrl: needsEndpoint ? baseUrl : null,
-                model: needsEndpoint ? model : null,
-                secret: secret || null,
-              }).then(() => setSecret(""))
-            }
+            onClick={() => void save()}
             className="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-ink text-[11px] text-[var(--bg-raised)]"
           >
             <Plus className="size-3" />
@@ -95,7 +105,14 @@ export default function ProvidersSection() {
           </button>
           <button
             type="button"
-            onClick={() => void addOpenRouter()}
+            onClick={() => {
+              const preset = openRouterPreset();
+              setKind(preset.kind);
+              setName(preset.name);
+              setBaseUrl(preset.baseUrl);
+              setModel(preset.model);
+              setFormError(t("settings.openRouterNeedKey"));
+            }}
             className="h-7 rounded-md border border-line px-2 text-[11px] text-ink-2 hover:bg-hover"
           >
             OpenRouter
@@ -110,47 +127,58 @@ export default function ProvidersSection() {
         </div>
       )}
       {error && <p className="text-[11px] text-danger">{error}</p>}
-      {testDetail && <p className="text-[11px] text-ink-2">{testDetail}</p>}
 
       <div>
         <div className="mb-1.5 text-[10px] uppercase tracking-[0.06em] text-ink-3">
           {t("settings.savedProviders")}
         </div>
         <div className="flex flex-col gap-1.5">
-          {providers.map((provider) => (
-            <div key={provider.id} className="rounded-lg border border-line px-2.5 py-2 text-[11px]">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-medium text-ink-2">{provider.name}</span>
-                <span className="shrink-0 text-[10px] text-ink-3">
-                  {provider.hasSecret ? t("settings.secretStored") : t("settings.secretMissing")}
-                </span>
+          {providers.map((provider) => {
+            const result = testResults[provider.id];
+            return (
+              <div key={provider.id} className="rounded-lg border border-line px-2.5 py-2 text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium text-ink-2">{provider.name}</span>
+                  <span className="shrink-0 text-[10px] text-ink-3">
+                    {provider.hasSecret ? t("settings.secretStored") : t("settings.secretMissing")}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate text-[10px] text-ink-3">
+                  {provider.kind}
+                  {provider.model ? ` · ${provider.model}` : ""}
+                </div>
+                {result && (
+                  <p
+                    className={`mt-1 text-[10px] leading-relaxed ${
+                      result.ok ? "text-ink-2" : "text-danger"
+                    }`}
+                  >
+                    {result.detail}
+                  </p>
+                )}
+                <div className="mt-1.5 flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => void test(provider.id)}
+                    className="rounded border border-line px-1.5 py-0.5 text-ink-2 hover:bg-hover"
+                  >
+                    {testingId === provider.id ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      t("settings.providerTest")
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void remove(provider.id)}
+                    className="rounded border border-line px-1.5 py-0.5 text-ink-3 hover:text-danger"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                </div>
               </div>
-              <div className="mt-0.5 truncate text-[10px] text-ink-3">
-                {provider.kind}
-                {provider.model ? ` · ${provider.model}` : ""}
-              </div>
-              <div className="mt-1.5 flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => void test(provider.id)}
-                  className="rounded border border-line px-1.5 py-0.5 text-ink-2 hover:bg-hover"
-                >
-                  {testingId === provider.id ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    t("settings.providerTest")
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void remove(provider.id)}
-                  className="rounded border border-line px-1.5 py-0.5 text-ink-3 hover:text-danger"
-                >
-                  <Trash2 className="size-3" />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {providers.length === 0 && !loading && (
             <p className="text-[11px] text-ink-3">{t("settings.providersEmpty")}</p>
           )}
