@@ -13,8 +13,8 @@ Use those as the source of truth. In short:
 
 - Frontend dev server only (browser, no Rust IPC): `pnpm dev` (Vite on port 1420).
 - Full desktop app (frontend + Rust window): `pnpm tauri dev`.
-- Frontend checks: `pnpm typecheck`, `pnpm exec vite build`, `pnpm check:size`, `pnpm test`
-  (there are currently no test files, so `pnpm test` passes with `--passWithNoTests`).
+- Frontend checks: `pnpm typecheck`, `pnpm exec vite build`, `pnpm check:size`, `pnpm test`.
+- Bindings drift: `pnpm check:bindings` (requires Linux WebKitGTK deps for the Rust side).
 - Rust checks: `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`,
   `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`,
   `cargo build --manifest-path src-tauri/Cargo.toml`.
@@ -23,14 +23,9 @@ Use those as the source of truth. In short:
 
 ### Non-obvious caveats
 
-- **`icon.png` is required to build on Linux/macOS but is NOT committed.** The repo only
-  ships `src-tauri/icons/icon.ico` (Windows-focused). `tauri::generate_context!` needs a
-  32-bit **RGBA** `src-tauri/icons/icon.png`, otherwise the Rust build fails with
-  "failed to open icon ... icon.png" or "icon ... is not RGBA". The update script
-  regenerates it from the committed `.ico` via ImageMagick; if it ever goes missing, run:
+- **`icon.png` is committed** under `src-tauri/icons/icon.png` (RGBA). If it is ever removed,
+  regenerate from the `.ico` with ImageMagick:
   `convert "src-tauri/icons/icon.ico[0]" -resize 256x256 -alpha on -background none PNG32:src-tauri/icons/icon.png`.
-  Note the upstream CI `tauri (ubuntu-latest)` / `tauri (macos-latest)` jobs currently
-  fail for this same reason.
 - **Rust toolchain must be recent.** A transitive dependency requires the `edition2024`
   Cargo feature, so Rust/Cargo older than ~1.85 fails to even parse the manifest. Use the
   latest stable (`rustup default stable`).

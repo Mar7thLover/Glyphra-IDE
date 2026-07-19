@@ -1,7 +1,8 @@
-import { Languages, Moon, Sun } from "lucide-react";
+import { Languages, Moon, Rocket, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ipc, type AppSettings } from "@/lib/ipc/ipc";
+import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { useUiStore, type Theme } from "@/lib/stores/uiStore";
 
 import ProvidersSection from "./ProvidersSection";
@@ -21,6 +22,7 @@ export default function SettingsPanel() {
   const { t, i18n } = useTranslation();
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
+  const openOnboarding = useOnboardingStore((s) => s.openOnboarding);
 
   const setLanguage = (lang: AppSettings["language"]) => {
     if (lang === "system") return;
@@ -86,6 +88,21 @@ export default function SettingsPanel() {
       </section>
 
       <ProvidersSection />
+
+      <section className="rounded-xl border border-line bg-raised/55 p-3 shadow-sm">
+        <div className="mb-3 flex items-center gap-2 text-xs font-medium text-ink-2">
+          <Rocket className="size-3.5" />
+          {t("settings.onboarding")}
+        </div>
+        <p className="mb-3 text-[11px] leading-relaxed text-ink-3">{t("settings.onboardingHint")}</p>
+        <button
+          type="button"
+          onClick={() => openOnboarding()}
+          className="rounded-lg border border-line bg-panel px-3 py-2 text-xs text-ink-2 transition-colors hover:border-accent hover:text-ink"
+        >
+          {t("settings.onboardingOpen")}
+        </button>
+      </section>
     </div>
   );
 }

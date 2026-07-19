@@ -45,7 +45,25 @@
     "providersEmpty": "No providers yet.",
     "secretStored": "key stored",
     "secretMissing": "no key",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "onboarding": "Setup checklist",
+    "onboardingHint": "Re-run the first-run detector for Node, Git, and agent CLIs.",
+    "onboardingOpen": "Open setup guide"
+  },
+  "onboarding": {
+    "title": "Welcome to Glyphra",
+    "subtitle": "Detect local tooling, then install only what you need. Glyphra never bundles agent CLIs.",
+    "runtime": "Runtime",
+    "agents": "Agent harnesses",
+    "required": "required",
+    "found": "found",
+    "missing": "missing",
+    "copy": "Copy command",
+    "copied": "Copied to clipboard",
+    "docs": "Docs",
+    "recheck": "Re-check",
+    "skip": "Skip for now",
+    "continue": "Continue to Agent"
   },
   "editor": {
     "save": "Save",

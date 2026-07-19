@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 
+import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import { ipc } from "@/lib/ipc/ipc";
+import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 import ActivityRail from "./ActivityRail";
@@ -22,6 +24,7 @@ function applyBootSettings(theme: string, language: string) {
 
 export default function App() {
   const setMica = useUiStore((s) => s.setMica);
+  const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const booted = useRef(false);
 
   useEffect(() => {
@@ -37,11 +40,12 @@ export default function App() {
       const env = await ipc.appReady();
       setMica(env.mica);
       requestAnimationFrame(() => void ipc.perfMark("tti"));
+      maybeAutoOpen();
     })();
-  }, [setMica]);
+  }, [maybeAutoOpen, setMica]);
 
   return (
-    <div className="flex h-full flex-col bg-app text-ink">
+    <div className="relative flex h-full flex-col bg-app text-ink">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
         <ActivityRail />
@@ -49,6 +53,7 @@ export default function App() {
         <EditorArea />
       </div>
       <StatusBar />
+      <OnboardingOverlay />
     </div>
   );
 }

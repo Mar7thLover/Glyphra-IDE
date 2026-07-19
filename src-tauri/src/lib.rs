@@ -36,6 +36,7 @@ pub fn run() {
             ipc::settings::settings_get,
             ipc::settings::settings_set,
             ipc::agent::agent_detect,
+            ipc::agent::runtime_detect,
             ipc::agent::agent_spawn,
             ipc::agent::agent_write,
             ipc::agent::agent_kill,
