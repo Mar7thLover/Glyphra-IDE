@@ -166,7 +166,18 @@
     "modeSafe": "Safe · read-only",
     "modeStandard": "Standard · agent",
     "modeUnleashed": "Unleashed · full access",
-    "modeUnleashedWarn": "Unleashed mode bypasses edit approvals. Use with care."
+    "modeUnleashedWarn": "Unleashed mode bypasses edit approvals. Use with care.",
+    "sessions": "Past sessions",
+    "sessionsEmpty": "No archived sessions yet.",
+    "sessionDelete": "Delete archive",
+    "sessionArchive": "Archived session",
+    "sessionReadonly": "Read-only archive — start a new session to continue.",
+    "sessionDismiss": "Dismiss",
+    "promptReadonly": "Browsing an archive — press + to start a new session…",
+    "cancel": "Cancel turn",
+    "restart": "Restart",
+    "crashed": "Agent process exited unexpectedly.",
+    "permissionHint": "Y allow · N reject · A allow always · Esc cancel"
   },
   "review": {
     "title": "Review",

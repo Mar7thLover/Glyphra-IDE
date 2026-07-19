@@ -23,6 +23,8 @@ export type { RecentProject } from "./gen/RecentProject";
 export type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
 export type { SearchBatch } from "./gen/SearchBatch";
 export type { SearchHit } from "./gen/SearchHit";
+export type { SessionArchive } from "./gen/SessionArchive";
+export type { SessionSummary } from "./gen/SessionSummary";
 export type { ToolStatus } from "./gen/ToolStatus";
 
 import type { AgentDetectInfo } from "./gen/AgentDetectInfo";
@@ -45,6 +47,8 @@ import type { PtyEvent } from "./gen/PtyEvent";
 import type { RecentProject } from "./gen/RecentProject";
 import type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
 import type { SearchBatch } from "./gen/SearchBatch";
+import type { SessionArchive } from "./gen/SessionArchive";
+import type { SessionSummary } from "./gen/SessionSummary";
 
 export const ipc = {
   appReady: () => invoke<EnvInfo>("app_ready"),
@@ -115,4 +119,12 @@ export const ipc = {
   ptyResize: (ptyId: number, cols: number, rows: number) =>
     invoke<void>("pty_resize", { ptyId, cols, rows }),
   ptyClose: (ptyId: number) => invoke<void>("pty_close", { ptyId }),
+  sessionList: (projectPath: string) =>
+    invoke<SessionSummary[]>("session_list", { projectPath }),
+  sessionSave: (archive: SessionArchive) =>
+    invoke<SessionSummary>("session_save", { archive }),
+  sessionLoad: (projectPath: string, id: string) =>
+    invoke<SessionArchive>("session_load", { projectPath, id }),
+  sessionDelete: (projectPath: string, id: string) =>
+    invoke<void>("session_delete", { projectPath, id }),
 };

@@ -166,7 +166,18 @@
     "modeSafe": "安全 · 只读",
     "modeStandard": "标准 · Agent",
     "modeUnleashed": "放飞 · 完全访问",
-    "modeUnleashedWarn": "放飞模式会绕过编辑审批，请谨慎使用。"
+    "modeUnleashedWarn": "放飞模式会绕过编辑审批，请谨慎使用。",
+    "sessions": "历史会话",
+    "sessionsEmpty": "还没有存档会话。",
+    "sessionDelete": "删除存档",
+    "sessionArchive": "存档会话",
+    "sessionReadonly": "只读存档 — 启动新会话以继续。",
+    "sessionDismiss": "关闭",
+    "promptReadonly": "正在浏览存档 — 按 + 启动新会话…",
+    "cancel": "取消本轮",
+    "restart": "重新启动",
+    "crashed": "Agent 进程意外退出。",
+    "permissionHint": "Y 允许 · N 拒绝 · A 始终允许 · Esc 取消"
   },
   "review": {
     "title": "审阅",
