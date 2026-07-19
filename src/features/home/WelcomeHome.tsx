@@ -26,7 +26,7 @@ function ActionTile({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`flex aspect-[1.4] flex-col items-center justify-center gap-2 rounded-xl border text-[12px] transition-colors ${
+      className={`flex h-11 items-center justify-center gap-1.5 rounded-lg border px-2 text-[11px] transition-colors ${
         emphasis
           ? "border-ink bg-ink text-[var(--bg-raised)] hover:opacity-90"
           : disabled
@@ -34,8 +34,8 @@ function ActionTile({
             : "border-line bg-panel/70 text-ink-2 hover:border-line-strong hover:bg-raised hover:text-ink"
       }`}
     >
-      <Icon className="size-5" strokeWidth={1.5} />
-      <span>{label}</span>
+      <Icon className="size-3.5 shrink-0" strokeWidth={1.6} />
+      <span className="truncate">{label}</span>
     </button>
   );
 }
@@ -90,12 +90,12 @@ export default function WelcomeHome() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto bg-editor px-8 py-14">
-      <div className="w-full max-w-[440px]">
-        <h1 className="text-center text-[26px] font-semibold tracking-[0.16em] text-ink">
+      <div className="w-full max-w-[520px]">
+        <h1 className="text-center text-[22px] font-semibold tracking-[0.14em] text-ink">
           {t("app.name").toUpperCase()}
         </h1>
 
-        <div className="mt-9 grid grid-cols-2 gap-3">
+        <div className="mt-7 grid grid-cols-4 gap-2">
           <ActionTile
             icon={FolderOpen}
             label={t("home.openProject")}
@@ -112,7 +112,7 @@ export default function WelcomeHome() {
         </div>
 
         {/* Secondary content: one inset panel, not loose canvas chrome */}
-        <div className="mt-10 overflow-hidden rounded-xl border border-line bg-panel">
+        <div className="mt-8 overflow-hidden rounded-xl border border-line bg-panel">
           <div className="flex items-center justify-between border-b border-line px-3.5 py-2">
             <span className="text-[11px] font-medium text-ink-2">{t("home.workspace")}</span>
             <div className="flex items-center gap-2 text-[10px]">
