@@ -180,6 +180,14 @@
     "openSetup": "Setup",
     "hintProvider": "API key / login",
     "providerHint": "Filtered for the selected backend",
+    "sessions": "Past sessions",
+    "sessionsEmpty": "No archived sessions yet.",
+    "sessionDelete": "Delete archive",
+    "sessionArchive": "Archived session",
+    "sessionReadonly": "Read-only archive — start a new session to continue.",
+    "sessionDismiss": "Dismiss",
+    "promptReadonly": "Browsing an archive — press + to start a new session…",
+    "crashed": "Agent process exited unexpectedly.",
     "permissionHint": "Y allow · N reject · A allow always · Esc cancel"
   },
   "review": {

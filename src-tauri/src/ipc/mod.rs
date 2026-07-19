@@ -6,13 +6,19 @@ pub mod project;
 pub mod providers;
 pub mod pty;
 pub mod search;
+pub mod sessions;
 pub mod settings;
 
 #[cfg(test)]
 mod export_bindings {
     //! Touch every `#[ts(export)]` type so `cargo test` regenerates
     //! `src/lib/ipc/gen/*.ts` for the drift checker.
-    use super::{app::EnvInfo, project::*, settings::AppSettings};
+    use super::{
+        app::EnvInfo,
+        project::*,
+        sessions::{SessionArchive, SessionSummary},
+        settings::AppSettings,
+    };
     use crate::agent::{
         detect::AgentDetectInfo,
         runtime::{RuntimeDetectInfo, ToolStatus},
@@ -55,5 +61,7 @@ mod export_bindings {
         SearchHit::export_all().expect("export SearchHit");
         SearchBatch::export_all().expect("export SearchBatch");
         PtyEvent::export_all().expect("export PtyEvent");
+        SessionSummary::export_all().expect("export SessionSummary");
+        SessionArchive::export_all().expect("export SessionArchive");
     }
 }

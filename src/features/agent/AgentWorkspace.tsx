@@ -20,6 +20,7 @@ import { useUiStore } from "@/lib/stores/uiStore";
 
 import MessageList from "./MessageList";
 import PermissionModal from "./PermissionModal";
+import SessionList from "./SessionList";
 
 export const AGENT_WIDTH = 380;
 
@@ -59,6 +60,8 @@ export default function AgentWorkspace() {
   const backends = useAgentStore((s) => s.backends);
   const detecting = useAgentStore((s) => s.detecting);
   const stderrTail = useAgentStore((s) => s.stderrTail);
+  const archives = useAgentStore((s) => s.archives);
+  const viewingArchiveId = useAgentStore((s) => s.viewingArchiveId);
   const detect = useAgentStore((s) => s.detect);
   const setMode = useAgentStore((s) => s.setMode);
   const setProviderId = useAgentStore((s) => s.setProviderId);
@@ -70,6 +73,10 @@ export default function AgentWorkspace() {
   const respondPermission = useAgentStore((s) => s.respondPermission);
   const stop = useAgentStore((s) => s.stop);
   const restart = useAgentStore((s) => s.restart);
+  const refreshArchives = useAgentStore((s) => s.refreshArchives);
+  const openArchive = useAgentStore((s) => s.openArchive);
+  const clearArchiveView = useAgentStore((s) => s.clearArchiveView);
+  const removeArchive = useAgentStore((s) => s.removeArchive);
   const providers = useProviderStore((s) => s.providers);
   const refreshProviders = useProviderStore((s) => s.refresh);
 
@@ -84,6 +91,10 @@ export default function AgentWorkspace() {
     setProviderId(prefs.defaultProviderId);
   }, [detect, refreshProviders, setMode, setProviderId]);
 
+  useEffect(() => {
+    if (current?.path) void refreshArchives(current.path);
+  }, [current?.path, refreshArchives]);
+
   const backendInfo = backends.find((b) => b.backend === backend);
   const backendReady = backend === "fixture" || Boolean(backendInfo?.installed);
   const filteredProviders = useMemo(
@@ -95,6 +106,7 @@ export default function AgentWorkspace() {
   const crashed = session?.status === "crashed";
   const canSend = session?.status === "running" && !busy;
   const isFixture = backend === "fixture";
+  const readOnly = Boolean(viewingArchiveId);
 
   const statusLabel = detecting
     ? t("agent.detecting")
@@ -104,15 +116,18 @@ export default function AgentWorkspace() {
         ? t("agent.statusLive")
         : crashed
           ? t("agent.statusCrashed")
-          : isFixture
-            ? t("agent.fixtureShort")
-            : backendReady
-              ? t("agent.ready")
-              : t("agent.missing");
+          : readOnly
+            ? t("agent.sessionArchive")
+            : isFixture
+              ? t("agent.fixtureShort")
+              : backendReady
+                ? t("agent.ready")
+                : t("agent.missing");
 
-  const sessionLabel =
-    session?.agentName ??
-    (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent"));
+  const sessionLabel = readOnly
+    ? (archives.find((entry) => entry.id === viewingArchiveId)?.title ?? t("agent.sessionArchive"))
+    : (session?.agentName ??
+      (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent")));
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -131,6 +146,7 @@ export default function AgentWorkspace() {
 
   const startSession = () => {
     if (!current || busy || running) return;
+    if (readOnly) clearArchiveView();
     if (mode === "unleashed" && !unleashedArmed) {
       setUnleashedArmed(true);
       return;
@@ -158,6 +174,19 @@ export default function AgentWorkspace() {
     >
       <div className="relative flex h-full flex-col" style={{ width: AGENT_WIDTH }}>
         <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
+          <SessionList
+            archives={archives}
+            activeId={session?.archiveId ?? null}
+            viewingId={viewingArchiveId}
+            onOpen={(id) => {
+              if (!current) return;
+              void openArchive(current.path, id);
+            }}
+            onDelete={(id) => {
+              if (!current) return;
+              void removeArchive(current.path, id);
+            }}
+          />
           <button
             type="button"
             className="min-w-0 truncate rounded-md px-2 py-1 text-[11px] font-medium text-ink"
@@ -214,7 +243,7 @@ export default function AgentWorkspace() {
                   type="button"
                   onClick={() => void cancel()}
                   title={t("agent.cancel")}
-                  className="rounded p-1 text-ink-3 hover:bg-hover hover:text-ink"
+                  className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink"
                 >
                   <Square className="size-3 fill-current" strokeWidth={1.6} />
                 </button>
@@ -253,7 +282,7 @@ export default function AgentWorkspace() {
           </div>
         )}
 
-        {isFixture && !running && (
+        {isFixture && !running && !readOnly && (
           <div className="px-3 py-1.5 text-[11px] text-ink-3">{t("agent.fixtureHint")}</div>
         )}
 
@@ -266,6 +295,19 @@ export default function AgentWorkspace() {
               className="shrink-0 text-ink-2 underline hover:text-ink"
             >
               {t("agent.openSetup")}
+            </button>
+          </div>
+        )}
+
+        {readOnly && (
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-ink-3">
+            <span>{t("agent.sessionReadonly")}</span>
+            <button
+              type="button"
+              onClick={clearArchiveView}
+              className="text-ink-2 hover:text-ink"
+            >
+              {t("agent.sessionDismiss")}
             </button>
           </div>
         )}
@@ -324,7 +366,11 @@ export default function AgentWorkspace() {
               disabled={!canSend}
               rows={3}
               placeholder={
-                running ? t("agent.promptPlaceholder") : t("agent.promptNeedSession")
+                readOnly
+                  ? t("agent.promptReadonly")
+                  : running
+                    ? t("agent.promptPlaceholder")
+                    : t("agent.promptNeedSession")
               }
               className="max-h-40 min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
             />

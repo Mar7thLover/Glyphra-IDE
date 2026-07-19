@@ -10,6 +10,7 @@ import {
 
 import { ipc } from "@/lib/ipc/ipc";
 
+import { newArchiveId } from "./archive";
 import { openAgentTransport, type AcpTransport } from "./stream";
 import { applySessionUpdate } from "./sessionUpdates";
 import type {
@@ -24,6 +25,9 @@ export type { StartableBackend, AgentPermissionMode, AgentStartOptions };
 
 export interface AgentSessionHandle {
   backend: StartableBackend;
+  projectPath: string;
+  archiveId: string;
+  createdAt: number;
   transportSessionId: number;
   acpSessionId: string | null;
   items: AgentTimelineItem[];
@@ -109,6 +113,9 @@ export class AgentBus {
 
     this.handle = {
       backend,
+      projectPath: cwd,
+      archiveId: newArchiveId(),
+      createdAt: Date.now(),
       transportSessionId: 0,
       acpSessionId: null,
       items: [],
@@ -144,7 +151,7 @@ export class AgentBus {
       this.handle.stderrTail = [...this.stderrTail];
       this.pushSystem(
         wasBusy
-          ? `Agent crashed (exit ${code}). Restart to continue.`
+          ? `Agent crashed (exit ${code}). Restart or browse past sessions.`
           : `Agent exited (${code})`,
       );
       this.active = null;
@@ -320,6 +327,24 @@ export class AgentBus {
     if (this.handle) {
       this.handle.permission = null;
       this.emit();
+    }
+  }
+
+  /** Cancel the in-flight prompt turn (ACP `session/cancel`). */
+  async cancel() {
+    if (!this.handle?.acpSessionId || !this.connection) return;
+    if (this.handle.permission) {
+      this.respondPermission("cancelled");
+    }
+    try {
+      await this.connection.agent.notify(methods.agent.session.cancel, {
+        sessionId: this.handle.acpSessionId,
+      });
+      this.pushSystem("Turn cancelled");
+    } catch (error) {
+      this.pushSystem(
+        `Cancel failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

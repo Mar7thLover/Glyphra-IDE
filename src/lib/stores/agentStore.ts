@@ -1,5 +1,12 @@
 import { create } from "zustand";
 
+import {
+  deleteArchive,
+  listArchives,
+  loadArchive,
+  persistSession,
+  type SessionSummary,
+} from "@/lib/acp/archive";
 import { agentBus, type AgentSessionHandle } from "@/lib/acp/bus";
 import type {
   AgentPermissionMode,
@@ -25,6 +32,9 @@ interface AgentState {
   providerId: string | null;
   backend: StartableBackend;
   stderrTail: string[];
+  archives: SessionSummary[];
+  /** When set, timeline is a read-only past archive (no live ACP session). */
+  viewingArchiveId: string | null;
   detect: () => Promise<void>;
   setMode: (mode: AgentPermissionMode) => void;
   setProviderId: (id: string | null) => void;
@@ -36,11 +46,33 @@ interface AgentState {
   respondPermission: (optionId: string | "cancelled") => void;
   stop: () => Promise<void>;
   restart: () => Promise<void>;
+  refreshArchives: (projectPath: string) => Promise<void>;
+  openArchive: (projectPath: string, id: string) => Promise<void>;
+  clearArchiveView: () => void;
+  removeArchive: (projectPath: string, id: string) => Promise<void>;
 }
 
 let subscribed = false;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-function ensureBusSubscription(set: (partial: Partial<AgentState>) => void) {
+function schedulePersist(session: AgentSessionHandle | null) {
+  if (!session || session.items.length === 0) return;
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    void persistSession({
+      id: session.archiveId,
+      projectPath: session.projectPath,
+      backend: session.backend,
+      acpSessionId: session.acpSessionId,
+      createdAt: session.createdAt,
+      items: session.items,
+    }).catch(() => {
+      // Archive failures must not break the live session.
+    });
+  }, 400);
+}
+
+function ensureBusSubscription(set: (partial: Partial<AgentState>) => void, get: () => AgentState) {
   if (subscribed) return;
   subscribed = true;
   agentBus.subscribe((session) => {
@@ -51,7 +83,14 @@ function ensureBusSubscription(set: (partial: Partial<AgentState>) => void) {
       error: session.error ?? null,
       busy: session.status === "busy" || session.status === "starting",
       stderrTail: session.stderrTail,
+      viewingArchiveId: null,
     });
+    schedulePersist(session);
+    if (session.status === "exited" || session.status === "crashed") {
+      void get()
+        .refreshArchives(session.projectPath)
+        .catch(() => undefined);
+    }
   });
 }
 
@@ -77,6 +116,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   providerId: usePrefsStore.getState().defaultProviderId,
   backend: usePrefsStore.getState().defaultBackend,
   stderrTail: [],
+  archives: [],
+  viewingArchiveId: null,
 
   detect: async () => {
     set({ detecting: true });
@@ -113,7 +154,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   start: async (cwd) => {
-    ensureBusSubscription(set);
+    ensureBusSubscription(set, get);
     const projectPath = cwd ?? useProjectStore.getState().current?.path;
     if (!projectPath) {
       set({ error: "Open a project folder before starting an agent." });
@@ -132,7 +173,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       );
       if (!ok) return;
     }
-    set({ busy: true, error: null, stderrTail: [] });
+    set({ busy: true, error: null, stderrTail: [], viewingArchiveId: null });
     try {
       const options: AgentStartOptions = {
         mode: get().mode,
@@ -146,6 +187,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         busy: false,
         stderrTail: session.stderrTail,
       });
+      await get().refreshArchives(projectPath);
     } catch (error) {
       set({
         busy: false,
@@ -166,12 +208,24 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const turn = await ipc.ckptBeginTurn(projectPath, trimmed.slice(0, 48));
         turnId = turn.id;
       } catch {
-        // best-effort
+        // Checkpoints are best-effort — continue the prompt without them.
       }
     }
     try {
       await agentBus.prompt(trimmed);
       set({ busy: false });
+      const session = agentBus.getSession();
+      if (session) {
+        await persistSession({
+          id: session.archiveId,
+          projectPath: session.projectPath,
+          backend: session.backend,
+          acpSessionId: session.acpSessionId,
+          createdAt: session.createdAt,
+          items: session.items,
+        });
+        await get().refreshArchives(session.projectPath);
+      }
     } catch (error) {
       set({
         busy: false,
@@ -183,7 +237,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           const meta = await ipc.ckptCommitTurn(projectPath, turnId);
           useReviewStore.getState().ingestTurn(meta);
         } catch {
-          // ignore
+          // ignore commit failures
         }
       }
     }
@@ -199,7 +253,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   stop: async () => {
     set({ busy: true });
+    const live = agentBus.getSession();
     try {
+      if (live && live.items.length > 0) {
+        await persistSession({
+          id: live.archiveId,
+          projectPath: live.projectPath,
+          backend: live.backend,
+          acpSessionId: live.acpSessionId,
+          createdAt: live.createdAt,
+          items: live.items,
+        });
+      }
       await agentBus.stop();
       set({
         busy: false,
@@ -207,6 +272,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         permission: null,
         items: get().items,
       });
+      if (live) await get().refreshArchives(live.projectPath);
     } catch (error) {
       set({
         busy: false,
@@ -218,5 +284,51 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   restart: async () => {
     await get().stop();
     await get().start();
+  },
+
+  refreshArchives: async (projectPath) => {
+    if (!projectPath) {
+      set({ archives: [] });
+      return;
+    }
+    try {
+      const archives = await listArchives(projectPath);
+      set({ archives });
+    } catch {
+      // Browser / missing IPC — keep prior list.
+    }
+  },
+
+  openArchive: async (projectPath, id) => {
+    try {
+      if (agentBus.getSession()) {
+        await get().stop();
+      }
+      const { items } = await loadArchive(projectPath, id);
+      set({
+        viewingArchiveId: id,
+        session: null,
+        permission: null,
+        items,
+        busy: false,
+        error: null,
+      });
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  clearArchiveView: () => {
+    set({ viewingArchiveId: null, items: [] });
+  },
+
+  removeArchive: async (projectPath, id) => {
+    await deleteArchive(projectPath, id);
+    if (get().viewingArchiveId === id) {
+      set({ viewingArchiveId: null, items: [] });
+    }
+    await get().refreshArchives(projectPath);
   },
 }));

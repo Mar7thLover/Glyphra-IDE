@@ -180,6 +180,14 @@
     "openSetup": "安装引导",
     "hintProvider": "API Key / 登录",
     "providerHint": "已按当前后端过滤",
+    "sessions": "历史会话",
+    "sessionsEmpty": "还没有存档会话。",
+    "sessionDelete": "删除存档",
+    "sessionArchive": "存档会话",
+    "sessionReadonly": "只读存档 — 启动新会话以继续。",
+    "sessionDismiss": "关闭",
+    "promptReadonly": "正在浏览存档 — 按 + 启动新会话…",
+    "crashed": "Agent 进程意外退出。",
     "permissionHint": "Y 允许 · N 拒绝 · A 始终允许 · Esc 取消"
   },
   "review": {

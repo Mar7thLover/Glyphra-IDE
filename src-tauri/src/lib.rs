@@ -70,7 +70,11 @@ pub fn run() {
             ipc::pty::pty_open,
             ipc::pty::pty_write,
             ipc::pty::pty_resize,
-            ipc::pty::pty_close
+            ipc::pty::pty_close,
+            ipc::sessions::session_list,
+            ipc::sessions::session_save,
+            ipc::sessions::session_load,
+            ipc::sessions::session_delete
         ])
         .setup(move |_app| {
             tracing::info!(
