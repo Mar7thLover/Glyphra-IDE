@@ -1,6 +1,5 @@
-import { useEffect, useRef } from "react";
+import { Suspense, lazy, useEffect, useRef } from "react";
 
-import AgentWorkspace from "@/features/agent/AgentWorkspace";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import { ipc } from "@/lib/ipc/ipc";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
@@ -13,6 +12,8 @@ import SideBar from "./SideBar";
 import StatusBar from "./StatusBar";
 import TitleBar from "./TitleBar";
 
+const AgentWorkspace = lazy(() => import("@/features/agent/AgentWorkspace"));
+
 function applyBootSettings(theme: string, language: string) {
   if (theme === "light" || theme === "dark") {
     useUiStore.getState().setTheme(theme);
@@ -21,6 +22,19 @@ function applyBootSettings(theme: string, language: string) {
     void i18n.changeLanguage(language);
     localStorage.setItem("glyphra.lang", language);
   }
+}
+
+function AgentSlot() {
+  const open = useUiStore((s) => s.agentOpen);
+  return (
+    <Suspense
+      fallback={
+        open ? <aside className="w-[360px] shrink-0 border-l border-line bg-panel" /> : null
+      }
+    >
+      <AgentWorkspace />
+    </Suspense>
+  );
 }
 
 export default function App() {
@@ -63,7 +77,7 @@ export default function App() {
         <ActivityRail />
         <SideBar />
         <EditorArea />
-        <AgentWorkspace />
+        <AgentSlot />
       </div>
       <StatusBar />
       <OnboardingOverlay />

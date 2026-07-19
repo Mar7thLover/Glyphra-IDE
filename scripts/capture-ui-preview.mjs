@@ -63,7 +63,10 @@ const mockInit = () => {
     async invoke(cmd) {
       switch (cmd) {
         case "settings_get":
-          return { theme: "dark", language: "zh-CN" };
+          return {
+            theme: localStorage.getItem("glyphra.theme") === "light" ? "light" : "dark",
+            language: localStorage.getItem("glyphra.lang") || "zh-CN",
+          };
         case "settings_set":
           return null;
         case "app_ready":

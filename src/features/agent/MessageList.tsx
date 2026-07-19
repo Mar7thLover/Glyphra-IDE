@@ -11,14 +11,14 @@ const AssistantMarkdown = lazy(() => import("./AssistantMarkdown"));
 function TimelineRow({ item }: { item: AgentTimelineItem }) {
   if (item.kind === "tool") {
     return (
-      <div className="px-4 py-1.5">
+      <div className="px-3 py-0.5">
         <ToolCard item={item} />
       </div>
     );
   }
   if (item.kind === "plan") {
     return (
-      <div className="px-4 py-1.5">
+      <div className="px-3 py-1">
         <PlanCard item={item} />
       </div>
     );
@@ -26,8 +26,8 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
 
   if (item.kind === "user") {
     return (
-      <div className="px-4 py-2">
-        <div className="ml-auto max-w-[92%] rounded-2xl rounded-br-md bg-accent/12 px-3.5 py-2.5 text-[13px] leading-relaxed text-ink">
+      <div className="px-3 py-2">
+        <div className="border-l border-line-strong pl-2.5 text-[12.5px] leading-relaxed text-ink-2">
           <div className="whitespace-pre-wrap">{item.text}</div>
         </div>
       </div>
@@ -36,8 +36,8 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
 
   if (item.kind === "assistant") {
     return (
-      <div className="px-4 py-2">
-        <div className="max-w-[96%] text-[13px] leading-relaxed text-ink">
+      <div className="px-3 py-2">
+        <div className="text-[12.5px] leading-relaxed text-ink">
           <Suspense fallback={<div className="whitespace-pre-wrap text-ink-2">{item.text}</div>}>
             <AssistantMarkdown text={item.text} />
           </Suspense>
@@ -47,7 +47,7 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
   }
 
   return (
-    <div className="px-4 py-1">
+    <div className="px-3 py-1">
       <div className="text-[11px] leading-relaxed text-ink-3">{item.text}</div>
     </div>
   );

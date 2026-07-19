@@ -58,26 +58,24 @@ export default function TitleBar() {
       className="relative z-50 flex h-10 shrink-0 items-stretch border-b border-line"
     >
       <div data-tauri-drag-region className="flex items-center gap-2 pl-3.5 pr-2">
-        <div className="pointer-events-none size-3.5 rounded-[5px] bg-accent" />
-        <span className="pointer-events-none text-xs font-semibold tracking-wide text-ink-2">
+        <div className="pointer-events-none size-2 rounded-sm bg-accent/80" />
+        <span className="pointer-events-none text-[11px] font-medium tracking-wide text-ink-2">
           {t("app.name")}
         </span>
       </div>
       <div data-tauri-drag-region className="flex-1" />
 
-      {/* Second Agent entry: titlebar quick launch (right of drag region). */}
-      <div className="flex items-stretch pr-1">
+      {/* Second Agent entry: quiet titlebar shortcut. */}
+      <div className="flex items-stretch pr-0.5">
         <button
           type="button"
           title={agentOpen ? t("agent.toggleHide") : t("agent.toggleShow")}
           onClick={() => (agentOpen ? toggleAgent() : openAgent())}
-          className={`mx-1 my-1.5 flex items-center gap-1.5 rounded-md px-2 text-xs transition-colors ${
-            agentOpen
-              ? "bg-accent/14 text-accent"
-              : "text-ink-2 hover:bg-hover hover:text-ink"
+          className={`mx-0.5 my-1.5 flex items-center gap-1.5 px-1.5 text-[11px] transition-colors ${
+            agentOpen ? "text-ink" : "text-ink-3 hover:text-ink-2"
           }`}
         >
-          <Bot className="size-3.5" strokeWidth={1.75} />
+          <Bot className="size-3.5" strokeWidth={1.5} />
           <span className="hidden sm:inline">{t("agent.shortcut")}</span>
         </button>
       </div>

@@ -29,9 +29,7 @@ export default function StatusBar() {
 
   return (
     <footer className="flex h-6 shrink-0 items-center gap-1 border-t border-line bg-panel px-2 text-[11px] text-ink-3">
-      <span className="rounded-sm bg-accent/12 px-1.5 py-px font-medium text-accent">
-        {t("app.prealpha")}
-      </span>
+      <span className="text-ink-3">{t("app.prealpha")}</span>
       <span className="ml-1">{t("status.ready")}</span>
       <div className="flex-1" />
       <button

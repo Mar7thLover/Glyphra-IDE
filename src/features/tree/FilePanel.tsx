@@ -57,27 +57,29 @@ export default function FilePanel() {
 
   if (!current) {
     return (
-      <div className="flex flex-1 flex-col px-4 py-3">
+      <div className="flex flex-1 flex-col px-3 py-2.5">
         <button
+          type="button"
           onClick={() => void pickFolder()}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+          className="inline-flex items-center gap-1.5 px-1 py-1 text-left text-[11px] text-ink-2 transition-colors hover:text-ink"
         >
-          <FolderOpen className="size-4" strokeWidth={1.75} />
+          <FolderOpen className="size-3.5 text-ink-3" strokeWidth={1.6} />
           {t("empty.openFolder")}
         </button>
         {recents.length > 0 && (
-          <div className="mt-5">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
+          <div className="mt-4">
+            <div className="mb-1.5 px-1 text-[10px] uppercase tracking-[0.06em] text-ink-3">
               {t("panel.recent")}
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col">
               {recents.map((project) => (
                 <button
                   key={project.path}
+                  type="button"
                   onClick={() => void openProject(project.path)}
-                  className="rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover"
+                  className="rounded px-1 py-1.5 text-left transition-colors hover:bg-hover"
                 >
-                  <div className="truncate text-xs font-medium text-ink-2">{project.name}</div>
+                  <div className="truncate text-[11px] text-ink-2">{project.name}</div>
                   <div className="truncate text-[10px] text-ink-3">{project.path}</div>
                 </button>
               ))}
