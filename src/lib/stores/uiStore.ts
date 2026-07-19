@@ -1,16 +1,31 @@
 import { create } from "zustand";
 
 export type Theme = "light" | "dark";
-export type Panel = "files" | "search" | "agent" | "settings";
+/** Left sidebar panels only — Agent lives on the right. */
+export type Panel = "files" | "search" | "settings";
+
+const AGENT_OPEN_KEY = "glyphra.agentOpen";
+
+function readAgentOpen(): boolean {
+  const stored = localStorage.getItem(AGENT_OPEN_KEY);
+  if (stored === null) return true;
+  return stored === "1";
+}
 
 interface UiState {
   theme: Theme;
   mica: boolean;
   activePanel: Panel;
   sidebarOpen: boolean;
+  /** Right-hand Agent workspace. Default open. */
+  agentOpen: boolean;
   setTheme: (theme: Theme) => void;
   setMica: (mica: boolean) => void;
   togglePanel: (panel: Panel) => void;
+  setAgentOpen: (open: boolean) => void;
+  toggleAgent: () => void;
+  /** Open (or focus) the right Agent panel — used by the titlebar shortcut. */
+  openAgent: () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -18,6 +33,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   mica: document.documentElement.dataset.mica === "true",
   activePanel: "files",
   sidebarOpen: true,
+  agentOpen: readAgentOpen(),
 
   setTheme: (theme) => {
     document.documentElement.dataset.theme = theme;
@@ -37,5 +53,18 @@ export const useUiStore = create<UiState>((set, get) => ({
     } else {
       set({ activePanel: panel, sidebarOpen: true });
     }
+  },
+
+  setAgentOpen: (open) => {
+    localStorage.setItem(AGENT_OPEN_KEY, open ? "1" : "0");
+    set({ agentOpen: open });
+  },
+
+  toggleAgent: () => {
+    get().setAgentOpen(!get().agentOpen);
+  },
+
+  openAgent: () => {
+    get().setAgentOpen(true);
   },
 }));

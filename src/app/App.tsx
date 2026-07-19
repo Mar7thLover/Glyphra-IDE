@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import AgentWorkspace from "@/features/agent/AgentWorkspace";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import { ipc } from "@/lib/ipc/ipc";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
@@ -44,6 +45,17 @@ export default function App() {
     })();
   }, [maybeAutoOpen, setMica]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        useUiStore.getState().toggleAgent();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="relative flex h-full flex-col bg-app text-ink">
       <TitleBar />
@@ -51,6 +63,7 @@ export default function App() {
         <ActivityRail />
         <SideBar />
         <EditorArea />
+        <AgentWorkspace />
       </div>
       <StatusBar />
       <OnboardingOverlay />

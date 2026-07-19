@@ -1,17 +1,14 @@
-import { Bot, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { motion } from "motion/react";
-import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 
 import SettingsPanel from "@/features/settings/SettingsPanel";
 import FilePanel from "@/features/tree/FilePanel";
 import { useUiStore, type Panel } from "@/lib/stores/uiStore";
 
-const AgentPanel = lazy(() => import("@/features/agent/AgentPanel"));
-
 export const SIDEBAR_WIDTH = 268;
 
-function Placeholder(_props: { panel: Exclude<Panel, "settings" | "files" | "agent"> }) {
+function Placeholder(_props: { panel: Extract<Panel, "search"> }) {
   const { t } = useTranslation();
 
   return (
@@ -24,6 +21,7 @@ function Placeholder(_props: { panel: Exclude<Panel, "settings" | "files" | "age
   );
 }
 
+/** Left sidebar: explorer / search / settings only. Agent is on the right. */
 export default function SideBar() {
   const { t } = useTranslation();
   const open = useUiStore((s) => s.sidebarOpen);
@@ -43,17 +41,6 @@ export default function SideBar() {
         </div>
         {panel === "files" && <FilePanel />}
         {panel === "settings" && <SettingsPanel />}
-        {panel === "agent" && (
-          <Suspense
-            fallback={
-              <div className="flex flex-1 items-center justify-center text-ink-3">
-                <Bot className="size-4 animate-pulse" />
-              </div>
-            }
-          >
-            <AgentPanel />
-          </Suspense>
-        )}
         {panel === "search" && <Placeholder panel={panel} />}
       </div>
     </motion.aside>

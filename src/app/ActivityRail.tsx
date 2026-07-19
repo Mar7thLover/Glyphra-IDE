@@ -1,4 +1,4 @@
-import { Bot, Files, Search, Settings, type LucideIcon } from "lucide-react";
+import { Files, Search, Settings, type LucideIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -7,7 +7,6 @@ import { useUiStore, type Panel } from "@/lib/stores/uiStore";
 const mainItems: { id: Panel; icon: LucideIcon }[] = [
   { id: "files", icon: Files },
   { id: "search", icon: Search },
-  { id: "agent", icon: Bot },
 ];
 
 function RailButton({ id, icon: Icon }: { id: Panel; icon: LucideIcon }) {
