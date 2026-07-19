@@ -9,6 +9,7 @@ import type {
   StartableBackend,
 } from "@/lib/acp/types";
 import { ipc, type AgentDetectInfo } from "@/lib/ipc/ipc";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 
@@ -22,13 +23,19 @@ interface AgentState {
   error: string | null;
   mode: AgentPermissionMode;
   providerId: string | null;
+  backend: StartableBackend;
+  stderrTail: string[];
   detect: () => Promise<void>;
   setMode: (mode: AgentPermissionMode) => void;
   setProviderId: (id: string | null) => void;
-  start: (backend: StartableBackend, cwd: string) => Promise<void>;
+  setBackend: (backend: StartableBackend) => void;
+  clearError: () => void;
+  start: (cwd?: string) => Promise<void>;
   prompt: (text: string) => Promise<void>;
+  cancel: () => Promise<void>;
   respondPermission: (optionId: string | "cancelled") => void;
   stop: () => Promise<void>;
+  restart: () => Promise<void>;
 }
 
 let subscribed = false;
@@ -43,8 +50,19 @@ function ensureBusSubscription(set: (partial: Partial<AgentState>) => void) {
       permission: session.permission,
       error: session.error ?? null,
       busy: session.status === "busy" || session.status === "starting",
+      stderrTail: session.stderrTail,
     });
   });
+}
+
+function pickReadyBackend(backends: AgentDetectInfo[], preferred: StartableBackend): StartableBackend {
+  const preferredInfo = backends.find((b) => b.backend === preferred);
+  if (preferredInfo?.installed) return preferred;
+  const order: StartableBackend[] = ["codex-acp", "claude-acp", "pi-agent", "fixture"];
+  for (const id of order) {
+    if (backends.some((b) => b.backend === id && b.installed)) return id;
+  }
+  return "fixture";
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -55,14 +73,20 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   permission: null,
   busy: false,
   error: null,
-  mode: "standard",
-  providerId: null,
+  mode: usePrefsStore.getState().defaultMode,
+  providerId: usePrefsStore.getState().defaultProviderId,
+  backend: usePrefsStore.getState().defaultBackend,
+  stderrTail: [],
 
   detect: async () => {
-    set({ detecting: true, error: null });
+    set({ detecting: true });
     try {
       const backends = await ipc.agentDetect();
-      set({ backends, detecting: false });
+      const current = get().backend;
+      const stillOk = backends.some((b) => b.backend === current && b.installed);
+      const backend = stillOk ? current : pickReadyBackend(backends, current);
+      set({ backends, detecting: false, backend });
+      usePrefsStore.getState().setPref("defaultBackend", backend);
     } catch (error) {
       set({
         detecting: false,
@@ -71,28 +95,62 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  setMode: (mode) => set({ mode }),
-  setProviderId: (providerId) => set({ providerId }),
+  setMode: (mode) => {
+    set({ mode });
+    usePrefsStore.getState().setPref("defaultMode", mode);
+  },
 
-  start: async (backend, cwd) => {
+  setProviderId: (providerId) => {
+    set({ providerId });
+    usePrefsStore.getState().setPref("defaultProviderId", providerId);
+  },
+
+  setBackend: (backend) => {
+    set({ backend });
+    usePrefsStore.getState().setPref("defaultBackend", backend);
+  },
+
+  clearError: () => set({ error: null }),
+
+  start: async (cwd) => {
     ensureBusSubscription(set);
-    set({ busy: true, error: null });
+    const projectPath = cwd ?? useProjectStore.getState().current?.path;
+    if (!projectPath) {
+      set({ error: "Open a project folder before starting an agent." });
+      return;
+    }
+    const info = get().backends.find((b) => b.backend === get().backend);
+    if (info && !info.installed && get().backend !== "fixture") {
+      set({
+        error: `${get().backend} is not installed. ${info.detail}`,
+      });
+      return;
+    }
+    if (get().mode === "unleashed") {
+      const ok = window.confirm(
+        "Unleashed mode bypasses edit approvals for this session. Continue?",
+      );
+      if (!ok) return;
+    }
+    set({ busy: true, error: null, stderrTail: [] });
     try {
       const options: AgentStartOptions = {
         mode: get().mode,
         providerId: get().providerId,
       };
-      const session = await agentBus.start(backend, cwd, options);
+      const session = await agentBus.start(get().backend, projectPath, options);
       set({
         session,
         items: session.items,
         permission: session.permission,
         busy: false,
+        stderrTail: session.stderrTail,
       });
     } catch (error) {
       set({
         busy: false,
         error: error instanceof Error ? error.message : String(error),
+        stderrTail: agentBus.getSession()?.stderrTail ?? get().stderrTail,
       });
     }
   },
@@ -108,7 +166,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const turn = await ipc.ckptBeginTurn(projectPath, trimmed.slice(0, 48));
         turnId = turn.id;
       } catch {
-        // Checkpoints are best-effort — continue the prompt without them.
+        // best-effort
       }
     }
     try {
@@ -125,10 +183,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           const meta = await ipc.ckptCommitTurn(projectPath, turnId);
           useReviewStore.getState().ingestTurn(meta);
         } catch {
-          // ignore commit failures
+          // ignore
         }
       }
     }
+  },
+
+  cancel: async () => {
+    await agentBus.cancel();
   },
 
   respondPermission: (optionId) => {
@@ -139,12 +201,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ busy: true });
     try {
       await agentBus.stop();
-      set({ busy: false, session: null, permission: null });
+      set({
+        busy: false,
+        session: null,
+        permission: null,
+        items: get().items,
+      });
     } catch (error) {
       set({
         busy: false,
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  },
+
+  restart: async () => {
+    await get().stop();
+    await get().start();
   },
 }));

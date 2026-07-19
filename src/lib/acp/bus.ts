@@ -28,12 +28,23 @@ export interface AgentSessionHandle {
   acpSessionId: string | null;
   items: AgentTimelineItem[];
   permission: PermissionPrompt | null;
-  status: "starting" | "running" | "busy" | "exited" | "error";
+  status: "starting" | "running" | "busy" | "exited" | "crashed" | "error";
   error?: string;
   agentName?: string;
+  /** Last stderr lines for crash diagnosis. */
+  stderrTail: string[];
 }
 
 type Listener = (session: AgentSessionHandle) => void;
+
+const STDERR_TAIL = 12;
+
+function modeIdFor(mode: AgentPermissionMode): string {
+  // Align with supervisor INITIAL_AGENT_MODE / Codex-style ids.
+  if (mode === "safe") return "read-only";
+  if (mode === "unleashed") return "agent-full-access";
+  return "agent";
+}
 
 /**
  * AgentBus — owns ACP client lifecycle for one live agent subprocess.
@@ -51,6 +62,7 @@ export class AgentBus {
   >();
   private unsubStderr: (() => void) | null = null;
   private unsubExit: (() => void) | null = null;
+  private stderrTail: string[] = [];
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -70,6 +82,7 @@ export class AgentBus {
       ...this.handle,
       items: [...this.handle.items],
       permission: this.handle.permission ? { ...this.handle.permission } : null,
+      stderrTail: [...this.handle.stderrTail],
     };
   }
 
@@ -83,7 +96,7 @@ export class AgentBus {
     if (!this.handle) return;
     this.handle.items = [
       ...this.handle.items,
-      { id: `sys-${Date.now()}`, kind: "system", text, at: Date.now() },
+      { id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, kind: "system", text, at: Date.now() },
     ];
     this.emit();
   }
@@ -92,6 +105,7 @@ export class AgentBus {
     await this.stop();
 
     const mode: AgentPermissionMode = options.mode ?? "standard";
+    this.stderrTail = [];
 
     this.handle = {
       backend,
@@ -100,6 +114,7 @@ export class AgentBus {
       items: [],
       permission: null,
       status: "starting",
+      stderrTail: [],
     };
     this.emit();
 
@@ -115,11 +130,23 @@ export class AgentBus {
     this.transport = transport;
     this.handle.transportSessionId = transport.sessionId;
 
-    this.unsubStderr = transport.onStderr((line) => this.pushSystem(line));
+    this.unsubStderr = transport.onStderr((line) => {
+      this.stderrTail = [...this.stderrTail.slice(-(STDERR_TAIL - 1)), line];
+      if (this.handle) this.handle.stderrTail = [...this.stderrTail];
+      // Keep stderr out of the main chat stream — surface on crash banner instead.
+      this.emit();
+    });
     this.unsubExit = transport.onExit((code) => {
       if (!this.handle) return;
-      this.handle.status = "exited";
-      this.pushSystem(`Agent exited (${code})`);
+      const wasBusy =
+        this.handle.status === "busy" || this.handle.status === "starting";
+      this.handle.status = wasBusy ? "crashed" : "exited";
+      this.handle.stderrTail = [...this.stderrTail];
+      this.pushSystem(
+        wasBusy
+          ? `Agent crashed (exit ${code}). Restart to continue.`
+          : `Agent exited (${code})`,
+      );
       this.active = null;
       this.connection = null;
     });
@@ -155,15 +182,26 @@ export class AgentBus {
 
       this.handle.agentName = init.agentInfo?.title ?? init.agentInfo?.name;
       this.pushSystem(
-        `Connected${this.handle.agentName ? ` to ${this.handle.agentName}` : ""} (protocol v${init.protocolVersion})`,
+        `Connected${this.handle.agentName ? ` to ${this.handle.agentName}` : ""} · ${backend}`,
       );
 
       const authMethods = init.authMethods ?? [];
       if (authMethods.length > 0) {
         const methodId = authMethods[0]?.id;
         if (methodId) {
-          await connection.agent.request(methods.agent.authenticate, { methodId });
-          this.pushSystem(`Authenticated via ${methodId}`);
+          try {
+            await connection.agent.request(methods.agent.authenticate, { methodId });
+            this.pushSystem(`Authenticated via ${methodId}`);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            const hint =
+              backend === "codex-acp"
+                ? " Run `codex` in a terminal to log in, or add an API provider in Settings."
+                : backend === "claude-acp"
+                  ? " Run `claude` to log in, or add an Anthropic key in Settings."
+                  : "";
+            throw new Error(`Authentication failed (${methodId}): ${message}.${hint}`);
+          }
         }
       }
 
@@ -171,9 +209,7 @@ export class AgentBus {
       this.active = active;
       this.handle.acpSessionId = active.sessionId;
 
-      // Best-effort session mode mapping (agents may ignore unknown modes).
-      const modeId =
-        mode === "safe" ? "read-only" : mode === "unleashed" ? "full-access" : "default";
+      const modeId = modeIdFor(mode);
       try {
         await connection.agent.request(methods.agent.session.setMode, {
           sessionId: active.sessionId,
@@ -184,25 +220,37 @@ export class AgentBus {
         this.pushSystem(`Mode preset: ${mode} (agent set_mode unavailable)`);
       }
 
+      if (options.providerId) {
+        this.pushSystem(`Provider: ${options.providerId.slice(0, 8)}… (env injected at spawn)`);
+      } else if (backend !== "fixture") {
+        this.pushSystem("Provider: CLI login / defaults (no Glyphra key selected)");
+      }
+
       this.handle.status = "running";
-      this.pushSystem(`Session ${active.sessionId}`);
       this.emit();
       return this.snapshot();
     } catch (error) {
       this.handle.status = "error";
       this.handle.error = error instanceof Error ? error.message : String(error);
+      this.handle.stderrTail = [...this.stderrTail];
       this.emit();
+      const message = this.handle.error;
       await this.stop();
-      throw error;
+      throw new Error(message);
     }
   }
 
   async prompt(text: string) {
-    if (!this.handle || !this.active || this.handle.status === "exited") {
-      throw new Error("No running agent session");
+    if (
+      !this.handle ||
+      !this.active ||
+      this.handle.status === "exited" ||
+      this.handle.status === "crashed"
+    ) {
+      throw new Error("No running agent session — start or restart first");
     }
     if (this.handle.status === "busy") {
-      throw new Error("Agent is already answering");
+      throw new Error("Agent is already answering — cancel the turn first");
     }
 
     this.handle.items = [
@@ -228,10 +276,31 @@ export class AgentBus {
         this.emit();
       }
     } catch (error) {
-      this.handle.status = "error";
-      this.handle.error = error instanceof Error ? error.message : String(error);
-      this.emit();
+      // onExit may have already flipped status to crashed/exited.
+      if (this.handle?.status === "busy" || this.handle?.status === "running") {
+        this.handle.status = "error";
+        this.handle.error = error instanceof Error ? error.message : String(error);
+        this.emit();
+      }
       throw error;
+    }
+  }
+
+  /** Cancel the in-flight prompt turn (ACP session/cancel). */
+  async cancel() {
+    if (!this.handle?.acpSessionId || !this.connection) return;
+    if (this.handle.permission) {
+      this.respondPermission("cancelled");
+    }
+    try {
+      await this.connection.agent.notify(methods.agent.session.cancel, {
+        sessionId: this.handle.acpSessionId,
+      });
+      this.pushSystem("Turn cancelled");
+    } catch (error) {
+      this.pushSystem(
+        `Cancel failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -259,10 +328,16 @@ export class AgentBus {
     return new Promise((resolve) => {
       this.permissionWaiters.set(id, resolve);
       if (this.handle) {
+        const locations =
+          params.toolCall.locations
+            ?.map((loc) => loc.path)
+            .filter(Boolean) ?? [];
         this.handle.permission = {
           id,
           title: params.toolCall.title ?? "Permission required",
           toolCallId: params.toolCall.toolCallId,
+          kind: params.toolCall.kind != null ? String(params.toolCall.kind) : undefined,
+          locations,
           options: params.options.map((option) => ({
             optionId: option.optionId,
             name: option.name,
@@ -309,7 +384,12 @@ export class AgentBus {
     this.transport = null;
 
     if (this.handle) {
-      this.handle = { ...this.handle, status: "exited", permission: null };
+      this.handle = {
+        ...this.handle,
+        status: "exited",
+        permission: null,
+        stderrTail: [...this.stderrTail],
+      };
       this.emit();
     }
     this.handle = null;

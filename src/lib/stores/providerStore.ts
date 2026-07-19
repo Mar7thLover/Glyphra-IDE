@@ -13,7 +13,8 @@ interface ProviderState {
   providers: ProviderRecord[];
   loading: boolean;
   testingId: string | null;
-  testDetail: string | null;
+  /** Per-provider last test message. */
+  testResults: Record<string, { ok: boolean; detail: string }>;
   error: string | null;
   refresh: () => Promise<void>;
   upsert: (input: {
@@ -26,14 +27,20 @@ interface ProviderState {
   }) => Promise<ProviderRecord | null>;
   remove: (id: string) => Promise<void>;
   test: (id: string) => Promise<void>;
-  addOpenRouter: () => Promise<void>;
+  /** Prepare OpenRouter form values — does not save without a key. */
+  openRouterPreset: () => {
+    kind: ProviderKind;
+    name: string;
+    baseUrl: string;
+    model: string;
+  };
 }
 
 export const useProviderStore = create<ProviderState>((set, get) => ({
   providers: [],
   loading: false,
   testingId: null,
-  testDetail: null,
+  testResults: {},
   error: null,
 
   refresh: async () => {
@@ -78,15 +85,20 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   test: async (id) => {
-    set({ testingId: id, testDetail: null, error: null });
+    set({ testingId: id, error: null });
     try {
       const result = await ipc.providerTest(id);
-      set({
+      const detail =
+        result.status > 0
+          ? `${result.ok ? "OK" : "Failed"} · HTTP ${result.status}: ${result.detail}`
+          : result.detail;
+      set((state) => ({
         testingId: null,
-        testDetail: result.ok
-          ? `OK · HTTP ${result.status}`
-          : `Failed · HTTP ${result.status}: ${result.detail}`,
-      });
+        testResults: {
+          ...state.testResults,
+          [id]: { ok: result.ok, detail },
+        },
+      }));
     } catch (error) {
       set({
         testingId: null,
@@ -95,13 +107,10 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     }
   },
 
-  addOpenRouter: async () => {
-    await get().upsert({
-      kind: OPENROUTER_PRESET.kind,
-      name: OPENROUTER_PRESET.name,
-      baseUrl: OPENROUTER_PRESET.baseUrl,
-      model: OPENROUTER_PRESET.model,
-      secret: null,
-    });
-  },
+  openRouterPreset: () => ({
+    kind: OPENROUTER_PRESET.kind,
+    name: OPENROUTER_PRESET.name,
+    baseUrl: OPENROUTER_PRESET.baseUrl,
+    model: OPENROUTER_PRESET.model,
+  }),
 }));

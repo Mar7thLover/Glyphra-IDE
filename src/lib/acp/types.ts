@@ -89,5 +89,8 @@ export interface PermissionPrompt {
   id: string;
   title: string;
   toolCallId?: string;
+  /** Paths / locations from the tool call when available. */
+  locations?: string[];
+  kind?: string;
   options: PermissionOption[];
 }

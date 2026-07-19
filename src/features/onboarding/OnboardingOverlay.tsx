@@ -2,6 +2,7 @@ import { Loader2, Rocket, RefreshCw, X } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useAgentStore } from "@/lib/stores/agentStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
@@ -127,7 +128,10 @@ export default function OnboardingOverlay() {
             type="button"
             onClick={() => {
               closeOnboarding(true);
-              openAgentPanel();
+              void useAgentStore
+                .getState()
+                .detect()
+                .then(() => openAgentPanel());
             }}
             disabled={!essentialsReady}
             className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-ink disabled:opacity-40"
