@@ -69,9 +69,10 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-        if (useUiStore.getState().settingsOpen) return;
         e.preventDefault();
-        useUiStore.getState().toggleAgent();
+        const ui = useUiStore.getState();
+        if (ui.settingsOpen) ui.closeSettings();
+        ui.toggleAgent();
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault();

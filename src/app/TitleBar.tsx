@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ArrowUpRight, Copy, Minus, Square, X } from "lucide-react";
+import { Copy, Minus, PanelRight, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -37,8 +37,10 @@ export default function TitleBar() {
   const { t } = useTranslation();
   const [maximized, setMaximized] = useState(false);
   const agentOpen = useUiStore((s) => s.agentOpen);
-  const toggleAgent = useUiStore((s) => s.toggleAgent);
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const closeSettings = useUiStore((s) => s.closeSettings);
   const openAgent = useUiStore((s) => s.openAgent);
+  const toggleAgent = useUiStore((s) => s.toggleAgent);
   const projectName = useProjectStore((s) => s.current?.name);
 
   useEffect(() => {
@@ -54,6 +56,17 @@ export default function TitleBar() {
     return () => unlisten?.();
   }, []);
 
+  /** Titlebar is the sole quick entry for the right Agent panel. */
+  const onAgentClick = () => {
+    if (settingsOpen) {
+      closeSettings();
+      openAgent();
+      return;
+    }
+    if (agentOpen) toggleAgent();
+    else openAgent();
+  };
+
   return (
     <header
       data-tauri-drag-region
@@ -65,7 +78,7 @@ export default function TitleBar() {
         </span>
       </div>
 
-      {projectName ? (
+      {projectName && !settingsOpen ? (
         <div
           data-tauri-drag-region
           className="pointer-events-none flex flex-1 items-center justify-center"
@@ -76,20 +89,19 @@ export default function TitleBar() {
         <div data-tauri-drag-region className="flex-1" />
       )}
 
-      {/* Second Agent entry — titlebar pill, Cursor “Agents Window” energy. */}
-      <div className="flex items-center pr-1">
+      <div className="flex items-center gap-1 pr-1">
         <button
           type="button"
-          title={agentOpen ? t("agent.toggleHide") : t("agent.toggleShow")}
-          onClick={() => (agentOpen ? toggleAgent() : openAgent())}
-          className={`my-1.5 inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-opacity ${
-            agentOpen
+          title={agentOpen && !settingsOpen ? t("agent.toggleHide") : t("agent.toggleShow")}
+          onClick={onAgentClick}
+          className={`my-1.5 inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors ${
+            agentOpen && !settingsOpen
               ? "bg-accent text-accent-ink"
-              : "bg-accent/90 text-accent-ink hover:bg-accent"
+              : "border border-line bg-raised text-ink-2 hover:border-line-strong hover:text-ink"
           }`}
         >
-          {t("agent.shortcutWindow")}
-          <ArrowUpRight className="size-3" strokeWidth={2} />
+          <PanelRight className="size-3.5" strokeWidth={1.7} />
+          {t("agent.shortcut")}
         </button>
       </div>
 

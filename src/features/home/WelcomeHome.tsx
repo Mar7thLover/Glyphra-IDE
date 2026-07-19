@@ -107,7 +107,10 @@ export default function WelcomeHome() {
             icon={Sparkles}
             label={t("home.openAgent")}
             emphasis
-            onClick={openAgent}
+            onClick={() => {
+              useUiStore.getState().closeSettings();
+              openAgent();
+            }}
           />
         </div>
 

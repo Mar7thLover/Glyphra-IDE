@@ -23,7 +23,8 @@ const defaults: GlyphraPrefs = {
   defaultMode: "standard",
   defaultBackend: "fixture",
   defaultProviderId: null,
-  openAgentOnProject: true,
+  // Right Agent panel stays collapsed until the titlebar entry opens it.
+  openAgentOnProject: false,
 };
 
 function readPrefs(): GlyphraPrefs {
