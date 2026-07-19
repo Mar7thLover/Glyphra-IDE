@@ -15,6 +15,8 @@ export type { ProviderRecord } from "./gen/ProviderRecord";
 export type { ProviderTestResult } from "./gen/ProviderTestResult";
 export type { ProviderUpsert } from "./gen/ProviderUpsert";
 export type { RecentProject } from "./gen/RecentProject";
+export type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
+export type { ToolStatus } from "./gen/ToolStatus";
 
 import type { AgentDetectInfo } from "./gen/AgentDetectInfo";
 import type { AgentIoEvent } from "./gen/AgentIoEvent";
@@ -30,6 +32,7 @@ import type { ProviderRecord } from "./gen/ProviderRecord";
 import type { ProviderTestResult } from "./gen/ProviderTestResult";
 import type { ProviderUpsert } from "./gen/ProviderUpsert";
 import type { RecentProject } from "./gen/RecentProject";
+import type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
 
 export const ipc = {
   appReady: () => invoke<EnvInfo>("app_ready"),
@@ -48,6 +51,7 @@ export const ipc = {
   settingsGet: () => invoke<AppSettings>("settings_get"),
   settingsSet: (settings: AppSettings) => invoke<void>("settings_set", { settings }),
   agentDetect: () => invoke<AgentDetectInfo[]>("agent_detect"),
+  runtimeDetect: () => invoke<RuntimeDetectInfo>("runtime_detect"),
   agentSpawn: (request: AgentSpawnRequest, onEvent: (event: AgentIoEvent) => void) => {
     const channel = new Channel<AgentIoEvent>(onEvent);
     return invoke<number>("agent_spawn", { request, channel });

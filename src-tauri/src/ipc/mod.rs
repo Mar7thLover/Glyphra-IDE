@@ -11,6 +11,7 @@ mod export_bindings {
     use super::{app::EnvInfo, project::*, settings::AppSettings};
     use crate::agent::{
         detect::AgentDetectInfo,
+        runtime::{RuntimeDetectInfo, ToolStatus},
         supervisor::{AgentIoEvent, AgentSpawnRequest},
     };
     use crate::providers::{
@@ -33,6 +34,8 @@ mod export_bindings {
         AgentDetectInfo::export_all().expect("export AgentDetectInfo");
         AgentSpawnRequest::export_all().expect("export AgentSpawnRequest");
         AgentIoEvent::export_all().expect("export AgentIoEvent");
+        RuntimeDetectInfo::export_all().expect("export RuntimeDetectInfo");
+        ToolStatus::export_all().expect("export ToolStatus");
         ProviderKind::export_all().expect("export ProviderKind");
         ProviderRecord::export_all().expect("export ProviderRecord");
         ProviderUpsert::export_all().expect("export ProviderUpsert");

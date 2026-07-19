@@ -86,7 +86,7 @@ fn run_version(bin: &str, args: &[&str]) -> Option<String> {
     }
 }
 
-fn which(bin: &str) -> Option<std::path::PathBuf> {
+pub fn which(bin: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(bin);

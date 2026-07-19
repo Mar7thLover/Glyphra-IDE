@@ -4,12 +4,18 @@ use tauri::{ipc::Channel, AppHandle, State};
 
 use crate::agent::{
     detect::{detect_agents, AgentDetectInfo},
+    runtime::{detect_runtime, RuntimeDetectInfo},
     supervisor::{AgentIoEvent, AgentSpawnRequest, AgentSupervisor},
 };
 
 #[tauri::command]
 pub fn agent_detect() -> Vec<AgentDetectInfo> {
     detect_agents()
+}
+
+#[tauri::command]
+pub fn runtime_detect() -> RuntimeDetectInfo {
+    detect_runtime()
 }
 
 #[tauri::command]
