@@ -35,7 +35,17 @@
     "theme": "主题",
     "language": "语言",
     "light": "浅色",
-    "dark": "深色"
+    "dark": "深色",
+    "providers": "模型 Provider",
+    "providersHint": "API Key 保存在系统钥匙串。自定义端点须支持 OpenAI Responses API（DeepSeek/本地模型请经 OpenRouter 或 LiteLLM）。",
+    "providerName": "显示名称",
+    "providerSecret": "API Key（保存后不再回显）",
+    "providerSave": "保存 Provider",
+    "providerTest": "测试连接",
+    "providersEmpty": "还没有 Provider。",
+    "secretStored": "已存密钥",
+    "secretMissing": "无密钥",
+    "loading": "加载中…"
   },
   "editor": {
     "save": "保存",
@@ -54,6 +64,11 @@
     "promptPlaceholder": "向 agent 下达指令…",
     "send": "发送",
     "permissionTitle": "需要批准",
-    "permissionCancel": "取消"
+    "permissionCancel": "取消",
+    "providerNone": "无 Provider（CLI 登录 / Fixture）",
+    "modeSafe": "安全 · 只读",
+    "modeStandard": "标准 · Agent",
+    "modeUnleashed": "放飞 · 完全访问",
+    "modeUnleashedWarn": "放飞模式会绕过编辑审批，请谨慎使用。"
   }
 }

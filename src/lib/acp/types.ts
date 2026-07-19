@@ -2,6 +2,14 @@ export type AgentBackendKind = "codex-acp" | "claude-acp" | "pi-agent" | "custom
 
 export type StartableBackend = AgentBackendKind | "fixture";
 
+/** Maps to INITIAL_AGENT_MODE / session set_mode. */
+export type AgentPermissionMode = "safe" | "standard" | "unleashed";
+
+export interface AgentStartOptions {
+  providerId?: string | null;
+  mode?: AgentPermissionMode;
+}
+
 export type CustomAgentProtocol = "acp" | "stdio-jsonl" | "shell-command";
 
 export interface CustomAgentHarness {

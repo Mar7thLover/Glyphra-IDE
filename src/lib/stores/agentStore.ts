@@ -1,7 +1,13 @@
 import { create } from "zustand";
 
 import { agentBus, type AgentSessionHandle } from "@/lib/acp/bus";
-import type { AgentTimelineItem, PermissionPrompt, StartableBackend } from "@/lib/acp/types";
+import type {
+  AgentPermissionMode,
+  AgentStartOptions,
+  AgentTimelineItem,
+  PermissionPrompt,
+  StartableBackend,
+} from "@/lib/acp/types";
 import { ipc, type AgentDetectInfo } from "@/lib/ipc/ipc";
 
 interface AgentState {
@@ -12,7 +18,11 @@ interface AgentState {
   permission: PermissionPrompt | null;
   busy: boolean;
   error: string | null;
+  mode: AgentPermissionMode;
+  providerId: string | null;
   detect: () => Promise<void>;
+  setMode: (mode: AgentPermissionMode) => void;
+  setProviderId: (id: string | null) => void;
   start: (backend: StartableBackend, cwd: string) => Promise<void>;
   prompt: (text: string) => Promise<void>;
   respondPermission: (optionId: string | "cancelled") => void;
@@ -35,7 +45,7 @@ function ensureBusSubscription(set: (partial: Partial<AgentState>) => void) {
   });
 }
 
-export const useAgentStore = create<AgentState>((set) => ({
+export const useAgentStore = create<AgentState>((set, get) => ({
   backends: [],
   detecting: false,
   session: null,
@@ -43,6 +53,8 @@ export const useAgentStore = create<AgentState>((set) => ({
   permission: null,
   busy: false,
   error: null,
+  mode: "standard",
+  providerId: null,
 
   detect: async () => {
     set({ detecting: true, error: null });
@@ -57,11 +69,18 @@ export const useAgentStore = create<AgentState>((set) => ({
     }
   },
 
+  setMode: (mode) => set({ mode }),
+  setProviderId: (providerId) => set({ providerId }),
+
   start: async (backend, cwd) => {
     ensureBusSubscription(set);
     set({ busy: true, error: null });
     try {
-      const session = await agentBus.start(backend, cwd);
+      const options: AgentStartOptions = {
+        mode: get().mode,
+        providerId: get().providerId,
+      };
+      const session = await agentBus.start(backend, cwd, options);
       set({
         session,
         items: session.items,

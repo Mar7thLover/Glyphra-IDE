@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{ipc::Channel, State};
+use tauri::{ipc::Channel, AppHandle, State};
 
 use crate::agent::{
     detect::{detect_agents, AgentDetectInfo},
@@ -14,11 +14,12 @@ pub fn agent_detect() -> Vec<AgentDetectInfo> {
 
 #[tauri::command]
 pub async fn agent_spawn(
+    app: AppHandle,
     supervisor: State<'_, Arc<AgentSupervisor>>,
     request: AgentSpawnRequest,
     channel: Channel<AgentIoEvent>,
 ) -> Result<u32, String> {
-    supervisor.spawn(request, channel).await
+    supervisor.spawn(&app, request, channel).await
 }
 
 #[tauri::command]

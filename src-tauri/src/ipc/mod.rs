@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod app;
 pub mod project;
+pub mod providers;
 pub mod settings;
 
 #[cfg(test)]
@@ -11,6 +12,9 @@ mod export_bindings {
     use crate::agent::{
         detect::AgentDetectInfo,
         supervisor::{AgentIoEvent, AgentSpawnRequest},
+    };
+    use crate::providers::{
+        ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert,
     };
     use crate::state::RecentProject;
     use ts_rs::TS;
@@ -29,5 +33,9 @@ mod export_bindings {
         AgentDetectInfo::export_all().expect("export AgentDetectInfo");
         AgentSpawnRequest::export_all().expect("export AgentSpawnRequest");
         AgentIoEvent::export_all().expect("export AgentIoEvent");
+        ProviderKind::export_all().expect("export ProviderKind");
+        ProviderRecord::export_all().expect("export ProviderRecord");
+        ProviderUpsert::export_all().expect("export ProviderUpsert");
+        ProviderTestResult::export_all().expect("export ProviderTestResult");
     }
 }

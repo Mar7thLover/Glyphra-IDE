@@ -12,9 +12,15 @@ import { ipc } from "@/lib/ipc/ipc";
 
 import { openAgentTransport, type AcpTransport } from "./stream";
 import { applySessionUpdate } from "./sessionUpdates";
-import type { AgentTimelineItem, PermissionPrompt, StartableBackend } from "./types";
+import type {
+  AgentPermissionMode,
+  AgentStartOptions,
+  AgentTimelineItem,
+  PermissionPrompt,
+  StartableBackend,
+} from "./types";
 
-export type { StartableBackend };
+export type { StartableBackend, AgentPermissionMode, AgentStartOptions };
 
 export interface AgentSessionHandle {
   backend: StartableBackend;
@@ -82,8 +88,10 @@ export class AgentBus {
     this.emit();
   }
 
-  async start(backend: StartableBackend, cwd: string) {
+  async start(backend: StartableBackend, cwd: string, options: AgentStartOptions = {}) {
     await this.stop();
+
+    const mode: AgentPermissionMode = options.mode ?? "standard";
 
     this.handle = {
       backend,
@@ -101,6 +109,8 @@ export class AgentBus {
       command: null,
       args: [],
       env: {},
+      providerId: options.providerId ?? null,
+      mode,
     });
     this.transport = transport;
     this.handle.transportSessionId = transport.sessionId;
@@ -160,6 +170,20 @@ export class AgentBus {
       const active = await connection.agent.buildSession(cwd).start();
       this.active = active;
       this.handle.acpSessionId = active.sessionId;
+
+      // Best-effort session mode mapping (agents may ignore unknown modes).
+      const modeId =
+        mode === "safe" ? "read-only" : mode === "unleashed" ? "full-access" : "default";
+      try {
+        await connection.agent.request(methods.agent.session.setMode, {
+          sessionId: active.sessionId,
+          modeId,
+        });
+        this.pushSystem(`Mode: ${mode} (${modeId})`);
+      } catch {
+        this.pushSystem(`Mode preset: ${mode} (agent set_mode unavailable)`);
+      }
+
       this.handle.status = "running";
       this.pushSystem(`Session ${active.sessionId}`);
       this.emit();

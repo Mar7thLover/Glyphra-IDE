@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { ipc, type AppSettings } from "@/lib/ipc/ipc";
 import { useUiStore, type Theme } from "@/lib/stores/uiStore";
 
+import ProvidersSection from "./ProvidersSection";
+
 const themeOptions: Theme[] = ["light", "dark"];
 const languageOptions: { value: AppSettings["language"]; label: string }[] = [
   { value: "en", label: "English" },
@@ -28,7 +30,7 @@ export default function SettingsPanel() {
   };
 
   return (
-    <div className="flex flex-col gap-5 px-4 py-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-2">
       <section className="rounded-xl border border-line bg-raised/55 p-3 shadow-sm">
         <div className="mb-3 flex items-center gap-2 text-xs font-medium text-ink-2">
           <Moon className="size-3.5" />
@@ -82,6 +84,8 @@ export default function SettingsPanel() {
           })}
         </div>
       </section>
+
+      <ProvidersSection />
     </div>
   );
 }

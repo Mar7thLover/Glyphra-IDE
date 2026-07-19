@@ -35,7 +35,17 @@
     "theme": "Theme",
     "language": "Language",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "providers": "Providers",
+    "providersHint": "API keys stay in the OS keyring. Custom endpoints must support the OpenAI Responses API (use OpenRouter or LiteLLM for DeepSeek/local).",
+    "providerName": "Display name",
+    "providerSecret": "API key (never shown again)",
+    "providerSave": "Save provider",
+    "providerTest": "Test",
+    "providersEmpty": "No providers yet.",
+    "secretStored": "key stored",
+    "secretMissing": "no key",
+    "loading": "Loading…"
   },
   "editor": {
     "save": "Save",
@@ -54,6 +64,11 @@
     "promptPlaceholder": "Steer the agent…",
     "send": "Send",
     "permissionTitle": "Permission required",
-    "permissionCancel": "Cancel"
+    "permissionCancel": "Cancel",
+    "providerNone": "No provider (CLI login / fixture)",
+    "modeSafe": "Safe · read-only",
+    "modeStandard": "Standard · agent",
+    "modeUnleashed": "Unleashed · full access",
+    "modeUnleashedWarn": "Unleashed mode bypasses edit approvals. Use with care."
   }
 }

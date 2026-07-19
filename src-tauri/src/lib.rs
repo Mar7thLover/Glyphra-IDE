@@ -1,7 +1,9 @@
 mod agent;
 mod ipc;
 mod perf;
+mod providers;
 mod state;
+mod vault;
 
 use std::sync::Arc;
 
@@ -36,7 +38,13 @@ pub fn run() {
             ipc::agent::agent_detect,
             ipc::agent::agent_spawn,
             ipc::agent::agent_write,
-            ipc::agent::agent_kill
+            ipc::agent::agent_kill,
+            ipc::providers::providers_list,
+            ipc::providers::providers_upsert,
+            ipc::providers::providers_remove,
+            ipc::providers::vault_probe,
+            ipc::providers::vault_clear,
+            ipc::providers::provider_test
         ])
         .setup(move |_app| {
             tracing::info!(

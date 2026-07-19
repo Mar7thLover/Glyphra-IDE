@@ -9,7 +9,10 @@ use tokio::{
 };
 use ts_rs::TS;
 
+use tauri::AppHandle;
+
 use super::framing::drain_lines;
+use crate::providers;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +23,10 @@ pub struct AgentSpawnRequest {
     pub command: Option<String>,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
+    /// Optional Glyphra provider id — secrets/CODEX_CONFIG injected at spawn.
+    pub provider_id: Option<String>,
+    /// Permission preset: `safe` | `standard` | `unleashed`.
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -52,6 +59,7 @@ impl AgentSupervisor {
 
     pub async fn spawn(
         self: &Arc<Self>,
+        app: &AppHandle,
         request: AgentSpawnRequest,
         channel: Channel<AgentIoEvent>,
     ) -> Result<u32, String> {
@@ -67,7 +75,22 @@ impl AgentSupervisor {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
-        for (key, value) in &request.env {
+        let mut env = request.env.clone();
+        if let Some(provider_id) = &request.provider_id {
+            let injected = providers::materialize_spawn_env(app, provider_id)?;
+            env.extend(injected);
+        }
+        if let Some(mode) = request.mode.as_deref() {
+            env.insert(
+                "INITIAL_AGENT_MODE".into(),
+                match mode {
+                    "safe" => "read-only".into(),
+                    "unleashed" => "agent-full-access".into(),
+                    _ => "agent".into(),
+                },
+            );
+        }
+        for (key, value) in &env {
             command.env(key, value);
         }
 

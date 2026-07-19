@@ -2,9 +2,10 @@ import { Bot, Loader2, Play, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { StartableBackend } from "@/lib/acp/types";
+import type { AgentPermissionMode, StartableBackend } from "@/lib/acp/types";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { useProviderStore } from "@/lib/stores/providerStore";
 
 import MessageList from "./MessageList";
 import PermissionModal from "./PermissionModal";
@@ -19,17 +20,24 @@ export default function AgentPanel() {
   const permission = useAgentStore((s) => s.permission);
   const busy = useAgentStore((s) => s.busy);
   const error = useAgentStore((s) => s.error);
+  const mode = useAgentStore((s) => s.mode);
+  const providerId = useAgentStore((s) => s.providerId);
   const detect = useAgentStore((s) => s.detect);
+  const setMode = useAgentStore((s) => s.setMode);
+  const setProviderId = useAgentStore((s) => s.setProviderId);
   const start = useAgentStore((s) => s.start);
   const prompt = useAgentStore((s) => s.prompt);
   const respondPermission = useAgentStore((s) => s.respondPermission);
   const stop = useAgentStore((s) => s.stop);
+  const providers = useProviderStore((s) => s.providers);
+  const refreshProviders = useProviderStore((s) => s.refresh);
   const [draft, setDraft] = useState("");
   const [backend, setBackend] = useState<StartableBackend>("fixture");
 
   useEffect(() => {
     void detect();
-  }, [detect]);
+    void refreshProviders();
+  }, [detect, refreshProviders]);
 
   const running = session?.status === "running" || session?.status === "busy";
   const canSend = session?.status === "running" && !busy;
@@ -52,6 +60,34 @@ export default function AgentPanel() {
           <option value="claude-acp">Claude ACP</option>
           <option value="pi-agent">Pi Agent</option>
         </select>
+        <select
+          value={providerId ?? ""}
+          onChange={(event) => setProviderId(event.target.value || null)}
+          disabled={running}
+          className="w-full rounded-lg border border-line bg-raised px-2 py-1.5 text-xs text-ink"
+        >
+          <option value="">{t("agent.providerNone")}</option>
+          {providers.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={mode}
+          onChange={(event) => setMode(event.target.value as AgentPermissionMode)}
+          disabled={running}
+          className="w-full rounded-lg border border-line bg-raised px-2 py-1.5 text-xs text-ink"
+        >
+          <option value="safe">{t("agent.modeSafe")}</option>
+          <option value="standard">{t("agent.modeStandard")}</option>
+          <option value="unleashed">{t("agent.modeUnleashed")}</option>
+        </select>
+        {mode === "unleashed" && (
+          <p className="rounded-md border border-danger/40 bg-danger/10 px-2 py-1 text-[11px] text-danger">
+            {t("agent.modeUnleashedWarn")}
+          </p>
+        )}
         <div className="flex gap-2">
           {!running ? (
             <button

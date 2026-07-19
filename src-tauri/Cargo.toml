@@ -25,6 +25,9 @@ thiserror = "2"
 ts-rs = { version = "11", features = ["serde-compat"] }
 notify = "8"
 sysinfo = "0.35"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native-sync-persistent"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-version = "0.1"
