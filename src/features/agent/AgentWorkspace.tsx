@@ -1,4 +1,4 @@
-import { Loader2, PanelRightClose, SendHorizontal } from "lucide-react";
+import { ArrowUpRight, Loader2, Plus, PanelRightClose } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,14 +12,13 @@ import { useUiStore } from "@/lib/stores/uiStore";
 import MessageList from "./MessageList";
 import PermissionModal from "./PermissionModal";
 
-export const AGENT_WIDTH = 360;
+export const AGENT_WIDTH = 380;
 
-const selectClass =
-  "h-6 max-w-full truncate border-0 bg-transparent py-0 pr-4 text-[11px] text-ink-2 outline-none hover:text-ink disabled:opacity-40";
+const pillSelect =
+  "h-6 max-w-[9rem] cursor-pointer appearance-none truncate rounded-full border border-line bg-raised/80 px-2.5 text-[11px] text-ink-2 outline-none hover:border-line-strong hover:text-ink disabled:opacity-40";
 
 /**
- * Independent right-hand Agent workspace.
- * Quiet chrome — steering only; editing stays in the center IDE.
+ * Right-hand Agent workspace — input-first, Cursor-like composer.
  */
 export default function AgentWorkspace() {
   const { t } = useTranslation();
@@ -27,7 +26,6 @@ export default function AgentWorkspace() {
   const setAgentOpen = useUiStore((s) => s.setAgentOpen);
 
   const current = useProjectStore((s) => s.current);
-  const backends = useAgentStore((s) => s.backends);
   const session = useAgentStore((s) => s.session);
   const items = useAgentStore((s) => s.items);
   const permission = useAgentStore((s) => s.permission);
@@ -57,7 +55,7 @@ export default function AgentWorkspace() {
   const canSend = session?.status === "running" && !busy;
   const sessionLabel =
     session?.agentName ??
-    (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.idleTitle"));
+    (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent"));
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -74,7 +72,10 @@ export default function AgentWorkspace() {
     }
   };
 
-  const knownBackends = backends.filter((b) => b.backend !== "custom-agent").slice(0, 4);
+  const startSession = () => {
+    if (!current || busy || running) return;
+    void start(backend, current.path);
+  };
 
   return (
     <motion.aside
@@ -84,22 +85,37 @@ export default function AgentWorkspace() {
       className="relative shrink-0 overflow-hidden border-l border-line bg-panel"
     >
       <div className="relative flex h-full flex-col" style={{ width: AGENT_WIDTH }}>
-        <header className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-[11px] font-medium tracking-wide text-ink-2">
-                {sessionLabel}
-              </span>
-              {running && (
-                <span
-                  className={`size-1.5 shrink-0 rounded-full ${
-                    session?.status === "busy" ? "bg-ink-3" : "bg-accent"
-                  }`}
-                  title={session?.status === "busy" ? t("agent.statusBusy") : t("agent.statusLive")}
-                />
+        <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
+          <button
+            type="button"
+            className="rounded-md px-2 py-1 text-[11px] font-medium text-ink"
+          >
+            {sessionLabel}
+          </button>
+          <div className="flex-1" />
+          {!running ? (
+            <button
+              type="button"
+              disabled={!current || busy}
+              onClick={startSession}
+              title={t("agent.start")}
+              className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-30"
+            >
+              {busy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Plus className="size-3.5" strokeWidth={1.6} />
               )}
-            </div>
-          </div>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void stop()}
+              className="px-1.5 text-[11px] text-ink-3 hover:text-ink-2"
+            >
+              {t("agent.stop")}
+            </button>
+          )}
           <button
             type="button"
             title={t("agent.toggleHide")}
@@ -110,130 +126,85 @@ export default function AgentWorkspace() {
           </button>
         </header>
 
-        <div className="flex shrink-0 items-center gap-0.5 border-b border-line px-2 py-1">
-          <select
-            value={backend}
-            onChange={(event) => setBackend(event.target.value as StartableBackend)}
-            disabled={running}
-            className={`${selectClass} min-w-0 flex-[1.2]`}
-            title={t("agent.fixture")}
-          >
-            <option value="fixture">{t("agent.fixtureShort")}</option>
-            <option value="codex-acp">Codex</option>
-            <option value="claude-acp">Claude</option>
-            <option value="pi-agent">Pi</option>
-          </select>
-          <select
-            value={providerId ?? ""}
-            onChange={(event) => setProviderId(event.target.value || null)}
-            disabled={running}
-            className={`${selectClass} min-w-0 flex-1`}
-          >
-            <option value="">{t("agent.providerNoneShort")}</option>
-            {providers.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={mode}
-            onChange={(event) => setMode(event.target.value as AgentPermissionMode)}
-            disabled={running}
-            className={`${selectClass} w-[4.5rem] shrink-0`}
-          >
-            <option value="safe">{t("agent.modeSafeShort")}</option>
-            <option value="standard">{t("agent.modeStandardShort")}</option>
-            <option value="unleashed">{t("agent.modeUnleashedShort")}</option>
-          </select>
-          {!running ? (
-            <button
-              type="button"
-              disabled={!current || busy}
-              onClick={() => current && void start(backend, current.path)}
-              className="ml-0.5 shrink-0 px-1.5 text-[11px] text-ink-2 transition-colors hover:text-ink disabled:opacity-35"
-            >
-              {busy ? <Loader2 className="size-3 animate-spin" /> : t("agent.start")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void stop()}
-              className="ml-0.5 shrink-0 px-1.5 text-[11px] text-ink-3 transition-colors hover:text-ink-2"
-            >
-              {t("agent.stop")}
-            </button>
-          )}
-        </div>
-
         {mode === "unleashed" && (
-          <div className="border-b border-line px-3 py-1.5 text-[11px] text-danger/90">
-            {t("agent.modeUnleashedWarn")}
-          </div>
+          <div className="px-3 py-1.5 text-[11px] text-danger/90">{t("agent.modeUnleashedWarn")}</div>
         )}
-        {error && (
-          <div className="border-b border-line px-3 py-1.5 text-[11px] text-danger">{error}</div>
-        )}
+        {error && <div className="px-3 py-1.5 text-[11px] text-danger">{error}</div>}
 
         <div className="min-h-0 flex-1">
           {items.length === 0 ? (
-            <div className="flex h-full flex-col px-4 pt-8">
-              <p className="text-[12px] leading-relaxed text-ink-3">{t("agent.emptyBody")}</p>
-              {!current && (
-                <p className="mt-3 text-[11px] text-ink-3/80">{t("agent.needProject")}</p>
-              )}
-              {knownBackends.length > 0 && (
-                <ul className="mt-6 space-y-1.5 border-t border-line pt-4">
-                  {knownBackends.map((item) => (
-                    <li
-                      key={item.backend}
-                      className="flex items-baseline justify-between gap-3 text-[11px]"
-                    >
-                      <span className="font-mono text-ink-2">{item.backend}</span>
-                      <span className={item.installed ? "text-ink-2" : "text-ink-3"}>
-                        {item.installed ? t("agent.installed") : t("agent.missing")}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+              <p className="max-w-[16rem] text-[12px] leading-relaxed text-ink-3">
+                {current ? t("agent.emptyBody") : t("agent.needProject")}
+              </p>
             </div>
           ) : (
             <MessageList items={items} />
           )}
         </div>
 
-        <form onSubmit={submit} className="shrink-0 border-t border-line">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            disabled={!canSend}
-            rows={2}
-            placeholder={
-              running ? t("agent.promptPlaceholder") : t("agent.promptNeedSession")
-            }
-            className="max-h-36 min-h-[3.25rem] w-full resize-none bg-transparent px-3 pt-2.5 text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-ink-3/70 disabled:opacity-45"
-          />
-          <div className="flex items-center gap-2 px-3 pb-2">
-            <span className="truncate font-mono text-[10px] text-ink-3">
-              {backend}
-              {providerId ? ` · ${providers.find((p) => p.id === providerId)?.name ?? ""}` : ""}
-            </span>
-            <div className="flex-1" />
-            <button
-              type="submit"
-              disabled={!canSend || !draft.trim()}
-              className="inline-flex items-center gap-1 text-[11px] text-ink-2 transition-colors hover:text-ink disabled:opacity-30"
-              title={t("agent.send")}
-            >
-              {busy ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <SendHorizontal className="size-3" strokeWidth={1.7} />
-              )}
-              {t("agent.send")}
-            </button>
+        <form onSubmit={submit} className="shrink-0 px-3 pb-3 pt-1">
+          <div className="rounded-2xl border border-line bg-raised shadow-[0_1px_0_rgba(0,0,0,0.02)] focus-within:border-line-strong">
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={onKeyDown}
+              disabled={!canSend}
+              rows={3}
+              placeholder={
+                running ? t("agent.promptPlaceholder") : t("agent.promptNeedSession")
+              }
+              className="max-h-40 min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
+            />
+            <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5">
+              <select
+                value={mode}
+                onChange={(event) => setMode(event.target.value as AgentPermissionMode)}
+                disabled={running}
+                className={pillSelect}
+                title={t("agent.modeStandard")}
+              >
+                <option value="safe">{t("agent.modeSafeShort")}</option>
+                <option value="standard">∞ {t("agent.modeStandardShort")}</option>
+                <option value="unleashed">{t("agent.modeUnleashedShort")}</option>
+              </select>
+              <select
+                value={backend}
+                onChange={(event) => setBackend(event.target.value as StartableBackend)}
+                disabled={running}
+                className={pillSelect}
+              >
+                <option value="fixture">{t("agent.fixtureShort")}</option>
+                <option value="codex-acp">Codex</option>
+                <option value="claude-acp">Claude</option>
+                <option value="pi-agent">Pi</option>
+              </select>
+              <select
+                value={providerId ?? ""}
+                onChange={(event) => setProviderId(event.target.value || null)}
+                disabled={running}
+                className={`${pillSelect} min-w-0 flex-1`}
+              >
+                <option value="">{t("agent.providerNoneShort")}</option>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={!canSend || !draft.trim()}
+                className="ml-auto grid size-7 place-items-center rounded-full bg-ink text-[var(--bg-raised)] transition-opacity disabled:opacity-25"
+                title={t("agent.send")}
+              >
+                {busy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <ArrowUpRight className="size-3.5" strokeWidth={1.8} />
+                )}
+              </button>
+            </div>
           </div>
         </form>
 

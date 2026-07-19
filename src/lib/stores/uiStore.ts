@@ -8,7 +8,9 @@ const AGENT_OPEN_KEY = "glyphra.agentOpen";
 
 function readAgentOpen(): boolean {
   const stored = localStorage.getItem(AGENT_OPEN_KEY);
-  if (stored === null) return true;
+  // Fresh installs start with Agent closed so the welcome home can breathe;
+  // opening a project (or the titlebar pill) turns it on.
+  if (stored === null) return false;
   return stored === "1";
 }
 

@@ -30,20 +30,21 @@
 }
 
 :root[data-theme="light"] {
-  --bg-app: #f4f4f7;
-  --bg-editor: #fbfbfd;
-  --bg-panel: #eeeef2;
+  /* Cursor-like cool gray canvas; accent reserved for primary actions. */
+  --bg-app: #f3f3f3;
+  --bg-editor: #ffffff;
+  --bg-panel: #f7f7f7;
   --bg-raised: #ffffff;
-  --ink-1: #1d1d24;
-  --ink-2: #5a5a66;
-  --ink-3: #90909c;
-  --line: rgba(22, 22, 34, 0.08);
-  --line-strong: rgba(22, 22, 34, 0.16);
-  --accent: #6a5cff;
-  --accent-hover: #5a4bf2;
+  --ink-1: #141414;
+  --ink-2: #5c5c5c;
+  --ink-3: #8a8a8a;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.14);
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
   --accent-ink: #ffffff;
-  --hov: rgba(22, 22, 34, 0.05);
-  --act: rgba(22, 22, 34, 0.09);
+  --hov: rgba(0, 0, 0, 0.04);
+  --act: rgba(0, 0, 0, 0.07);
 }
 
 :root[data-theme="dark"] {

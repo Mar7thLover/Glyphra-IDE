@@ -171,13 +171,15 @@ async function main() {
     await page.evaluateOnNewDocument(mockInit);
     await page.evaluateOnNewDocument(() => {
       localStorage.setItem("glyphra.onboarding.done", "1");
-      localStorage.setItem("glyphra.theme", "dark");
+      localStorage.setItem("glyphra.theme", "light");
       localStorage.setItem("glyphra.agentOpen", "1");
       localStorage.setItem("glyphra.lang", "zh-CN");
+      document.documentElement.dataset.theme = "light";
+      document.documentElement.dataset.mica = "false";
     });
 
     await page.goto(url, { waitUntil: "networkidle0", timeout: 60000 });
-    await wait(800);
+    await wait(1200);
 
     const openPath = path.join(outDir, "agent-workspace-open.png");
     await page.screenshot({ path: openPath, fullPage: false });

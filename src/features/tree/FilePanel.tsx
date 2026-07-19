@@ -1,6 +1,6 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronRight, FileCode2, Folder, FolderOpen, Loader2 } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 
@@ -37,15 +37,9 @@ export default function FilePanel() {
   const expandedList = useProjectStore((s) => s.expanded);
   const loading = useProjectStore((s) => s.loading);
   const error = useProjectStore((s) => s.error);
-  const recents = useProjectStore((s) => s.recents);
   const openProject = useProjectStore((s) => s.openProject);
-  const loadRecents = useProjectStore((s) => s.loadRecents);
   const toggleDirectory = useProjectStore((s) => s.toggleDirectory);
   const openFile = useEditorStore((s) => s.openFile);
-
-  useEffect(() => {
-    void loadRecents();
-  }, [loadRecents]);
 
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
   const rows = useMemo(() => flatten(entries, children, expanded), [children, entries, expanded]);
@@ -66,35 +60,16 @@ export default function FilePanel() {
           <FolderOpen className="size-3.5 text-ink-3" strokeWidth={1.6} />
           {t("empty.openFolder")}
         </button>
-        {recents.length > 0 && (
-          <div className="mt-4">
-            <div className="mb-1.5 px-1 text-[10px] uppercase tracking-[0.06em] text-ink-3">
-              {t("panel.recent")}
-            </div>
-            <div className="flex flex-col">
-              {recents.map((project) => (
-                <button
-                  key={project.path}
-                  type="button"
-                  onClick={() => void openProject(project.path)}
-                  className="rounded px-1 py-1.5 text-left transition-colors hover:bg-hover"
-                >
-                  <div className="truncate text-[11px] text-ink-2">{project.name}</div>
-                  <div className="truncate text-[10px] text-ink-3">{project.path}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-line px-4 pb-3">
-        <div className="truncate text-xs font-semibold text-ink">{current.name}</div>
-        <div className="truncate text-[10px] text-ink-3">{current.path}</div>
+      <div className="px-3 pb-2 pt-1">
+        <div className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-2">
+          {current.name}
+        </div>
       </div>
       {error && <div className="m-3 rounded-lg border border-danger/30 bg-danger/10 p-2 text-xs text-danger">{error}</div>}
       {loading && entries.length === 0 ? (

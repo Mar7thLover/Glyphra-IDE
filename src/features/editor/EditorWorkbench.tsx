@@ -34,12 +34,8 @@ export default function EditorWorkbench() {
 
   if (!active) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-1.5">
-        <div className="mb-4 grid size-14 place-items-center rounded-2xl bg-accent/12 text-accent">
-          <span className="text-2xl font-black tracking-tight">G</span>
-        </div>
-        <h1 className="text-lg font-semibold text-ink">{t("empty.title")}</h1>
-        <p className="text-xs text-ink-3">{t("empty.subtitle")}</p>
+      <div className="flex flex-1 flex-col items-center justify-center px-8">
+        <p className="text-[12px] text-ink-3">{t("editor.pickFile")}</p>
       </div>
     );
   }

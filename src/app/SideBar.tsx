@@ -36,9 +36,11 @@ export default function SideBar() {
       style={{ borderRight: open ? "1px solid var(--line)" : "none" }}
     >
       <div className="flex h-full flex-col" style={{ width: SIDEBAR_WIDTH }}>
-        <div className="flex h-9 shrink-0 items-center px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
-          {t(`panel.${panel}`)}
-        </div>
+        {panel !== "files" && (
+          <div className="flex h-9 shrink-0 items-center px-3 text-[11px] font-medium text-ink-3">
+            {t(`panel.${panel}`)}
+          </div>
+        )}
         {panel === "files" && <FilePanel />}
         {panel === "settings" && <SettingsPanel />}
         {panel === "search" && <Placeholder panel={panel} />}

@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useRef } from "react";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import { ipc } from "@/lib/ipc/ipc";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
+import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 import ActivityRail from "./ActivityRail";
@@ -29,7 +30,7 @@ function AgentSlot() {
   return (
     <Suspense
       fallback={
-        open ? <aside className="w-[360px] shrink-0 border-l border-line bg-panel" /> : null
+        open ? <aside className="w-[380px] shrink-0 border-l border-line bg-panel" /> : null
       }
     >
       <AgentWorkspace />
@@ -40,6 +41,7 @@ function AgentSlot() {
 export default function App() {
   const setMica = useUiStore((s) => s.setMica);
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
+  const hasProject = useProjectStore((s) => !!s.current);
   const booted = useRef(false);
 
   useEffect(() => {
@@ -74,8 +76,12 @@ export default function App() {
     <div className="relative flex h-full flex-col bg-app text-ink">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
-        <ActivityRail />
-        <SideBar />
+        {hasProject ? (
+          <>
+            <ActivityRail />
+            <SideBar />
+          </>
+        ) : null}
         <EditorArea />
         <AgentSlot />
       </div>

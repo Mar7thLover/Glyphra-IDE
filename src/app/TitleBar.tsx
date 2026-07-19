@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Bot, Copy, Minus, Square, X } from "lucide-react";
+import { ArrowUpRight, Copy, Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 const win = getCurrentWindow();
@@ -38,6 +39,7 @@ export default function TitleBar() {
   const agentOpen = useUiStore((s) => s.agentOpen);
   const toggleAgent = useUiStore((s) => s.toggleAgent);
   const openAgent = useUiStore((s) => s.openAgent);
+  const projectName = useProjectStore((s) => s.current?.name);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -55,28 +57,39 @@ export default function TitleBar() {
   return (
     <header
       data-tauri-drag-region
-      className="relative z-50 flex h-10 shrink-0 items-stretch border-b border-line"
+      className="relative z-50 flex h-10 shrink-0 items-stretch border-b border-line bg-editor/40"
     >
       <div data-tauri-drag-region className="flex items-center gap-2 pl-3.5 pr-2">
-        <div className="pointer-events-none size-2 rounded-sm bg-accent/80" />
         <span className="pointer-events-none text-[11px] font-medium tracking-wide text-ink-2">
           {t("app.name")}
         </span>
       </div>
-      <div data-tauri-drag-region className="flex-1" />
 
-      {/* Second Agent entry: quiet titlebar shortcut. */}
-      <div className="flex items-stretch pr-0.5">
+      {projectName ? (
+        <div
+          data-tauri-drag-region
+          className="pointer-events-none flex flex-1 items-center justify-center"
+        >
+          <span className="truncate text-[11px] text-ink-3">{projectName}</span>
+        </div>
+      ) : (
+        <div data-tauri-drag-region className="flex-1" />
+      )}
+
+      {/* Second Agent entry — titlebar pill, Cursor “Agents Window” energy. */}
+      <div className="flex items-center pr-1">
         <button
           type="button"
           title={agentOpen ? t("agent.toggleHide") : t("agent.toggleShow")}
           onClick={() => (agentOpen ? toggleAgent() : openAgent())}
-          className={`mx-0.5 my-1.5 flex items-center gap-1.5 px-1.5 text-[11px] transition-colors ${
-            agentOpen ? "text-ink" : "text-ink-3 hover:text-ink-2"
+          className={`my-1.5 inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-opacity ${
+            agentOpen
+              ? "bg-accent text-accent-ink"
+              : "bg-accent/90 text-accent-ink hover:bg-accent"
           }`}
         >
-          <Bot className="size-3.5" strokeWidth={1.5} />
-          <span className="hidden sm:inline">{t("agent.shortcut")}</span>
+          {t("agent.shortcutWindow")}
+          <ArrowUpRight className="size-3" strokeWidth={2} />
         </button>
       </div>
 
