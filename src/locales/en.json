@@ -36,5 +36,10 @@
     "language": "Language",
     "light": "Light",
     "dark": "Dark"
+  },
+  "editor": {
+    "save": "Save",
+    "truncatedBanner": "File is larger than 10MB; opened as a read-only preview without syntax highlighting.",
+    "longLinesBanner": "File contains very long lines; opened as a read-only preview without syntax highlighting."
   }
 }

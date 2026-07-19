@@ -2,7 +2,7 @@ import { gzipSync } from "node:zlib";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const limitKb = Number(process.env.GLYPHRA_JS_GZIP_LIMIT_KB ?? 400);
+const limitKb = Number(process.env.GLYPHRA_JS_GZIP_LIMIT_KB ?? 300);
 const assetsDir = join(process.cwd(), "dist", "assets");
 const entry = readdirSync(assetsDir).find((name) => /^index-.*\.js$/.test(name));
 

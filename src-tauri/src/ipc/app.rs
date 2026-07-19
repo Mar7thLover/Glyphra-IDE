@@ -24,12 +24,19 @@ pub fn app_ready(window: Window, launch: State<'_, Launch>) -> EnvInfo {
         elapsed_ms = launch.0.elapsed().as_millis() as u64
     );
 
+    let mica = mica_supported();
+    // Win10: strip Mica effects so the opaque CSS shell shows through.
+    #[cfg(windows)]
+    if !mica {
+        let _ = window.set_effects(None::<()>);
+    }
+
     let _ = window.show();
     let _ = window.set_focus();
 
     EnvInfo {
         os: std::env::consts::OS.into(),
-        mica: mica_supported(),
+        mica,
         version: env!("CARGO_PKG_VERSION").into(),
     }
 }

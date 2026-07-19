@@ -36,5 +36,10 @@
     "language": "语言",
     "light": "浅色",
     "dark": "深色"
+  },
+  "editor": {
+    "save": "保存",
+    "truncatedBanner": "文件超过 10MB，已以只读预览打开，并关闭语法高亮。",
+    "longLinesBanner": "文件包含超长行，已以只读预览打开，并关闭语法高亮。"
   }
 }

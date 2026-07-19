@@ -9,6 +9,7 @@ export interface EditorTab {
   savedContent: string;
   hash: string;
   truncated: boolean;
+  longLines: boolean;
   readOnly: boolean;
 }
 
@@ -47,6 +48,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const file = await ipc.fsRead(path);
+      const degrade = file.truncated || file.longLines;
       const tab: EditorTab = {
         path: file.path,
         name: basename(file.path),
@@ -54,7 +56,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         savedContent: file.content,
         hash: file.hash,
         truncated: file.truncated,
-        readOnly: file.readOnly || file.truncated,
+        longLines: file.longLines,
+        readOnly: file.readOnly || degrade,
       };
       set((state) => ({ tabs: [...state.tabs, tab], activePath: tab.path, loading: false }));
     } catch (error) {

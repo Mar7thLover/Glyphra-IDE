@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -23,5 +24,9 @@ export default defineConfig({
     // WebView2 is evergreen Chromium; keep a modern floor
     target: "chrome110",
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+  },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"],
   },
 });

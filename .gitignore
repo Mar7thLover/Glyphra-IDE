@@ -10,6 +10,7 @@ pnpm-debug.log*
 .vite/
 coverage/
 .smoke/
+.tmp/
 
 # editor / os
 .DS_Store
