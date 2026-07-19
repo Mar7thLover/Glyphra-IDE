@@ -2,12 +2,10 @@ import { Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
-import SettingsPanel from "@/features/settings/SettingsPanel";
 import FilePanel from "@/features/tree/FilePanel";
 import { useUiStore, type Panel } from "@/lib/stores/uiStore";
 
 export const SIDEBAR_WIDTH = 268;
-export const SETTINGS_WIDTH = 320;
 
 function Placeholder(_props: { panel: Extract<Panel, "search"> }) {
   const { t } = useTranslation();
@@ -22,29 +20,27 @@ function Placeholder(_props: { panel: Extract<Panel, "search"> }) {
   );
 }
 
-/** Left sidebar: explorer / search / settings only. Agent is on the right. */
+/** Left sidebar: explorer / search only. Settings is a separate page. */
 export default function SideBar() {
   const { t } = useTranslation();
   const open = useUiStore((s) => s.sidebarOpen);
   const panel = useUiStore((s) => s.activePanel);
-  const width = panel === "settings" ? SETTINGS_WIDTH : SIDEBAR_WIDTH;
 
   return (
     <motion.aside
       initial={false}
-      animate={{ width: open ? width : 0 }}
+      animate={{ width: open ? SIDEBAR_WIDTH : 0 }}
       transition={{ type: "spring", stiffness: 480, damping: 44 }}
       className="relative shrink-0 overflow-hidden bg-panel"
       style={{ borderRight: open ? "1px solid var(--line)" : "none" }}
     >
-      <div className="flex h-full flex-col" style={{ width }}>
-        {panel !== "files" && panel !== "settings" && (
+      <div className="flex h-full flex-col" style={{ width: SIDEBAR_WIDTH }}>
+        {panel !== "files" && (
           <div className="flex h-9 shrink-0 items-center px-3 text-[11px] font-medium text-ink-3">
             {t(`panel.${panel}`)}
           </div>
         )}
         {panel === "files" && <FilePanel />}
-        {panel === "settings" && <SettingsPanel />}
         {panel === "search" && <Placeholder panel={panel} />}
       </div>
     </motion.aside>

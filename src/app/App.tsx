@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef } from "react";
 
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
+import SettingsPage from "@/features/settings/SettingsPage";
 import { ipc } from "@/lib/ipc/ipc";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
@@ -44,8 +45,7 @@ export default function App() {
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const hasProject = useProjectStore((s) => !!s.current);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
-  const settingsChrome = useUiStore((s) => s.sidebarOpen && s.activePanel === "settings");
-  const showLeftChrome = hasProject || settingsChrome;
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
   const booted = useRef(false);
   const lastProjectPath = useRef<string | null>(null);
 
@@ -69,12 +69,17 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        if (useUiStore.getState().settingsOpen) return;
         e.preventDefault();
         useUiStore.getState().toggleAgent();
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault();
-        useUiStore.getState().togglePanel("settings");
+        useUiStore.getState().toggleSettings();
+      }
+      if (e.key === "Escape" && useUiStore.getState().settingsOpen) {
+        e.preventDefault();
+        useUiStore.getState().closeSettings();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -93,16 +98,20 @@ export default function App() {
   return (
     <div className="relative flex h-full flex-col bg-app text-ink">
       <TitleBar />
-      <div className="flex min-h-0 flex-1">
-        {showLeftChrome ? (
-          <>
-            <ActivityRail />
-            <SideBar />
-          </>
-        ) : null}
-        <EditorArea />
-        <AgentSlot />
-      </div>
+      {settingsOpen ? (
+        <SettingsPage />
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          {hasProject ? (
+            <>
+              <ActivityRail />
+              <SideBar />
+            </>
+          ) : null}
+          <EditorArea />
+          <AgentSlot />
+        </div>
+      )}
       <StatusBar />
       <OnboardingOverlay />
     </div>

@@ -126,7 +126,7 @@ export default function WelcomeHome() {
               <span className="text-line-strong">·</span>
               <button
                 type="button"
-                onClick={() => useUiStore.getState().togglePanel("settings")}
+                onClick={() => useUiStore.getState().openSettings()}
                 className="text-ink-3 hover:text-ink-2"
               >
                 {t("rail.settings")}

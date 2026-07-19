@@ -1,15 +1,13 @@
 import { create } from "zustand";
 
 export type Theme = "light" | "dark";
-/** Left sidebar panels only — Agent lives on the right. */
-export type Panel = "files" | "search" | "settings";
+/** Left sidebar panels — Settings is a separate full page. */
+export type Panel = "files" | "search";
 
 const AGENT_OPEN_KEY = "glyphra.agentOpen";
 
 function readAgentOpen(): boolean {
   const stored = localStorage.getItem(AGENT_OPEN_KEY);
-  // Fresh installs start with Agent closed so the welcome home can breathe;
-  // opening a project (or the titlebar pill) turns it on.
   if (stored === null) return false;
   return stored === "1";
 }
@@ -19,15 +17,18 @@ interface UiState {
   mica: boolean;
   activePanel: Panel;
   sidebarOpen: boolean;
-  /** Right-hand Agent workspace. Default open. */
   agentOpen: boolean;
+  /** Dedicated settings page (not a sidebar panel). */
+  settingsOpen: boolean;
   setTheme: (theme: Theme) => void;
   setMica: (mica: boolean) => void;
   togglePanel: (panel: Panel) => void;
   setAgentOpen: (open: boolean) => void;
   toggleAgent: () => void;
-  /** Open (or focus) the right Agent panel — used by the titlebar shortcut. */
   openAgent: () => void;
+  openSettings: () => void;
+  closeSettings: () => void;
+  toggleSettings: () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -36,6 +37,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   activePanel: "files",
   sidebarOpen: true,
   agentOpen: readAgentOpen(),
+  settingsOpen: false,
 
   setTheme: (theme) => {
     document.documentElement.dataset.theme = theme;
@@ -69,4 +71,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   openAgent: () => {
     get().setAgentOpen(true);
   },
+
+  openSettings: () => set({ settingsOpen: true }),
+  closeSettings: () => set({ settingsOpen: false }),
+  toggleSettings: () => set({ settingsOpen: !get().settingsOpen }),
 }));

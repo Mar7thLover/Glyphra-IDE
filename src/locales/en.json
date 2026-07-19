@@ -58,6 +58,7 @@
     "ready": "Ready"
   },
   "settings": {
+    "back": "Back",
     "nav": {
       "personal": "Personal",
       "models": "Models",

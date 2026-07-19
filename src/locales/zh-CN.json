@@ -58,6 +58,7 @@
     "ready": "就绪"
   },
   "settings": {
+    "back": "返回",
     "nav": {
       "personal": "个性化",
       "models": "模型",

@@ -35,13 +35,23 @@ function RailButton({ id, icon: Icon }: { id: Panel; icon: LucideIcon }) {
 }
 
 export default function ActivityRail() {
+  const { t } = useTranslation();
+  const openSettings = useUiStore((s) => s.openSettings);
+
   return (
     <nav className="flex w-12 shrink-0 flex-col items-center border-r border-line bg-panel pt-1">
       {mainItems.map((item) => (
         <RailButton key={item.id} {...item} />
       ))}
       <div className="flex-1" />
-      <RailButton id="settings" icon={Settings} />
+      <button
+        type="button"
+        title={t("rail.settings")}
+        onClick={openSettings}
+        className="flex h-11 w-full items-center justify-center text-ink-3 transition-colors hover:text-ink-2"
+      >
+        <Settings className="size-[18px]" strokeWidth={1.75} />
+      </button>
       <div className="h-1.5" />
     </nav>
   );
