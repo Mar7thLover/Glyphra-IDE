@@ -167,5 +167,36 @@
     "modeStandard": "标准 · Agent",
     "modeUnleashed": "放飞 · 完全访问",
     "modeUnleashedWarn": "放飞模式会绕过编辑审批，请谨慎使用。"
+  },
+  "review": {
+    "title": "审阅",
+    "turns": "回合",
+    "files": "个文件",
+    "empty": "还没有 Agent 回合。",
+    "pickFile": "选择变更文件以逐 hunk 审阅。",
+    "acceptFile": "保留文件",
+    "rejectFile": "还原文件",
+    "restoreTurn": "还原整个回合"
+  },
+  "search": {
+    "placeholder": "在项目中搜索…",
+    "hint": "输入关键字搜索工作区。",
+    "empty": "没有匹配结果。",
+    "needProject": "打开项目后即可搜索。"
+  },
+  "terminal": {
+    "title": "终端",
+    "needProject": "打开项目后即可使用终端。"
+  },
+  "palette": {
+    "title": "命令面板",
+    "placeholder": "输入命令…",
+    "empty": "没有匹配的命令。",
+    "groupNav": "导航",
+    "toggleAgent": "切换 Agent 面板",
+    "openSettings": "打开设置",
+    "openSearch": "在文件中搜索",
+    "toggleTerminal": "切换终端",
+    "openReview": "打开审阅"
   }
 }

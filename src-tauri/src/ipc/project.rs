@@ -6,12 +6,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 use ts_rs::TS;
 
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 
+use crate::gitx::checkpoints::CheckpointEngine;
 use crate::state::{AppState, RecentProject};
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -174,18 +177,27 @@ pub fn fs_read(path: String) -> Result<FileReadResult, String> {
 
 #[tauri::command]
 pub fn fs_write(
+    app: AppHandle,
+    engine: State<'_, Arc<CheckpointEngine>>,
     path: String,
     content: String,
     expected_hash: Option<String>,
 ) -> Result<FileWriteResult, String> {
     let path = canonical_write_target(&path)?;
+    // L1 preimage: capture disk bytes before the first agent/editor write in an active turn.
+    let _ = engine.preimage_for_path(&app, &path);
     if let Some(expected) = expected_hash {
-        let current = fs::read_to_string(&path)
-            .map_err(|err| format!("failed to read existing file: {err}"))?;
-        let current_hash = hash_text(&current);
-        if current_hash != expected {
-            return Err("file changed on disk; reload before saving".to_string());
+        if path.exists() {
+            let current = fs::read_to_string(&path)
+                .map_err(|err| format!("failed to read existing file: {err}"))?;
+            let current_hash = hash_text(&current);
+            if current_hash != expected {
+                return Err("file changed on disk; reload before saving".to_string());
+            }
         }
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("failed to create parent: {err}"))?;
     }
     fs::write(&path, &content).map_err(|err| format!("failed to write file: {err}"))?;
     Ok(FileWriteResult {

@@ -167,5 +167,36 @@
     "modeStandard": "Standard · agent",
     "modeUnleashed": "Unleashed · full access",
     "modeUnleashedWarn": "Unleashed mode bypasses edit approvals. Use with care."
+  },
+  "review": {
+    "title": "Review",
+    "turns": "Turns",
+    "files": "files",
+    "empty": "No agent turns yet.",
+    "pickFile": "Select a changed file to review hunks.",
+    "acceptFile": "Keep file",
+    "rejectFile": "Restore file",
+    "restoreTurn": "Restore entire turn"
+  },
+  "search": {
+    "placeholder": "Search in project…",
+    "hint": "Type to search across the workspace.",
+    "empty": "No matches.",
+    "needProject": "Open a project to search."
+  },
+  "terminal": {
+    "title": "Terminal",
+    "needProject": "Open a project to use the terminal."
+  },
+  "palette": {
+    "title": "Command palette",
+    "placeholder": "Type a command…",
+    "empty": "No matching commands.",
+    "groupNav": "Navigate",
+    "toggleAgent": "Toggle Agent panel",
+    "openSettings": "Open Settings",
+    "openSearch": "Search in files",
+    "toggleTerminal": "Toggle Terminal",
+    "openReview": "Open Review"
   }
 }

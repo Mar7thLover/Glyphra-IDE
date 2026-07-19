@@ -1,7 +1,11 @@
 pub mod agent;
 pub mod app;
+pub mod ckpt;
+pub mod git;
 pub mod project;
 pub mod providers;
+pub mod pty;
+pub mod search;
 pub mod settings;
 
 #[cfg(test)]
@@ -14,7 +18,13 @@ mod export_bindings {
         runtime::{RuntimeDetectInfo, ToolStatus},
         supervisor::{AgentIoEvent, AgentSpawnRequest},
     };
+    use crate::gitx::{
+        checkpoints::{CkptFileContents, CkptFileDiff, CkptTurnMeta},
+        cli::GitFileStatus,
+    };
     use crate::providers::{ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert};
+    use crate::pty::PtyEvent;
+    use crate::search::{SearchBatch, SearchHit};
     use crate::state::RecentProject;
     use ts_rs::TS;
 
@@ -38,5 +48,12 @@ mod export_bindings {
         ProviderRecord::export_all().expect("export ProviderRecord");
         ProviderUpsert::export_all().expect("export ProviderUpsert");
         ProviderTestResult::export_all().expect("export ProviderTestResult");
+        GitFileStatus::export_all().expect("export GitFileStatus");
+        CkptTurnMeta::export_all().expect("export CkptTurnMeta");
+        CkptFileDiff::export_all().expect("export CkptFileDiff");
+        CkptFileContents::export_all().expect("export CkptFileContents");
+        SearchHit::export_all().expect("export SearchHit");
+        SearchBatch::export_all().expect("export SearchBatch");
+        PtyEvent::export_all().expect("export PtyEvent");
     }
 }

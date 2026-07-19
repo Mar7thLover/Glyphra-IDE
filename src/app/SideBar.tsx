@@ -1,24 +1,11 @@
-import { Search } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
+import SearchPanel from "@/features/search/SearchPanel";
 import FilePanel from "@/features/tree/FilePanel";
 import { useUiStore, type Panel } from "@/lib/stores/uiStore";
 
 export const SIDEBAR_WIDTH = 268;
-
-function Placeholder(_props: { panel: Extract<Panel, "search"> }) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center text-xs text-ink-3">
-      <div className="grid size-10 place-items-center rounded-xl border border-line bg-raised/50 text-ink-2">
-        <Search className="size-5" strokeWidth={1.6} />
-      </div>
-      <p>{t("panel.comingSoon")}</p>
-    </div>
-  );
-}
 
 /** Left sidebar: explorer / search only. Settings is a separate page. */
 export default function SideBar() {
@@ -37,11 +24,11 @@ export default function SideBar() {
       <div className="flex h-full flex-col" style={{ width: SIDEBAR_WIDTH }}>
         {panel !== "files" && (
           <div className="flex h-9 shrink-0 items-center px-3 text-[11px] font-medium text-ink-3">
-            {t(`panel.${panel}`)}
+            {t(`panel.${panel}` as `panel.${Panel}`)}
           </div>
         )}
         {panel === "files" && <FilePanel />}
-        {panel === "search" && <Placeholder panel={panel} />}
+        {panel === "search" && <SearchPanel />}
       </div>
     </motion.aside>
   );

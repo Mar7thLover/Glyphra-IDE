@@ -1,0 +1,2 @@
+{"v":1,"kind":"meta","name":"edit-turn-review","description":"M2 fixture marker for an editing turn that should produce reviewable file diffs"}
+{"v":1,"kind":"note","text":"Review coverage is exercised via ckpt_* IPC + MergeEditor; agent edits go through fs_write L1 preimage."}

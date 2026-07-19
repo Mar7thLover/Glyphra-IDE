@@ -1,7 +1,9 @@
-import { Languages, Moon, Sun } from "lucide-react";
+import { GitPullRequestArrow, Languages, Moon, Sun, TerminalSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ipc } from "@/lib/ipc/ipc";
+import { useReviewStore } from "@/lib/stores/reviewStore";
+import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore, type Theme } from "@/lib/stores/uiStore";
 
 function persist(theme: Theme, language: string) {
@@ -13,6 +15,9 @@ export default function StatusBar() {
   const { t, i18n } = useTranslation();
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
+  const toggleTerminal = useTerminalStore((s) => s.toggle);
+  const openReview = useReviewStore((s) => s.openReview);
+  const turnCount = useReviewStore((s) => s.turns.length);
 
   const toggleLang = () => {
     const next = i18n.language === "zh-CN" ? "en" : "zh-CN";
@@ -32,6 +37,24 @@ export default function StatusBar() {
       <span className="text-ink-3">{t("app.prealpha")}</span>
       <span className="ml-1">{t("status.ready")}</span>
       <div className="flex-1" />
+      <button
+        type="button"
+        onClick={() => openReview()}
+        title={t("review.title")}
+        className="flex h-full items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
+      >
+        <GitPullRequestArrow className="size-3" />
+        {turnCount > 0 ? turnCount : t("review.title")}
+      </button>
+      <button
+        type="button"
+        onClick={() => toggleTerminal()}
+        title={t("terminal.title")}
+        className="flex h-full items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
+      >
+        <TerminalSquare className="size-3" />
+        {t("terminal.title")}
+      </button>
       <button
         onClick={toggleLang}
         title={t("settings.language")}

@@ -3,9 +3,13 @@ import { Suspense, lazy, useEffect, useRef } from "react";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import SettingsPage from "@/features/settings/SettingsPage";
 import { ipc } from "@/lib/ipc/ipc";
+import { useGitStore } from "@/lib/stores/gitStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
+import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { useReviewStore } from "@/lib/stores/reviewStore";
+import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 import ActivityRail from "./ActivityRail";
@@ -16,6 +20,7 @@ import StatusBar from "./StatusBar";
 import TitleBar from "./TitleBar";
 
 const AgentWorkspace = lazy(() => import("@/features/agent/AgentWorkspace"));
+const CommandPalette = lazy(() => import("@/features/palette/CommandPalette"));
 
 function applyBootSettings(theme: string, language: string) {
   if (theme === "light" || theme === "dark") {
@@ -78,9 +83,28 @@ export default function App() {
         e.preventDefault();
         useUiStore.getState().toggleSettings();
       }
-      if (e.key === "Escape" && useUiStore.getState().settingsOpen) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "`") {
         e.preventDefault();
-        useUiStore.getState().closeSettings();
+        useTerminalStore.getState().toggle();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        useUiStore.getState().togglePanel("search");
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        useReviewStore.getState().openReview();
+      }
+      if (e.key === "Escape") {
+        if (usePaletteStore.getState().open) {
+          e.preventDefault();
+          usePaletteStore.getState().setOpen(false);
+          return;
+        }
+        if (useUiStore.getState().settingsOpen) {
+          e.preventDefault();
+          useUiStore.getState().closeSettings();
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -92,6 +116,8 @@ export default function App() {
       if (usePrefsStore.getState().openAgentOnProject) {
         useUiStore.getState().openAgent();
       }
+      void useGitStore.getState().refresh(projectPath);
+      void useReviewStore.getState().refresh(projectPath);
     }
     lastProjectPath.current = projectPath;
   }, [projectPath]);
@@ -115,6 +141,9 @@ export default function App() {
       )}
       <StatusBar />
       <OnboardingOverlay />
+      <Suspense fallback={null}>
+        <CommandPalette />
+      </Suspense>
     </div>
   );
 }

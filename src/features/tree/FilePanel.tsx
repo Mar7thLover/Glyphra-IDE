@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import type { DirEntryInfo } from "@/lib/ipc/ipc";
 import { useEditorStore } from "@/lib/stores/editorStore";
+import { useGitStore } from "@/lib/stores/gitStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 
 interface TreeRow {
@@ -40,9 +41,13 @@ export default function FilePanel() {
   const openProject = useProjectStore((s) => s.openProject);
   const toggleDirectory = useProjectStore((s) => s.toggleDirectory);
   const openFile = useEditorStore((s) => s.openFile);
+  const statuses = useGitStore((s) => s.statuses);
+  const badgeFor = useGitStore((s) => s.badgeFor);
 
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
   const rows = useMemo(() => flatten(entries, children, expanded), [children, entries, expanded]);
+  // Touch statuses so badges re-render when git refresh completes.
+  void statuses;
 
   const pickFolder = async () => {
     const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
@@ -85,6 +90,7 @@ export default function FilePanel() {
             const isDirectory = entry.kind === "directory";
             const open = expanded.has(entry.path);
             const Icon = isDirectory ? (open ? FolderOpen : Folder) : FileCode2;
+            const badge = current ? badgeFor(current.path, entry.path) : null;
             return (
               <button
                 onClick={() => {
@@ -101,7 +107,10 @@ export default function FilePanel() {
                   strokeWidth={1.8}
                 />
                 <Icon className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.6} />
-                <span className="truncate">{entry.name}</span>
+                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                {badge && (
+                  <span className="shrink-0 font-mono text-[10px] text-accent">{badge}</span>
+                )}
               </button>
             );
           }}
