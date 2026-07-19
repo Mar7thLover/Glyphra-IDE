@@ -1,13 +1,6 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import {
-  Download,
-  FolderOpen,
-  Settings2,
-  Sparkles,
-  Terminal,
-  Wrench,
-} from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { Download, FolderOpen, Sparkles, Terminal } from "lucide-react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
@@ -15,72 +8,45 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProviderStore } from "@/lib/stores/providerStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
-function QuietBtn({
+function ActionTile({
   icon: Icon,
   label,
   onClick,
+  emphasis,
   disabled,
-  primary,
 }: {
   icon: typeof FolderOpen;
   label: string;
   onClick?: () => void;
+  emphasis?: boolean;
   disabled?: boolean;
-  primary?: boolean;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[11px] transition-colors ${
-        primary
+      className={`flex aspect-[1.4] flex-col items-center justify-center gap-2 rounded-xl border text-[12px] transition-colors ${
+        emphasis
           ? "border-ink bg-ink text-[var(--bg-raised)] hover:opacity-90"
           : disabled
-            ? "cursor-default border-line text-ink-3"
-            : "border-line text-ink-2 hover:border-line-strong hover:bg-hover hover:text-ink"
+            ? "cursor-default border-line bg-panel/40 text-ink-3"
+            : "border-line bg-panel/70 text-ink-2 hover:border-line-strong hover:bg-raised hover:text-ink"
       }`}
     >
-      <Icon className="size-3.5 opacity-80" strokeWidth={1.6} />
-      {label}
+      <Icon className="size-5" strokeWidth={1.5} />
+      <span>{label}</span>
     </button>
   );
 }
 
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
+function StatusDot({ ok }: { ok: boolean }) {
   return (
-    <section className="min-w-0">
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <h2 className="text-[11px] font-medium text-ink-3">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
+    <span className={`inline-block size-1.5 rounded-full ${ok ? "bg-accent" : "bg-ink-3/45"}`} />
   );
 }
 
-function StatusRow({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
-  const { t } = useTranslation();
-  return (
-    <div className="grid grid-cols-[14px_72px_1fr] items-baseline gap-x-1 py-[3px] text-[11px]">
-      <span className={`size-1.5 place-self-center rounded-full ${ok ? "bg-accent" : "bg-ink-3/45"}`} />
-      <span className="truncate text-ink-2">{label}</span>
-      <span className={`truncate ${ok ? "text-ink-3" : "text-ink-3/80"}`}>
-        {detail || (ok ? t("onboarding.found") : t("onboarding.missing"))}
-      </span>
-    </div>
-  );
-}
-
-/** Dense welcome: compact toolbar + multi-column lists. */
+/** Welcome: four primary tiles on the canvas; everything else lives in one panel. */
 export default function WelcomeHome() {
   const { t } = useTranslation();
   const recents = useProjectStore((s) => s.recents);
@@ -101,11 +67,6 @@ export default function WelcomeHome() {
     void refreshProviders();
   }, [loadRecents, refreshEnv, refreshProviders]);
 
-  const pickFolder = async () => {
-    const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
-    if (typeof dir === "string") await openProject(dir);
-  };
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
@@ -120,239 +81,167 @@ export default function WelcomeHome() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openProject, t]);
 
-  const agentRows = agents.filter((a) => a.backend !== "custom-agent").slice(0, 6);
-  const providerPreview = providers.slice(0, 4);
+  const pickFolder = async () => {
+    const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
+    if (typeof dir === "string") await openProject(dir);
+  };
+
+  const agentRows = agents.filter((a) => a.backend !== "custom-agent").slice(0, 4);
 
   return (
-    <div className="flex min-h-0 flex-1 justify-center overflow-y-auto bg-editor px-8 py-8">
-      <div className="flex w-full max-w-[760px] flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-[18px] font-semibold tracking-[0.12em] text-ink">
-              {t("app.name").toUpperCase()}
-            </h1>
-            <span className="text-[11px] text-ink-3">{t("home.tagline")}</span>
-            <span className="text-[10px] text-ink-3">{t("app.prealpha")}</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-2">
-            <button
-              type="button"
-              onClick={() => openOnboarding()}
-              className="inline-flex items-center gap-1 hover:text-ink"
-            >
-              <Wrench className="size-3" strokeWidth={1.6} />
-              {t("home.setup")}
-            </button>
-            <button
-              type="button"
-              onClick={() => useUiStore.getState().togglePanel("settings")}
-              className="inline-flex items-center gap-1 hover:text-ink"
-            >
-              <Settings2 className="size-3" strokeWidth={1.6} />
-              {t("rail.settings")}
-            </button>
-            <button
-              type="button"
-              onClick={openAgent}
-              className="inline-flex items-center gap-1 hover:text-ink"
-            >
-              <Sparkles className="size-3" strokeWidth={1.6} />
-              {t("home.openAgent")}
-            </button>
-          </div>
-        </header>
+    <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto bg-editor px-8 py-14">
+      <div className="w-full max-w-[440px]">
+        <h1 className="text-center text-[26px] font-semibold tracking-[0.16em] text-ink">
+          {t("app.name").toUpperCase()}
+        </h1>
 
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <QuietBtn
+        <div className="mt-9 grid grid-cols-2 gap-3">
+          <ActionTile
             icon={FolderOpen}
             label={t("home.openProject")}
             onClick={() => void pickFolder()}
           />
-          <QuietBtn icon={Download} label={t("home.cloneRepo")} disabled />
-          <QuietBtn icon={Terminal} label={t("home.connectSsh")} disabled />
-          <QuietBtn
+          <ActionTile icon={Download} label={t("home.cloneRepo")} disabled />
+          <ActionTile icon={Terminal} label={t("home.connectSsh")} disabled />
+          <ActionTile
             icon={Sparkles}
             label={t("home.openAgent")}
-            primary
+            emphasis
             onClick={openAgent}
           />
-          <span className="mx-1 h-4 w-px bg-line" />
-          <span className="text-[10px] text-ink-3">{t("home.soon")}:</span>
-          <span className="text-[10px] text-ink-3">{t("home.cloneRepo")}</span>
-          <span className="text-[10px] text-ink-3">·</span>
-          <span className="text-[10px] text-ink-3">{t("home.connectSsh")}</span>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-[1.15fr_0.95fr_0.9fr]">
-          <Section
-            title={t("home.recentProjects")}
-            action={
+        {/* Secondary content: one inset panel, not loose canvas chrome */}
+        <div className="mt-10 overflow-hidden rounded-xl border border-line bg-panel">
+          <div className="flex items-center justify-between border-b border-line px-3.5 py-2">
+            <span className="text-[11px] font-medium text-ink-2">{t("home.workspace")}</span>
+            <div className="flex items-center gap-2 text-[10px]">
               <button
                 type="button"
-                onClick={() => void pickFolder()}
-                className="text-[10px] text-ink-3 hover:text-ink-2"
+                onClick={() => openOnboarding()}
+                className="text-ink-3 hover:text-ink-2"
               >
-                {t("home.openProject")}
+                {t("home.setup")}
               </button>
-            }
-          >
-            {recents.length === 0 ? (
-              <p className="border-t border-line py-2 text-[11px] text-ink-3">{t("home.recentEmpty")}</p>
-            ) : (
-              <ul className="border-t border-line">
-                {recents.slice(0, 10).map((project) => (
-                  <li key={project.path} className="border-b border-line">
-                    <button
-                      type="button"
-                      onClick={() => void openProject(project.path)}
-                      className="flex w-full items-baseline gap-2 py-1.5 text-left hover:bg-hover"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
-                        {project.name}
-                      </span>
-                      <span className="max-w-[55%] truncate font-mono text-[10px] text-ink-3">
-                        {project.path}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section
-            title={t("home.environment")}
-            action={
+              <span className="text-line-strong">·</span>
+              <button
+                type="button"
+                onClick={() => useUiStore.getState().togglePanel("settings")}
+                className="text-ink-3 hover:text-ink-2"
+              >
+                {t("rail.settings")}
+              </button>
+              <span className="text-line-strong">·</span>
               <button
                 type="button"
                 onClick={() => void refreshEnv()}
-                className="text-[10px] text-ink-3 hover:text-ink-2"
+                className="text-ink-3 hover:text-ink-2"
               >
                 {envLoading ? t("settings.loading") : t("onboarding.recheck")}
               </button>
-            }
-          >
-            <div className="border-t border-line pt-1">
-              <StatusRow
-                label="Node"
-                ok={!!runtime?.node.installed}
-                detail={runtime?.node.version ?? undefined}
-              />
-              <StatusRow
-                label="Git"
-                ok={!!runtime?.git.installed}
-                detail={runtime?.git.version ?? undefined}
-              />
-              {agentRows.map((agent) => (
-                <StatusRow
-                  key={agent.backend}
-                  label={agent.backend}
-                  ok={agent.installed}
-                  detail={agent.detail ?? undefined}
-                />
-              ))}
-              {!runtime && agentRows.length === 0 && (
-                <p className="py-2 text-[11px] text-ink-3">{t("settings.loading")}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 divide-y divide-line sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            <div className="px-3.5 py-3">
+              <div className="mb-2 text-[10px] uppercase tracking-[0.06em] text-ink-3">
+                {t("home.recentProjects")}
+              </div>
+              {recents.length === 0 ? (
+                <p className="text-[11px] text-ink-3">{t("home.recentEmpty")}</p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {recents.slice(0, 6).map((project) => (
+                    <li key={project.path}>
+                      <button
+                        type="button"
+                        onClick={() => void openProject(project.path)}
+                        className="-mx-1 flex w-[calc(100%+0.5rem)] items-baseline gap-2 rounded px-1 py-1 text-left hover:bg-hover"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
+                          {project.name}
+                        </span>
+                        <span className="max-w-[48%] truncate font-mono text-[10px] text-ink-3">
+                          {project.path}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-          </Section>
 
-          <div className="space-y-5">
-            <Section
-              title={t("settings.providers")}
-              action={
-                <button
-                  type="button"
-                  onClick={() => useUiStore.getState().togglePanel("settings")}
-                  className="text-[10px] text-ink-3 hover:text-ink-2"
-                >
-                  {t("rail.settings")}
-                </button>
-              }
-            >
-              <div className="border-t border-line pt-1">
-                {providerPreview.length === 0 ? (
-                  <p className="py-2 text-[11px] text-ink-3">{t("settings.providersEmpty")}</p>
-                ) : (
-                  providerPreview.map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-baseline justify-between gap-2 py-[3px] text-[11px]"
-                    >
-                      <span className="truncate text-ink-2">{p.name}</span>
-                      <span className="truncate font-mono text-[10px] text-ink-3">
-                        {p.model || p.kind}
+            <div className="space-y-4 px-3.5 py-3">
+              <div>
+                <div className="mb-1.5 text-[10px] uppercase tracking-[0.06em] text-ink-3">
+                  {t("home.environment")}
+                </div>
+                <ul className="space-y-1">
+                  <li className="flex items-center gap-2 text-[11px]">
+                    <StatusDot ok={!!runtime?.node.installed} />
+                    <span className="w-14 text-ink-2">Node</span>
+                    <span className="truncate text-ink-3">{runtime?.node.version ?? "—"}</span>
+                  </li>
+                  <li className="flex items-center gap-2 text-[11px]">
+                    <StatusDot ok={!!runtime?.git.installed} />
+                    <span className="w-14 text-ink-2">Git</span>
+                    <span className="truncate text-ink-3">{runtime?.git.version ?? "—"}</span>
+                  </li>
+                  {agentRows.map((agent) => (
+                    <li key={agent.backend} className="flex items-center gap-2 text-[11px]">
+                      <StatusDot ok={agent.installed} />
+                      <span className="min-w-0 flex-1 truncate font-mono text-ink-2">
+                        {agent.backend}
                       </span>
-                    </div>
-                  ))
+                      <span className="truncate text-ink-3">
+                        {agent.detail ||
+                          (agent.installed ? t("onboarding.found") : t("onboarding.missing"))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <div className="mb-1.5 text-[10px] uppercase tracking-[0.06em] text-ink-3">
+                  {t("settings.providers")}
+                </div>
+                {providers.length === 0 ? (
+                  <p className="text-[11px] text-ink-3">{t("settings.providersEmpty")}</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {providers.slice(0, 3).map((p) => (
+                      <li key={p.id} className="flex items-baseline justify-between gap-2 text-[11px]">
+                        <span className="truncate text-ink-2">{p.name}</span>
+                        <span className="truncate font-mono text-[10px] text-ink-3">
+                          {p.model || p.kind}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
-            </Section>
 
-            <Section title={t("home.shortcuts")}>
-              <div className="flex flex-wrap gap-1.5 border-t border-line pt-2">
+              <div className="flex flex-wrap gap-1 border-t border-line pt-3">
                 {(
                   [
                     ["Ctrl+O", t("home.openProject")],
                     ["Ctrl+J", t("agent.shortcut")],
                     ["Ctrl+,", t("rail.settings")],
-                    ["Ctrl+B", t("home.toggleSidebar")],
                   ] as const
                 ).map(([key, label]) => (
                   <span
                     key={key}
-                    className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] text-ink-3"
+                    className="inline-flex items-center gap-1 rounded-md bg-raised/80 px-1.5 py-0.5 text-[10px] text-ink-3"
                   >
                     <kbd className="font-mono text-ink-2">{key}</kbd>
                     {label}
                   </span>
                 ))}
               </div>
-            </Section>
+            </div>
           </div>
         </div>
-
-        <section className="mt-6 border-t border-line pt-4">
-          <h2 className="mb-2 text-[11px] font-medium text-ink-3">{t("home.nextSteps")}</h2>
-          <ol className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-[11px] text-ink-2 sm:grid-cols-2">
-            <li className="flex gap-2">
-              <span className="w-4 shrink-0 text-ink-3">1.</span>
-              {t("home.stepOpen")}
-            </li>
-            <li className="flex gap-2">
-              <span className="w-4 shrink-0 text-ink-3">2.</span>
-              {t("home.stepAgent")}
-            </li>
-            <li className="flex gap-2">
-              <span className="w-4 shrink-0 text-ink-3">3.</span>
-              {t("home.stepProvider")}
-            </li>
-            <li className="flex gap-2">
-              <span className="w-4 shrink-0 text-ink-3">4.</span>
-              {t("home.stepSteer")}
-            </li>
-          </ol>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {(
-              [
-                t("home.tipReview"),
-                t("home.tipExplain"),
-                t("home.tipTest"),
-              ] as const
-            ).map((tip) => (
-              <button
-                key={tip}
-                type="button"
-                onClick={openAgent}
-                className="rounded border border-line px-2 py-1 text-[10px] text-ink-3 hover:border-line-strong hover:text-ink-2"
-              >
-                {tip}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <p className="mt-4 text-[10px] text-ink-3">{t("home.footerHint")}</p>
       </div>
     </div>
   );
