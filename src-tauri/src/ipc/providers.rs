@@ -9,7 +9,10 @@ pub fn providers_list(app: AppHandle) -> Result<Vec<ProviderRecord>, String> {
 }
 
 #[tauri::command]
-pub fn providers_upsert(app: AppHandle, provider: ProviderUpsert) -> Result<ProviderRecord, String> {
+pub fn providers_upsert(
+    app: AppHandle,
+    provider: ProviderUpsert,
+) -> Result<ProviderRecord, String> {
     providers::upsert(&app, provider)
 }
 

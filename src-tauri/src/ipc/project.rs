@@ -260,7 +260,9 @@ fn hash_text(text: &str) -> String {
 }
 
 fn has_long_line(content: &str) -> bool {
-    content.lines().any(|line| line.chars().count() > LONG_LINE_CHARS)
+    content
+        .lines()
+        .any(|line| line.chars().count() > LONG_LINE_CHARS)
 }
 
 fn canonical_dir(path: &str) -> Result<PathBuf, String> {

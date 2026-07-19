@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::PathBuf,
-    sync::Mutex,
-};
+use std::{fs, path::PathBuf, sync::Mutex};
 
 use keyring::Entry;
 use tauri::{AppHandle, Manager};
