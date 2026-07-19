@@ -1,17 +1,13 @@
-import { Bot, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { motion } from "motion/react";
-import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 
-import SettingsPanel from "@/features/settings/SettingsPanel";
 import FilePanel from "@/features/tree/FilePanel";
 import { useUiStore, type Panel } from "@/lib/stores/uiStore";
 
-const AgentPanel = lazy(() => import("@/features/agent/AgentPanel"));
-
 export const SIDEBAR_WIDTH = 268;
 
-function Placeholder(_props: { panel: Exclude<Panel, "settings" | "files" | "agent"> }) {
+function Placeholder(_props: { panel: Extract<Panel, "search"> }) {
   const { t } = useTranslation();
 
   return (
@@ -24,6 +20,7 @@ function Placeholder(_props: { panel: Exclude<Panel, "settings" | "files" | "age
   );
 }
 
+/** Left sidebar: explorer / search only. Settings is a separate page. */
 export default function SideBar() {
   const { t } = useTranslation();
   const open = useUiStore((s) => s.sidebarOpen);
@@ -38,22 +35,12 @@ export default function SideBar() {
       style={{ borderRight: open ? "1px solid var(--line)" : "none" }}
     >
       <div className="flex h-full flex-col" style={{ width: SIDEBAR_WIDTH }}>
-        <div className="flex h-9 shrink-0 items-center px-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-3">
-          {t(`panel.${panel}`)}
-        </div>
-        {panel === "files" && <FilePanel />}
-        {panel === "settings" && <SettingsPanel />}
-        {panel === "agent" && (
-          <Suspense
-            fallback={
-              <div className="flex flex-1 items-center justify-center text-ink-3">
-                <Bot className="size-4 animate-pulse" />
-              </div>
-            }
-          >
-            <AgentPanel />
-          </Suspense>
+        {panel !== "files" && (
+          <div className="flex h-9 shrink-0 items-center px-3 text-[11px] font-medium text-ink-3">
+            {t(`panel.${panel}`)}
+          </div>
         )}
+        {panel === "files" && <FilePanel />}
         {panel === "search" && <Placeholder panel={panel} />}
       </div>
     </motion.aside>

@@ -199,27 +199,21 @@ fn resolve_command(request: &AgentSpawnRequest) -> Result<(String, Vec<String>),
     match request.backend.as_str() {
         "codex-acp" => Ok((
             "npx".into(),
-            vec![
-                "-y".into(),
-                "@agentclientprotocol/codex-acp".into(),
-            ],
+            vec!["-y".into(), "@agentclientprotocol/codex-acp".into()],
         )),
         "claude-acp" => Ok((
             "npx".into(),
-            vec![
-                "-y".into(),
-                "@agentclientprotocol/claude-agent-acp".into(),
-            ],
+            vec!["-y".into(), "@agentclientprotocol/claude-agent-acp".into()],
         )),
-        "pi-agent" => Ok(("npx".into(), vec!["-y".into(), "@earendil-works/pi-coding-agent".into()])),
+        "pi-agent" => Ok((
+            "npx".into(),
+            vec!["-y".into(), "@earendil-works/pi-coding-agent".into()],
+        )),
         "fixture" => {
             let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../fixtures/replay-agent.mjs");
             if !script.exists() {
-                return Err(format!(
-                    "fixture agent missing at {}",
-                    script.display()
-                ));
+                return Err(format!("fixture agent missing at {}", script.display()));
             }
             Ok(("node".into(), vec![script.to_string_lossy().to_string()]))
         }

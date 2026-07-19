@@ -18,7 +18,7 @@ export default function OnboardingOverlay() {
   const refresh = useOnboardingStore((s) => s.refresh);
   const closeOnboarding = useOnboardingStore((s) => s.closeOnboarding);
   const openAgentPanel = () => {
-    useUiStore.setState({ activePanel: "agent", sidebarOpen: true });
+    useUiStore.getState().openAgent();
   };
 
   const os = runtime?.os ?? "linux";

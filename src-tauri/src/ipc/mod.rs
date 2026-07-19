@@ -14,9 +14,7 @@ mod export_bindings {
         runtime::{RuntimeDetectInfo, ToolStatus},
         supervisor::{AgentIoEvent, AgentSpawnRequest},
     };
-    use crate::providers::{
-        ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert,
-    };
+    use crate::providers::{ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert};
     use crate::state::RecentProject;
     use ts_rs::TS;
 
