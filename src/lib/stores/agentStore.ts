@@ -16,6 +16,8 @@ import type {
   StartableBackend,
 } from "@/lib/acp/types";
 import { ipc, type AgentDetectInfo } from "@/lib/ipc/ipc";
+import { useProjectStore } from "@/lib/stores/projectStore";
+import { useReviewStore } from "@/lib/stores/reviewStore";
 
 interface AgentState {
   backends: AgentDetectInfo[];
@@ -142,6 +144,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed) return;
     set({ busy: true, error: null });
+    const projectPath = useProjectStore.getState().current?.path ?? null;
+    let turnId: string | null = null;
+    if (projectPath) {
+      try {
+        const turn = await ipc.ckptBeginTurn(projectPath, trimmed.slice(0, 48));
+        turnId = turn.id;
+      } catch {
+        // Checkpoints are best-effort — continue the prompt without them.
+      }
+    }
     try {
       await agentBus.prompt(trimmed);
       set({ busy: false });
@@ -162,6 +174,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         busy: false,
         error: error instanceof Error ? error.message : String(error),
       });
+    } finally {
+      if (projectPath) {
+        try {
+          const meta = await ipc.ckptCommitTurn(projectPath, turnId);
+          useReviewStore.getState().ingestTurn(meta);
+        } catch {
+          // ignore commit failures
+        }
+      }
     }
   },
 

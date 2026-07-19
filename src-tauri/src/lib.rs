@@ -1,13 +1,19 @@
 mod agent;
+mod gitx;
 mod ipc;
 mod perf;
 mod providers;
+mod pty;
+mod search;
 mod state;
 mod vault;
 
 use std::sync::Arc;
 
 use agent::supervisor::AgentSupervisor;
+use gitx::checkpoints::CheckpointEngine;
+use pty::PtyManager;
+use search::SearchManager;
 
 pub fn run() {
     if std::env::args().any(|arg| arg == "--smoke") {
@@ -23,6 +29,9 @@ pub fn run() {
         .manage(perf::Launch(launch))
         .manage(state::AppState::default())
         .manage(Arc::new(AgentSupervisor::default()))
+        .manage(Arc::new(CheckpointEngine::default()))
+        .manage(Arc::new(SearchManager::default()))
+        .manage(Arc::new(PtyManager::default()))
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_ready,
             ipc::app::perf_mark,
@@ -46,6 +55,22 @@ pub fn run() {
             ipc::providers::vault_probe,
             ipc::providers::vault_clear,
             ipc::providers::provider_test,
+            ipc::git::git_status,
+            ipc::git::git_exec_readonly,
+            ipc::ckpt::ckpt_begin_turn,
+            ipc::ckpt::ckpt_preimage,
+            ipc::ckpt::ckpt_commit_turn,
+            ipc::ckpt::ckpt_list_turns,
+            ipc::ckpt::ckpt_file_contents,
+            ipc::ckpt::ckpt_restore_turn,
+            ipc::ckpt::ckpt_restore_file,
+            ipc::ckpt::ckpt_write_file,
+            ipc::search::search_start,
+            ipc::search::search_cancel,
+            ipc::pty::pty_open,
+            ipc::pty::pty_write,
+            ipc::pty::pty_resize,
+            ipc::pty::pty_close,
             ipc::sessions::session_list,
             ipc::sessions::session_save,
             ipc::sessions::session_load,
