@@ -11,6 +11,13 @@ import {
 import { ipc } from "@/lib/ipc/ipc";
 
 import { newArchiveId } from "./archive";
+import {
+  circuitMessage,
+  emptyCircuit,
+  recordCrash,
+  resetCircuit,
+  type CircuitState,
+} from "./circuit";
 import { openAgentTransport, type AcpTransport } from "./stream";
 import { applySessionUpdate } from "./sessionUpdates";
 import type {
@@ -37,6 +44,8 @@ export interface AgentSessionHandle {
   agentName?: string;
   /** Last stderr lines for crash diagnosis. */
   stderrTail: string[];
+  /** True when the crash circuit breaker has tripped. */
+  circuitOpen: boolean;
 }
 
 type Listener = (session: AgentSessionHandle) => void;
@@ -67,6 +76,7 @@ export class AgentBus {
   private unsubStderr: (() => void) | null = null;
   private unsubExit: (() => void) | null = null;
   private stderrTail: string[] = [];
+  private circuit: CircuitState = emptyCircuit();
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -80,6 +90,26 @@ export class AgentBus {
     return this.handle ? this.snapshot() : null;
   }
 
+  isCircuitOpen() {
+    return this.circuit.open;
+  }
+
+  getCircuit() {
+    return { ...this.circuit, crashTimes: [...this.circuit.crashTimes] };
+  }
+
+  /** Clear the crash circuit so the user can attempt another start. */
+  clearCircuit() {
+    this.circuit = resetCircuit();
+    if (this.handle) {
+      this.handle.circuitOpen = false;
+      if (this.handle.error?.startsWith("Circuit open:")) {
+        this.handle.error = undefined;
+      }
+      this.emit();
+    }
+  }
+
   private snapshot(): AgentSessionHandle {
     if (!this.handle) throw new Error("no session");
     return {
@@ -87,6 +117,7 @@ export class AgentBus {
       items: [...this.handle.items],
       permission: this.handle.permission ? { ...this.handle.permission } : null,
       stderrTail: [...this.handle.stderrTail],
+      circuitOpen: this.circuit.open,
     };
   }
 
@@ -106,6 +137,10 @@ export class AgentBus {
   }
 
   async start(backend: StartableBackend, cwd: string, options: AgentStartOptions = {}) {
+    if (this.circuit.open) {
+      throw new Error(circuitMessage(this.circuit) ?? "Circuit open");
+    }
+
     await this.stop();
 
     const mode: AgentPermissionMode = options.mode ?? "standard";
@@ -122,6 +157,7 @@ export class AgentBus {
       permission: null,
       status: "starting",
       stderrTail: [],
+      circuitOpen: false,
     };
     this.emit();
 
@@ -149,11 +185,19 @@ export class AgentBus {
         this.handle.status === "busy" || this.handle.status === "starting";
       this.handle.status = wasBusy ? "crashed" : "exited";
       this.handle.stderrTail = [...this.stderrTail];
-      this.pushSystem(
-        wasBusy
-          ? `Agent crashed (exit ${code}). Restart or browse past sessions.`
-          : `Agent exited (${code})`,
-      );
+      if (wasBusy) {
+        this.circuit = recordCrash(this.circuit);
+        this.handle.circuitOpen = this.circuit.open;
+        const trip = circuitMessage(this.circuit);
+        this.pushSystem(
+          trip
+            ? `Agent crashed (exit ${code}). ${trip}`
+            : `Agent crashed (exit ${code}). Restart or browse past sessions.`,
+        );
+        if (trip) this.handle.error = trip;
+      } else {
+        this.pushSystem(`Agent exited (${code})`);
+      }
       this.active = null;
       this.connection = null;
     });
@@ -293,24 +337,6 @@ export class AgentBus {
     }
   }
 
-  /** Cancel the in-flight prompt turn (ACP session/cancel). */
-  async cancel() {
-    if (!this.handle?.acpSessionId || !this.connection) return;
-    if (this.handle.permission) {
-      this.respondPermission("cancelled");
-    }
-    try {
-      await this.connection.agent.notify(methods.agent.session.cancel, {
-        sessionId: this.handle.acpSessionId,
-      });
-      this.pushSystem("Turn cancelled");
-    } catch (error) {
-      this.pushSystem(
-        `Cancel failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-
   respondPermission(optionId: string | "cancelled") {
     const permission = this.handle?.permission;
     if (!permission) return;
@@ -414,6 +440,7 @@ export class AgentBus {
         status: "exited",
         permission: null,
         stderrTail: [...this.stderrTail],
+        circuitOpen: this.circuit.open,
       };
       this.emit();
     }

@@ -188,6 +188,8 @@
     "sessionDismiss": "Dismiss",
     "promptReadonly": "Browsing an archive — press + to start a new session…",
     "crashed": "Agent process exited unexpectedly.",
+    "circuitOpen": "Circuit open — 3 crashes in 30s. Reset before restarting.",
+    "circuitReset": "Reset circuit",
     "permissionHint": "Y allow · N reject · A allow always · Esc cancel"
   },
   "review": {
