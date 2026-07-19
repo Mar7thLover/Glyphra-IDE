@@ -23,12 +23,21 @@
     "openFolder": "打开文件夹"
   },
   "home": {
+    "tagline": "阅读 · 审阅 · 驾驭",
     "openProject": "打开项目",
+    "openProjectHint": "本地文件夹",
     "cloneRepo": "克隆仓库",
     "connectSsh": "SSH 连接",
     "openAgent": "打开 Agent",
+    "openAgentHint": "右侧面板",
+    "soon": "即将推出",
+    "setup": "环境检测",
     "recentProjects": "最近项目",
-    "recentEmpty": "还没有最近项目。"
+    "recentEmpty": "还没有最近项目。",
+    "environment": "本机环境",
+    "shortcuts": "快捷键",
+    "toggleSidebar": "切换侧栏",
+    "footerHint": "Glyphra 不捆绑 agent CLI，按需安装即可。"
   },
   "titlebar": {
     "minimize": "最小化",
@@ -88,6 +97,9 @@
     "newAgent": "New Agent",
     "emptyTitle": "Agent",
     "emptyBody": "在此规划与驾驭。编辑仍在中间。",
+    "hintStart": "启动会话",
+    "hintMode": "权限模式",
+    "hintToggle": "切换此面板",
     "providerNoneShort": "无 Provider",
     "fixtureShort": "Fixture",
     "statusLive": "运行中",

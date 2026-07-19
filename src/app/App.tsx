@@ -43,6 +43,8 @@ export default function App() {
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const hasProject = useProjectStore((s) => !!s.current);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
+  const settingsChrome = useUiStore((s) => s.sidebarOpen && s.activePanel === "settings");
+  const showLeftChrome = hasProject || settingsChrome;
   const booted = useRef(false);
   const lastProjectPath = useRef<string | null>(null);
 
@@ -69,6 +71,10 @@ export default function App() {
         e.preventDefault();
         useUiStore.getState().toggleAgent();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        useUiStore.getState().togglePanel("settings");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -85,7 +91,7 @@ export default function App() {
     <div className="relative flex h-full flex-col bg-app text-ink">
       <TitleBar />
       <div className="flex min-h-0 flex-1">
-        {hasProject ? (
+        {showLeftChrome ? (
           <>
             <ActivityRail />
             <SideBar />

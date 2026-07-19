@@ -133,10 +133,24 @@ export default function AgentWorkspace() {
 
         <div className="min-h-0 flex-1">
           {items.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-              <p className="max-w-[16rem] text-[12px] leading-relaxed text-ink-3">
+            <div className="flex h-full flex-col px-4 pt-5">
+              <p className="text-[12px] leading-relaxed text-ink-3">
                 {current ? t("agent.emptyBody") : t("agent.needProject")}
               </p>
+              <ul className="mt-5 space-y-2 border-t border-line pt-4 text-[11px] text-ink-3">
+                <li className="flex justify-between gap-3">
+                  <span>{t("agent.hintStart")}</span>
+                  <kbd className="font-mono text-[10px]">+</kbd>
+                </li>
+                <li className="flex justify-between gap-3">
+                  <span>{t("agent.hintMode")}</span>
+                  <span className="text-ink-2">∞ Agent</span>
+                </li>
+                <li className="flex justify-between gap-3">
+                  <span>{t("agent.hintToggle")}</span>
+                  <kbd className="font-mono text-[10px]">Ctrl+J</kbd>
+                </li>
+              </ul>
             </div>
           ) : (
             <MessageList items={items} />

@@ -23,12 +23,21 @@
     "openFolder": "Open Folder"
   },
   "home": {
+    "tagline": "Read. Review. Steer.",
     "openProject": "Open project",
+    "openProjectHint": "Local folder",
     "cloneRepo": "Clone repo",
     "connectSsh": "Connect via SSH",
     "openAgent": "Open Agent",
+    "openAgentHint": "Right panel",
+    "soon": "Coming soon",
+    "setup": "Setup",
     "recentProjects": "Recent projects",
-    "recentEmpty": "No recent projects yet."
+    "recentEmpty": "No recent projects yet.",
+    "environment": "Environment",
+    "shortcuts": "Shortcuts",
+    "toggleSidebar": "Toggle sidebar",
+    "footerHint": "Glyphra never bundles agent CLIs — install only what you need."
   },
   "titlebar": {
     "minimize": "Minimize",
@@ -88,6 +97,9 @@
     "newAgent": "New Agent",
     "emptyTitle": "Agent",
     "emptyBody": "Plan and steer from here. Editing stays in the center.",
+    "hintStart": "Start a session",
+    "hintMode": "Permission mode",
+    "hintToggle": "Toggle this panel",
     "providerNoneShort": "No provider",
     "fixtureShort": "Fixture",
     "statusLive": "Live",
