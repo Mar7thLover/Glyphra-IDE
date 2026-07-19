@@ -16,6 +16,8 @@ export type { ProviderTestResult } from "./gen/ProviderTestResult";
 export type { ProviderUpsert } from "./gen/ProviderUpsert";
 export type { RecentProject } from "./gen/RecentProject";
 export type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
+export type { SessionArchive } from "./gen/SessionArchive";
+export type { SessionSummary } from "./gen/SessionSummary";
 export type { ToolStatus } from "./gen/ToolStatus";
 
 import type { AgentDetectInfo } from "./gen/AgentDetectInfo";
@@ -33,6 +35,8 @@ import type { ProviderTestResult } from "./gen/ProviderTestResult";
 import type { ProviderUpsert } from "./gen/ProviderUpsert";
 import type { RecentProject } from "./gen/RecentProject";
 import type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
+import type { SessionArchive } from "./gen/SessionArchive";
+import type { SessionSummary } from "./gen/SessionSummary";
 
 export const ipc = {
   appReady: () => invoke<EnvInfo>("app_ready"),
@@ -66,4 +70,12 @@ export const ipc = {
   vaultProbe: (id: string) => invoke<boolean>("vault_probe", { id }),
   vaultClear: (id: string) => invoke<void>("vault_clear", { id }),
   providerTest: (id: string) => invoke<ProviderTestResult>("provider_test", { id }),
+  sessionList: (projectPath: string) =>
+    invoke<SessionSummary[]>("session_list", { projectPath }),
+  sessionSave: (archive: SessionArchive) =>
+    invoke<SessionSummary>("session_save", { archive }),
+  sessionLoad: (projectPath: string, id: string) =>
+    invoke<SessionArchive>("session_load", { projectPath, id }),
+  sessionDelete: (projectPath: string, id: string) =>
+    invoke<void>("session_delete", { projectPath, id }),
 };

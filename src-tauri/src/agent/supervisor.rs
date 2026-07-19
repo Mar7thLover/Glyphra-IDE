@@ -11,7 +11,10 @@ use ts_rs::TS;
 
 use tauri::AppHandle;
 
-use super::framing::drain_lines;
+use super::{
+    framing::drain_lines,
+    job::{self, JobGuard},
+};
 use crate::providers;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -42,6 +45,8 @@ pub struct AgentIoEvent {
 struct LiveAgent {
     child: Child,
     stdin: ChildStdin,
+    /// Windows Job Object (KILL_ON_JOB_CLOSE); no-op guard elsewhere.
+    _job: JobGuard,
 }
 
 #[derive(Default)]
@@ -111,9 +116,22 @@ impl AgentSupervisor {
             .take()
             .ok_or_else(|| "missing agent stdin".to_string())?;
 
+        // Best-effort: orphans are still cleaned by kill_on_drop if job attach fails.
+        let job_guard = job::attach(&child).unwrap_or_else(|err| {
+            tracing::warn!(target: "agent", session_id, error = %err, "job attach failed");
+            JobGuard::detached()
+        });
+
         {
             let mut agents = self.agents.lock().await;
-            agents.insert(session_id, LiveAgent { child, stdin });
+            agents.insert(
+                session_id,
+                LiveAgent {
+                    child,
+                    stdin,
+                    _job: job_guard,
+                },
+            );
         }
 
         let supervisor = Arc::clone(self);

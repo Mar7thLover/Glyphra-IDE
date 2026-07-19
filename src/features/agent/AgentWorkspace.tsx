@@ -1,4 +1,4 @@
-import { ArrowUpRight, Loader2, Plus, PanelRightClose } from "lucide-react";
+import { ArrowUpRight, Loader2, Plus, PanelRightClose, Square } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,6 +12,7 @@ import { useUiStore } from "@/lib/stores/uiStore";
 
 import MessageList from "./MessageList";
 import PermissionModal from "./PermissionModal";
+import SessionList from "./SessionList";
 
 export const AGENT_WIDTH = 380;
 
@@ -34,13 +35,20 @@ export default function AgentWorkspace() {
   const error = useAgentStore((s) => s.error);
   const mode = useAgentStore((s) => s.mode);
   const providerId = useAgentStore((s) => s.providerId);
+  const archives = useAgentStore((s) => s.archives);
+  const viewingArchiveId = useAgentStore((s) => s.viewingArchiveId);
   const detect = useAgentStore((s) => s.detect);
   const setMode = useAgentStore((s) => s.setMode);
   const setProviderId = useAgentStore((s) => s.setProviderId);
   const start = useAgentStore((s) => s.start);
   const prompt = useAgentStore((s) => s.prompt);
+  const cancel = useAgentStore((s) => s.cancel);
   const respondPermission = useAgentStore((s) => s.respondPermission);
   const stop = useAgentStore((s) => s.stop);
+  const refreshArchives = useAgentStore((s) => s.refreshArchives);
+  const openArchive = useAgentStore((s) => s.openArchive);
+  const clearArchiveView = useAgentStore((s) => s.clearArchiveView);
+  const removeArchive = useAgentStore((s) => s.removeArchive);
   const providers = useProviderStore((s) => s.providers);
   const refreshProviders = useProviderStore((s) => s.refresh);
 
@@ -58,11 +66,18 @@ export default function AgentWorkspace() {
     setBackend(prefs.defaultBackend);
   }, [detect, refreshProviders, setMode, setProviderId]);
 
+  useEffect(() => {
+    if (current?.path) void refreshArchives(current.path);
+  }, [current?.path, refreshArchives]);
+
   const running = session?.status === "running" || session?.status === "busy";
+  const crashed = session?.status === "crashed";
   const canSend = session?.status === "running" && !busy;
-  const sessionLabel =
-    session?.agentName ??
-    (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent"));
+  const readOnly = Boolean(viewingArchiveId);
+  const sessionLabel = readOnly
+    ? (archives.find((entry) => entry.id === viewingArchiveId)?.title ?? t("agent.sessionArchive"))
+    : (session?.agentName ??
+      (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent")));
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
@@ -81,6 +96,7 @@ export default function AgentWorkspace() {
 
   const startSession = () => {
     if (!current || busy || running) return;
+    if (readOnly) clearArchiveView();
     void start(backend, current.path);
   };
 
@@ -93,9 +109,22 @@ export default function AgentWorkspace() {
     >
       <div className="relative flex h-full flex-col" style={{ width: AGENT_WIDTH }}>
         <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
+          <SessionList
+            archives={archives}
+            activeId={session?.archiveId ?? null}
+            viewingId={viewingArchiveId}
+            onOpen={(id) => {
+              if (!current) return;
+              void openArchive(current.path, id);
+            }}
+            onDelete={(id) => {
+              if (!current) return;
+              void removeArchive(current.path, id);
+            }}
+          />
           <button
             type="button"
-            className="rounded-md px-2 py-1 text-[11px] font-medium text-ink"
+            className="min-w-0 truncate rounded-md px-2 py-1 text-[11px] font-medium text-ink"
           >
             {sessionLabel}
           </button>
@@ -105,7 +134,7 @@ export default function AgentWorkspace() {
               type="button"
               disabled={!current || busy}
               onClick={startSession}
-              title={t("agent.start")}
+              title={crashed ? t("agent.restart") : t("agent.start")}
               className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-30"
             >
               {busy ? (
@@ -115,13 +144,25 @@ export default function AgentWorkspace() {
               )}
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => void stop()}
-              className="px-1.5 text-[11px] text-ink-3 hover:text-ink-2"
-            >
-              {t("agent.stop")}
-            </button>
+            <>
+              {busy && (
+                <button
+                  type="button"
+                  onClick={() => void cancel()}
+                  title={t("agent.cancel")}
+                  className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+                >
+                  <Square className="size-3 fill-current" strokeWidth={1.6} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void stop()}
+                className="px-1.5 text-[11px] text-ink-3 hover:text-ink-2"
+              >
+                {t("agent.stop")}
+              </button>
+            </>
           )}
           <button
             type="button"
@@ -135,6 +176,31 @@ export default function AgentWorkspace() {
 
         {mode === "unleashed" && (
           <div className="px-3 py-1.5 text-[11px] text-danger/90">{t("agent.modeUnleashedWarn")}</div>
+        )}
+        {readOnly && (
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-ink-3">
+            <span>{t("agent.sessionReadonly")}</span>
+            <button
+              type="button"
+              onClick={clearArchiveView}
+              className="text-ink-2 hover:text-ink"
+            >
+              {t("agent.sessionDismiss")}
+            </button>
+          </div>
+        )}
+        {crashed && (
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-danger/90">
+            <span>{t("agent.crashed")}</span>
+            <button
+              type="button"
+              disabled={!current || busy}
+              onClick={startSession}
+              className="text-ink-2 hover:text-ink"
+            >
+              {t("agent.restart")}
+            </button>
+          </div>
         )}
         {error && <div className="px-3 py-1.5 text-[11px] text-danger">{error}</div>}
 
@@ -173,7 +239,11 @@ export default function AgentWorkspace() {
               disabled={!canSend}
               rows={3}
               placeholder={
-                running ? t("agent.promptPlaceholder") : t("agent.promptNeedSession")
+                readOnly
+                  ? t("agent.promptReadonly")
+                  : running
+                    ? t("agent.promptPlaceholder")
+                    : t("agent.promptNeedSession")
               }
               className="max-h-40 min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
             />

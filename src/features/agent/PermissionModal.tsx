@@ -22,12 +22,24 @@ export default function PermissionModal({ prompt, onRespond }: PermissionModalPr
       if (index >= 0 && index < prompt.options.length) {
         onRespond(prompt.options[index]!.optionId);
       }
-      if (event.key.toLowerCase() === "y" && prompt.options[0]) {
-        onRespond(prompt.options[0].optionId);
+      if (event.key.toLowerCase() === "y") {
+        const allow =
+          prompt.options.find((option) => option.kind.startsWith("allow")) ?? prompt.options[0];
+        if (allow) onRespond(allow.optionId);
       }
       if (event.key.toLowerCase() === "n") {
         const reject = prompt.options.find((option) => option.kind.startsWith("reject"));
         onRespond(reject?.optionId ?? "cancelled");
+      }
+      if (event.key.toLowerCase() === "a") {
+        const always =
+          prompt.options.find(
+            (option) =>
+              option.kind === "allow_always" ||
+              option.kind.includes("always") ||
+              /always/i.test(option.name),
+          ) ?? prompt.options.find((option) => option.kind.startsWith("allow"));
+        if (always) onRespond(always.optionId);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -60,6 +72,7 @@ export default function PermissionModal({ prompt, onRespond }: PermissionModalPr
             {t("agent.permissionCancel")} <span className="font-mono">Esc</span>
           </button>
         </div>
+        <p className="mt-2 text-[10px] text-ink-3">{t("agent.permissionHint")}</p>
       </div>
     </div>
   );
