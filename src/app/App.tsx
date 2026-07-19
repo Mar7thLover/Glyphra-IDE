@@ -42,7 +42,9 @@ export default function App() {
   const setMica = useUiStore((s) => s.setMica);
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const hasProject = useProjectStore((s) => !!s.current);
+  const projectPath = useProjectStore((s) => s.current?.path ?? null);
   const booted = useRef(false);
+  const lastProjectPath = useRef<string | null>(null);
 
   useEffect(() => {
     if (booted.current) return;
@@ -71,6 +73,13 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    if (projectPath && projectPath !== lastProjectPath.current) {
+      useUiStore.getState().openAgent();
+    }
+    lastProjectPath.current = projectPath;
+  }, [projectPath]);
 
   return (
     <div className="relative flex h-full flex-col bg-app text-ink">

@@ -1,7 +1,6 @@
 import { create } from "zustand";
 
 import { ipc, type DirEntryInfo, type FsEvent, type ProjectInfo, type RecentProject } from "@/lib/ipc/ipc";
-import { useUiStore } from "@/lib/stores/uiStore";
 
 const WATCH_DEBOUNCE_MS = 300;
 
@@ -116,7 +115,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await get().stopWatcher();
       const current = await ipc.projectOpen(path);
       set({ current, loading: false });
-      useUiStore.getState().openAgent();
       await Promise.all([get().listCurrentRoot(), get().loadRecents()]);
 
       const watcherId = await ipc.fsWatchStart(current.path, (event) => {
