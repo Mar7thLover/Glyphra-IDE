@@ -1,7 +1,13 @@
 import { Languages, Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { useUiStore } from "@/lib/stores/uiStore";
+import { ipc } from "@/lib/ipc/ipc";
+import { useUiStore, type Theme } from "@/lib/stores/uiStore";
+
+function persist(theme: Theme, language: string) {
+  if (language !== "en" && language !== "zh-CN") return;
+  void ipc.settingsSet({ theme, language });
+}
 
 export default function StatusBar() {
   const { t, i18n } = useTranslation();
@@ -12,6 +18,13 @@ export default function StatusBar() {
     const next = i18n.language === "zh-CN" ? "en" : "zh-CN";
     void i18n.changeLanguage(next);
     localStorage.setItem("glyphra.lang", next);
+    persist(theme, next);
+  };
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    persist(next, i18n.language);
   };
 
   return (
@@ -30,7 +43,7 @@ export default function StatusBar() {
         {i18n.language === "zh-CN" ? "中文" : "EN"}
       </button>
       <button
-        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        onClick={toggleTheme}
         title={t("settings.theme")}
         className="flex h-full items-center rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
       >

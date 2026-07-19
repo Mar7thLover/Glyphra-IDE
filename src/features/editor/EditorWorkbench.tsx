@@ -1,5 +1,5 @@
 import { Loader2, Save, X } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useEditorStore } from "@/lib/stores/editorStore";
@@ -21,6 +21,17 @@ export default function EditorWorkbench() {
     useEditorStore.setState({ activePath: path, error: null });
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void saveActive();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [saveActive]);
+
   if (!active) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-1.5">
@@ -32,6 +43,12 @@ export default function EditorWorkbench() {
       </div>
     );
   }
+
+  const degradeReason = active.truncated
+    ? t("editor.truncatedBanner")
+    : active.longLines
+      ? t("editor.longLinesBanner")
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-editor">
@@ -70,16 +87,18 @@ export default function EditorWorkbench() {
           className="mr-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-ink-2 transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-          Save
+          {t("editor.save")}
         </button>
       </div>
       {error && <div className="border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
-      {active.truncated && (
-        <div className="border-b border-line bg-accent/10 px-3 py-2 text-xs text-accent">
-          File is larger than 10MB; opened as read-only preview.
-        </div>
+      {degradeReason && (
+        <div className="border-b border-line bg-accent/10 px-3 py-2 text-xs text-accent">{degradeReason}</div>
       )}
-      <CodeEditor tab={active} onChange={(content) => setContent(active.path, content)} />
+      <CodeEditor
+        tab={active}
+        onChange={(content) => setContent(active.path, content)}
+        onSave={() => void saveActive()}
+      />
     </div>
   );
 }

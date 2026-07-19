@@ -1,10 +1,10 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronRight, FileCode2, Folder, FolderOpen, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 
-import { ipc, type DirEntryInfo } from "@/lib/ipc/ipc";
+import type { DirEntryInfo } from "@/lib/ipc/ipc";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 
@@ -13,12 +13,17 @@ interface TreeRow {
   depth: number;
 }
 
-function flatten(entries: DirEntryInfo[], children: Map<string, DirEntryInfo[]>, expanded: Set<string>, depth = 0) {
+function flatten(
+  entries: DirEntryInfo[],
+  children: Record<string, DirEntryInfo[]>,
+  expanded: Set<string>,
+  depth = 0,
+) {
   const rows: TreeRow[] = [];
   for (const entry of entries) {
     rows.push({ entry, depth });
     if (entry.kind === "directory" && expanded.has(entry.path)) {
-      rows.push(...flatten(children.get(entry.path) ?? [], children, expanded, depth + 1));
+      rows.push(...flatten(children[entry.path] ?? [], children, expanded, depth + 1));
     }
   }
   return rows;
@@ -28,52 +33,26 @@ export default function FilePanel() {
   const { t } = useTranslation();
   const current = useProjectStore((s) => s.current);
   const entries = useProjectStore((s) => s.entries);
+  const children = useProjectStore((s) => s.children);
+  const expandedList = useProjectStore((s) => s.expanded);
   const loading = useProjectStore((s) => s.loading);
   const error = useProjectStore((s) => s.error);
   const recents = useProjectStore((s) => s.recents);
   const openProject = useProjectStore((s) => s.openProject);
   const loadRecents = useProjectStore((s) => s.loadRecents);
+  const toggleDirectory = useProjectStore((s) => s.toggleDirectory);
   const openFile = useEditorStore((s) => s.openFile);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [children, setChildren] = useState<Map<string, DirEntryInfo[]>>(new Map());
 
   useEffect(() => {
     void loadRecents();
   }, [loadRecents]);
 
-  useEffect(() => {
-    setExpanded(new Set());
-    setChildren(new Map());
-  }, [current?.path]);
-
+  const expanded = useMemo(() => new Set(expandedList), [expandedList]);
   const rows = useMemo(() => flatten(entries, children, expanded), [children, entries, expanded]);
 
   const pickFolder = async () => {
     const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
     if (typeof dir === "string") await openProject(dir);
-  };
-
-  const toggleDirectory = async (entry: DirEntryInfo) => {
-    if (entry.kind !== "directory") return;
-
-    if (expanded.has(entry.path)) {
-      setExpanded((prev) => {
-        const next = new Set(prev);
-        next.delete(entry.path);
-        return next;
-      });
-      return;
-    }
-
-    if (!children.has(entry.path)) {
-      const listed = await ipc.fsList(entry.path);
-      setChildren((prev) => {
-        const next = new Map(prev);
-        next.set(entry.path, listed);
-        return next;
-      });
-    }
-    setExpanded((prev) => new Set(prev).add(entry.path));
   };
 
   if (!current) {

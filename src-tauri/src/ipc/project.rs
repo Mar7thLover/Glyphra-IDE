@@ -47,6 +47,9 @@ pub struct FileReadResult {
     pub content: String,
     pub hash: String,
     pub truncated: bool,
+    /// True when any line exceeds the editor's safe threshold; frontend
+    /// opens the buffer read-only without language highlighting.
+    pub long_lines: bool,
     pub read_only: bool,
 }
 
@@ -139,28 +142,33 @@ pub fn fs_list(path: String) -> Result<Vec<DirEntryInfo>, String> {
     Ok(entries)
 }
 
+const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
+const LONG_LINE_CHARS: usize = 10_000;
+
 #[tauri::command]
 pub fn fs_read(path: String) -> Result<FileReadResult, String> {
     let path = canonical_file(&path)?;
     let metadata = fs::metadata(&path).map_err(|err| format!("failed to stat file: {err}"))?;
-    let max_bytes = 10 * 1024 * 1024;
-    let truncated = metadata.len() > max_bytes;
+    let truncated = metadata.len() > MAX_FILE_BYTES;
     let bytes = if truncated {
         fs::read(&path)
             .map_err(|err| format!("failed to read file: {err}"))?
             .into_iter()
-            .take(max_bytes as usize)
+            .take(MAX_FILE_BYTES as usize)
             .collect::<Vec<_>>()
     } else {
         fs::read(&path).map_err(|err| format!("failed to read file: {err}"))?
     };
     let content = String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8".to_string())?;
+    let long_lines = has_long_line(&content);
+    let degrade = truncated || long_lines;
     Ok(FileReadResult {
         path: path.to_string_lossy().to_string(),
         hash: hash_text(&content),
         content,
         truncated,
-        read_only: metadata.permissions().readonly(),
+        long_lines,
+        read_only: metadata.permissions().readonly() || degrade,
     })
 }
 
@@ -249,6 +257,10 @@ fn hash_text(text: &str) -> String {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+fn has_long_line(content: &str) -> bool {
+    content.lines().any(|line| line.chars().count() > LONG_LINE_CHARS)
 }
 
 fn canonical_dir(path: &str) -> Result<PathBuf, String> {
@@ -355,4 +367,17 @@ fn persist_recents(app: &AppHandle, state: &State<'_, AppState>) -> Result<(), S
     )
     .map_err(|err| format!("failed to serialize recents: {err}"))?;
     fs::write(path, data).map_err(|err| format!("failed to write recents: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_long_lines() {
+        let short = "hello\nworld\n";
+        assert!(!has_long_line(short));
+        let long = format!("{}\n", "汉".repeat(LONG_LINE_CHARS + 1));
+        assert!(has_long_line(&long));
+    }
 }

@@ -1,6 +1,13 @@
+mod agent;
 mod ipc;
 mod perf;
+mod providers;
 mod state;
+mod vault;
+
+use std::sync::Arc;
+
+use agent::supervisor::AgentSupervisor;
 
 pub fn run() {
     if std::env::args().any(|arg| arg == "--smoke") {
@@ -15,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(perf::Launch(launch))
         .manage(state::AppState::default())
+        .manage(Arc::new(AgentSupervisor::default()))
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_ready,
             ipc::app::perf_mark,
@@ -26,7 +34,17 @@ pub fn run() {
             ipc::project::fs_watch_start,
             ipc::project::fs_watch_stop,
             ipc::settings::settings_get,
-            ipc::settings::settings_set
+            ipc::settings::settings_set,
+            ipc::agent::agent_detect,
+            ipc::agent::agent_spawn,
+            ipc::agent::agent_write,
+            ipc::agent::agent_kill,
+            ipc::providers::providers_list,
+            ipc::providers::providers_upsert,
+            ipc::providers::providers_remove,
+            ipc::providers::vault_probe,
+            ipc::providers::vault_clear,
+            ipc::providers::provider_test
         ])
         .setup(move |_app| {
             tracing::info!(
