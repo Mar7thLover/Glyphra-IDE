@@ -11,7 +11,11 @@ use ts_rs::TS;
 
 use tauri::AppHandle;
 
-use super::framing::drain_lines;
+use super::{
+    framing::drain_lines,
+    job::{self, JobGuard},
+    recorder::{Direction, SessionRecorder},
+};
 use crate::providers;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -42,6 +46,9 @@ pub struct AgentIoEvent {
 struct LiveAgent {
     child: Child,
     stdin: ChildStdin,
+    /// Windows Job Object (KILL_ON_JOB_CLOSE); no-op guard elsewhere.
+    _job: JobGuard,
+    recorder: Option<Arc<SessionRecorder>>,
 }
 
 #[derive(Default)]
@@ -111,20 +118,39 @@ impl AgentSupervisor {
             .take()
             .ok_or_else(|| "missing agent stdin".to_string())?;
 
+        // Best-effort: orphans are still cleaned by kill_on_drop if job attach fails.
+        let job_guard = job::attach(&child).unwrap_or_else(|err| {
+            tracing::warn!(target: "agent", session_id, error = %err, "job attach failed");
+            JobGuard::detached()
+        });
+
+        let recorder =
+            SessionRecorder::maybe_from_env(app, session_id, &request.backend).map(Arc::new);
+
         {
             let mut agents = self.agents.lock().await;
-            agents.insert(session_id, LiveAgent { child, stdin });
+            agents.insert(
+                session_id,
+                LiveAgent {
+                    child,
+                    stdin,
+                    _job: job_guard,
+                    recorder: recorder.clone(),
+                },
+            );
         }
 
         let supervisor = Arc::clone(self);
         let out_channel = channel.clone();
+        let out_recorder = recorder.clone();
         tokio::spawn(async move {
-            pump_stdout(session_id, stdout, out_channel).await;
+            pump_stdout(session_id, stdout, out_channel, out_recorder).await;
         });
 
         let err_channel = channel.clone();
+        let err_recorder = recorder;
         tokio::spawn(async move {
-            pump_stderr(session_id, stderr, err_channel).await;
+            pump_stderr(session_id, stderr, err_channel, err_recorder).await;
         });
 
         let wait_supervisor = Arc::clone(&supervisor);
@@ -165,6 +191,9 @@ impl AgentSupervisor {
         } else {
             format!("{line}\n")
         };
+        if let Some(recorder) = &agent.recorder {
+            recorder.record(Direction::In, payload.trim_end_matches(['\r', '\n']));
+        }
         agent
             .stdin
             .write_all(payload.as_bytes())
@@ -210,12 +239,17 @@ fn resolve_command(request: &AgentSpawnRequest) -> Result<(String, Vec<String>),
             vec!["-y".into(), "@earendil-works/pi-coding-agent".into()],
         )),
         "fixture" => {
-            let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../fixtures/replay-agent.mjs");
+            let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+            let script = root.join("fixtures/replay-agent.mjs");
             if !script.exists() {
                 return Err(format!("fixture agent missing at {}", script.display()));
             }
-            Ok(("node".into(), vec![script.to_string_lossy().to_string()]))
+            let mut args = vec![script.to_string_lossy().to_string()];
+            let tape = root.join("fixtures/tapes/demo-edit-turn.jsonl");
+            if tape.exists() {
+                args.push(format!("--tape={}", tape.display()));
+            }
+            Ok(("node".into(), args))
         }
         "custom-agent" => Err("custom-agent requires an explicit command".into()),
         other => Err(format!("unknown agent backend: {other}")),
@@ -226,6 +260,7 @@ async fn pump_stdout(
     session_id: u32,
     stdout: impl tokio::io::AsyncRead + Unpin,
     channel: Channel<AgentIoEvent>,
+    recorder: Option<Arc<SessionRecorder>>,
 ) {
     let mut reader = BufReader::new(stdout);
     let mut pending = Vec::new();
@@ -235,6 +270,9 @@ async fn pump_stdout(
             Ok(0) => break,
             Ok(n) => {
                 for line in drain_lines(&mut pending, &buf[..n]) {
+                    if let Some(recorder) = &recorder {
+                        recorder.record(Direction::Out, &line);
+                    }
                     let _ = channel.send(AgentIoEvent {
                         session_id,
                         kind: "stdout".into(),
@@ -251,6 +289,7 @@ async fn pump_stderr(
     session_id: u32,
     stderr: impl tokio::io::AsyncRead + Unpin,
     channel: Channel<AgentIoEvent>,
+    recorder: Option<Arc<SessionRecorder>>,
 ) {
     let mut reader = BufReader::new(stderr);
     let mut line = String::new();
@@ -262,6 +301,9 @@ async fn pump_stderr(
                 let data = line.trim_end_matches(['\r', '\n']).to_string();
                 if data.is_empty() {
                     continue;
+                }
+                if let Some(recorder) = &recorder {
+                    recorder.record(Direction::Err, &data);
                 }
                 let _ = channel.send(AgentIoEvent {
                     session_id,

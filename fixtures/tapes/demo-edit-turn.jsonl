@@ -1,0 +1,10 @@
+{"v":1,"kind":"meta","name":"demo-edit-turn","description":"Deterministic plan → message → tool → permission → complete turn"}
+{"v":1,"kind":"update","t":0,"update":{"sessionUpdate":"plan","entries":[{"content":"Understand the request","status":"completed","priority":"high"},{"content":"Echo a reply","status":"in_progress","priority":"medium"},{"content":"Demo a permissioned edit","status":"pending","priority":"low"}]}}
+{"v":1,"kind":"update","t":20,"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Echo: **{{prompt}}**\n\n"}}}
+{"v":1,"kind":"update","t":40,"update":{"sessionUpdate":"tool_call","toolCallId":"call_read","title":"Reading workspace","kind":"read","status":"pending","locations":[{"path":"/tmp"}]}}
+{"v":1,"kind":"update","t":60,"update":{"sessionUpdate":"tool_call_update","toolCallId":"call_read","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Fixture workspace snapshot OK."}}]}}
+{"v":1,"kind":"update","t":80,"update":{"sessionUpdate":"tool_call","toolCallId":"call_edit","title":"Propose a demo edit","kind":"edit","status":"pending","locations":[{"path":"/tmp/glyphra-fixture.txt"}]}}
+{"v":1,"kind":"permission","t":100,"toolCall":{"toolCallId":"call_edit","title":"Propose a demo edit","kind":"edit","status":"pending","locations":[{"path":"/tmp/glyphra-fixture.txt"}]},"options":[{"kind":"allow_once","name":"Allow","optionId":"allow"},{"kind":"reject_once","name":"Reject","optionId":"reject"},{"kind":"allow_always","name":"Allow always","optionId":"allow_always"}]}
+{"v":1,"kind":"update","t":120,"update":{"sessionUpdate":"tool_call_update","toolCallId":"call_edit","status":"completed","rawOutput":{"ok":true}}}
+{"v":1,"kind":"update","t":140,"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Edit allowed — fixture turn complete."}}}
+{"v":1,"kind":"stop","t":160,"stopReason":"end_turn"}

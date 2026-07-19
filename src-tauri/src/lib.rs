@@ -45,7 +45,11 @@ pub fn run() {
             ipc::providers::providers_remove,
             ipc::providers::vault_probe,
             ipc::providers::vault_clear,
-            ipc::providers::provider_test
+            ipc::providers::provider_test,
+            ipc::sessions::session_list,
+            ipc::sessions::session_save,
+            ipc::sessions::session_load,
+            ipc::sessions::session_delete
         ])
         .setup(move |_app| {
             tracing::info!(

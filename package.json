@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:size": "node scripts/check-bundle-size.mjs",
-    "check:bindings": "node scripts/check-bindings-drift.mjs"
+    "check:bindings": "node scripts/check-bindings-drift.mjs",
+    "fixture:agent": "node fixtures/replay-agent.mjs --tape=fixtures/tapes/demo-edit-turn.jsonl"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",

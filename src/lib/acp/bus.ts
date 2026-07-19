@@ -10,6 +10,7 @@ import {
 
 import { ipc } from "@/lib/ipc/ipc";
 
+import { newArchiveId } from "./archive";
 import { openAgentTransport, type AcpTransport } from "./stream";
 import { applySessionUpdate } from "./sessionUpdates";
 import type {
@@ -24,11 +25,14 @@ export type { StartableBackend, AgentPermissionMode, AgentStartOptions };
 
 export interface AgentSessionHandle {
   backend: StartableBackend;
+  projectPath: string;
+  archiveId: string;
+  createdAt: number;
   transportSessionId: number;
   acpSessionId: string | null;
   items: AgentTimelineItem[];
   permission: PermissionPrompt | null;
-  status: "starting" | "running" | "busy" | "exited" | "error";
+  status: "starting" | "running" | "busy" | "exited" | "crashed" | "error";
   error?: string;
   agentName?: string;
 }
@@ -95,6 +99,9 @@ export class AgentBus {
 
     this.handle = {
       backend,
+      projectPath: cwd,
+      archiveId: newArchiveId(),
+      createdAt: Date.now(),
       transportSessionId: 0,
       acpSessionId: null,
       items: [],
@@ -118,8 +125,13 @@ export class AgentBus {
     this.unsubStderr = transport.onStderr((line) => this.pushSystem(line));
     this.unsubExit = transport.onExit((code) => {
       if (!this.handle) return;
-      this.handle.status = "exited";
-      this.pushSystem(`Agent exited (${code})`);
+      const wasBusy = this.handle.status === "busy" || this.handle.status === "starting";
+      this.handle.status = wasBusy ? "crashed" : "exited";
+      this.pushSystem(
+        wasBusy
+          ? `Agent crashed (${code}). You can restart or browse past sessions.`
+          : `Agent exited (${code})`,
+      );
       this.active = null;
       this.connection = null;
     });
@@ -251,6 +263,24 @@ export class AgentBus {
     if (this.handle) {
       this.handle.permission = null;
       this.emit();
+    }
+  }
+
+  /** Cancel the in-flight prompt turn (ACP `session/cancel`). */
+  async cancel() {
+    if (!this.handle?.acpSessionId || !this.connection) return;
+    if (this.handle.permission) {
+      this.respondPermission("cancelled");
+    }
+    try {
+      await this.connection.agent.notify(methods.agent.session.cancel, {
+        sessionId: this.handle.acpSessionId,
+      });
+      this.pushSystem("Turn cancelled");
+    } catch (error) {
+      this.pushSystem(
+        `Cancel failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
