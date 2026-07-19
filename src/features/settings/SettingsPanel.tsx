@@ -1,108 +1,59 @@
-import { Languages, Moon, Rocket, Sun } from "lucide-react";
+import { Bot, Code2, Info, KeyRound, Palette } from "lucide-react";
+import { useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ipc, type AppSettings } from "@/lib/ipc/ipc";
-import { useOnboardingStore } from "@/lib/stores/onboardingStore";
-import { useUiStore, type Theme } from "@/lib/stores/uiStore";
-
+import AboutSection from "./AboutSection";
+import AgentSection from "./AgentSection";
+import EditorSection from "./EditorSection";
+import PersonalSection from "./PersonalSection";
 import ProvidersSection from "./ProvidersSection";
 
-const themeOptions: Theme[] = ["light", "dark"];
-const languageOptions: { value: AppSettings["language"]; label: string }[] = [
-  { value: "en", label: "English" },
-  { value: "zh-CN", label: "简体中文" },
+type SettingsSectionId = "personal" | "models" | "editor" | "agent" | "about";
+
+const sections: {
+  id: SettingsSectionId;
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
+}[] = [
+  { id: "personal", icon: Palette },
+  { id: "models", icon: KeyRound },
+  { id: "editor", icon: Code2 },
+  { id: "agent", icon: Bot },
+  { id: "about", icon: Info },
 ];
 
-function persistSettings(theme: Theme, language: string) {
-  if (language !== "en" && language !== "zh-CN") return;
-  void ipc.settingsSet({ theme, language });
-}
-
 export default function SettingsPanel() {
-  const { t, i18n } = useTranslation();
-  const theme = useUiStore((s) => s.theme);
-  const setTheme = useUiStore((s) => s.setTheme);
-  const openOnboarding = useOnboardingStore((s) => s.openOnboarding);
-
-  const setLanguage = (lang: AppSettings["language"]) => {
-    if (lang === "system") return;
-    void i18n.changeLanguage(lang);
-    localStorage.setItem("glyphra.lang", lang);
-    persistSettings(theme, lang);
-  };
+  const { t } = useTranslation();
+  const [section, setSection] = useState<SettingsSectionId>("personal");
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-2">
-      <section className="rounded-xl border border-line bg-raised/55 p-3 shadow-sm">
-        <div className="mb-3 flex items-center gap-2 text-xs font-medium text-ink-2">
-          <Moon className="size-3.5" />
-          {t("settings.theme")}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {themeOptions.map((option) => {
-            const active = option === theme;
-            return (
-              <button
-                key={option}
-                onClick={() => {
-                  setTheme(option);
-                  persistSettings(option, i18n.language);
-                }}
-                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs transition-all ${
-                  active
-                    ? "border-accent bg-accent text-accent-ink shadow-sm"
-                    : "border-line bg-panel text-ink-2 hover:border-line-strong hover:text-ink"
-                }`}
-              >
-                {option === "dark" ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
-                {t(`settings.${option}`)}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <nav className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-line px-2 py-1.5">
+        {sections.map(({ id, icon: Icon }) => {
+          const active = id === section;
+          return (
+            <button
+              key={id}
+              type="button"
+              title={t(`settings.nav.${id}`)}
+              onClick={() => setSection(id)}
+              className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] transition-colors ${
+                active ? "bg-hover text-ink" : "text-ink-3 hover:text-ink-2"
+              }`}
+            >
+              <Icon className="size-3" strokeWidth={1.6} />
+              <span className="hidden min-[280px]:inline">{t(`settings.nav.${id}`)}</span>
+            </button>
+          );
+        })}
+      </nav>
 
-      <section className="rounded-xl border border-line bg-raised/55 p-3 shadow-sm">
-        <div className="mb-3 flex items-center gap-2 text-xs font-medium text-ink-2">
-          <Languages className="size-3.5" />
-          {t("settings.language")}
-        </div>
-        <div className="flex flex-col gap-2">
-          {languageOptions.map((option) => {
-            const active = option.value === i18n.language;
-            return (
-              <button
-                key={option.value}
-                onClick={() => setLanguage(option.value)}
-                className={`rounded-lg border px-3 py-2 text-left text-xs transition-all ${
-                  active
-                    ? "border-accent bg-accent/12 text-accent"
-                    : "border-line bg-panel text-ink-2 hover:border-line-strong hover:text-ink"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <ProvidersSection />
-
-      <section className="rounded-xl border border-line bg-raised/55 p-3 shadow-sm">
-        <div className="mb-3 flex items-center gap-2 text-xs font-medium text-ink-2">
-          <Rocket className="size-3.5" />
-          {t("settings.onboarding")}
-        </div>
-        <p className="mb-3 text-[11px] leading-relaxed text-ink-3">{t("settings.onboardingHint")}</p>
-        <button
-          type="button"
-          onClick={() => openOnboarding()}
-          className="rounded-lg border border-line bg-panel px-3 py-2 text-xs text-ink-2 transition-colors hover:border-accent hover:text-ink"
-        >
-          {t("settings.onboardingOpen")}
-        </button>
-      </section>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        {section === "personal" && <PersonalSection />}
+        {section === "models" && <ProvidersSection />}
+        {section === "editor" && <EditorSection />}
+        {section === "agent" && <AgentSection />}
+        {section === "about" && <AboutSection />}
+      </div>
     </div>
   );
 }

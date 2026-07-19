@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import type { AgentPermissionMode, StartableBackend } from "@/lib/acp/types";
 import { useAgentStore } from "@/lib/stores/agentStore";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProviderStore } from "@/lib/stores/providerStore";
 import { useUiStore } from "@/lib/stores/uiStore";
@@ -44,12 +45,18 @@ export default function AgentWorkspace() {
   const refreshProviders = useProviderStore((s) => s.refresh);
 
   const [draft, setDraft] = useState("");
-  const [backend, setBackend] = useState<StartableBackend>("fixture");
+  const [backend, setBackend] = useState<StartableBackend>(
+    () => usePrefsStore.getState().defaultBackend,
+  );
 
   useEffect(() => {
     void detect();
     void refreshProviders();
-  }, [detect, refreshProviders]);
+    const prefs = usePrefsStore.getState();
+    setMode(prefs.defaultMode);
+    setProviderId(prefs.defaultProviderId);
+    setBackend(prefs.defaultBackend);
+  }, [detect, refreshProviders, setMode, setProviderId]);
 
   const running = session?.status === "running" || session?.status === "busy";
   const canSend = session?.status === "running" && !busy;

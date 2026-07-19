@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useRef } from "react";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import { ipc } from "@/lib/ipc/ipc";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
@@ -82,7 +83,9 @@ export default function App() {
 
   useEffect(() => {
     if (projectPath && projectPath !== lastProjectPath.current) {
-      useUiStore.getState().openAgent();
+      if (usePrefsStore.getState().openAgentOnProject) {
+        useUiStore.getState().openAgent();
+      }
     }
     lastProjectPath.current = projectPath;
   }, [projectPath]);

@@ -1,10 +1,13 @@
-import { KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ProviderKind } from "@/lib/ipc/ipc";
 import { useProviderStore } from "@/lib/stores/providerStore";
 
+import { SettingsField, SettingsInput, SettingsSelect } from "./SettingsField";
+
+/** Models + API keys + subscription-backed providers. */
 export default function ProvidersSection() {
   const { t } = useTranslation();
   const providers = useProviderStore((s) => s.providers);
@@ -28,76 +31,72 @@ export default function ProvidersSection() {
     void refresh();
   }, [refresh]);
 
-  return (
-    <section className="rounded-xl border border-line bg-raised/55 p-3 shadow-sm">
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-ink-2">
-        <KeyRound className="size-3.5" />
-        {t("settings.providers")}
-      </div>
-      <p className="mb-3 text-[11px] leading-relaxed text-ink-3">{t("settings.providersHint")}</p>
+  const needsEndpoint = kind === "custom-openai" || kind === "openai-key";
+  const needsSecret = kind !== "codex-login" && kind !== "claude-subscription";
 
-      <div className="mb-3 flex flex-col gap-2">
-        <select
-          value={kind}
-          onChange={(event) => setKind(event.target.value as ProviderKind)}
-          className="rounded-lg border border-line bg-panel px-2 py-1.5 text-xs text-ink"
-        >
-          <option value="custom-openai">Custom OpenAI-compatible</option>
-          <option value="openai-key">OpenAI API key</option>
-          <option value="anthropic-key">Anthropic API key</option>
-          <option value="codex-login">Codex ChatGPT login</option>
-          <option value="claude-subscription">Claude subscription</option>
-        </select>
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={t("settings.providerName")}
-          className="rounded-lg border border-line bg-panel px-2 py-1.5 text-xs text-ink"
-        />
-        {(kind === "custom-openai" || kind === "openai-key") && (
+  return (
+    <div className="space-y-4">
+      <p className="text-[11px] leading-relaxed text-ink-3">{t("settings.providersHint")}</p>
+
+      <div className="space-y-2.5 rounded-lg border border-line p-2.5">
+        <div className="text-[10px] uppercase tracking-[0.06em] text-ink-3">
+          {t("settings.addProvider")}
+        </div>
+        <SettingsField label={t("settings.providerKind")}>
+          <SettingsSelect value={kind} onChange={(v) => setKind(v as ProviderKind)}>
+            <option value="custom-openai">{t("settings.kindCustomOpenai")}</option>
+            <option value="openai-key">{t("settings.kindOpenai")}</option>
+            <option value="anthropic-key">{t("settings.kindAnthropic")}</option>
+            <option value="codex-login">{t("settings.kindCodex")}</option>
+            <option value="claude-subscription">{t("settings.kindClaudeSub")}</option>
+          </SettingsSelect>
+        </SettingsField>
+        <SettingsField label={t("settings.providerName")}>
+          <SettingsInput value={name} onChange={(e) => setName(e.target.value)} />
+        </SettingsField>
+        {needsEndpoint && (
           <>
-            <input
-              value={baseUrl}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="base_url"
-              className="rounded-lg border border-line bg-panel px-2 py-1.5 text-xs text-ink"
-            />
-            <input
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              placeholder="model"
-              className="rounded-lg border border-line bg-panel px-2 py-1.5 text-xs text-ink"
-            />
+            <SettingsField label="base_url">
+              <SettingsInput value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+            </SettingsField>
+            <SettingsField label="model">
+              <SettingsInput value={model} onChange={(e) => setModel(e.target.value)} />
+            </SettingsField>
           </>
         )}
-        {kind !== "codex-login" && kind !== "claude-subscription" && (
-          <input
-            type="password"
-            value={secret}
-            onChange={(event) => setSecret(event.target.value)}
-            placeholder={t("settings.providerSecret")}
-            className="rounded-lg border border-line bg-panel px-2 py-1.5 text-xs text-ink"
-          />
+        {needsSecret && (
+          <SettingsField label={t("settings.providerSecret")}>
+            <SettingsInput
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+            />
+          </SettingsField>
         )}
-        <div className="flex gap-2">
+        {!needsSecret && (
+          <p className="text-[10px] leading-relaxed text-ink-3">{t("settings.subscriptionHint")}</p>
+        )}
+        <div className="flex gap-1.5 pt-0.5">
           <button
+            type="button"
             onClick={() =>
               void upsert({
                 kind,
                 name,
-                baseUrl: kind === "custom-openai" || kind === "openai-key" ? baseUrl : null,
-                model: kind === "custom-openai" || kind === "openai-key" ? model : null,
+                baseUrl: needsEndpoint ? baseUrl : null,
+                model: needsEndpoint ? model : null,
                 secret: secret || null,
               }).then(() => setSecret(""))
             }
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-accent px-2 py-1.5 text-xs font-medium text-accent-ink"
+            className="inline-flex h-7 flex-1 items-center justify-center gap-1 rounded-md bg-ink text-[11px] text-[var(--bg-raised)]"
           >
-            <Plus className="size-3.5" />
+            <Plus className="size-3" />
             {t("settings.providerSave")}
           </button>
           <button
+            type="button"
             onClick={() => void addOpenRouter()}
-            className="rounded-lg border border-line px-2 py-1.5 text-xs text-ink-2 hover:bg-hover"
+            className="h-7 rounded-md border border-line px-2 text-[11px] text-ink-2 hover:bg-hover"
           >
             OpenRouter
           </button>
@@ -105,55 +104,58 @@ export default function ProvidersSection() {
       </div>
 
       {loading && (
-        <div className="mb-2 flex items-center gap-1 text-[11px] text-ink-3">
+        <div className="flex items-center gap-1 text-[11px] text-ink-3">
           <Loader2 className="size-3 animate-spin" />
           {t("settings.loading")}
         </div>
       )}
-      {error && <p className="mb-2 text-[11px] text-danger">{error}</p>}
-      {testDetail && <p className="mb-2 text-[11px] text-ink-2">{testDetail}</p>}
+      {error && <p className="text-[11px] text-danger">{error}</p>}
+      {testDetail && <p className="text-[11px] text-ink-2">{testDetail}</p>}
 
-      <div className="flex flex-col gap-1.5">
-        {providers.map((provider) => (
-          <div
-            key={provider.id}
-            className="rounded-lg border border-line bg-panel px-2 py-1.5 text-[11px]"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-medium text-ink-2">{provider.name}</span>
-              <span className="text-ink-3">
-                {provider.hasSecret ? t("settings.secretStored") : t("settings.secretMissing")}
-              </span>
+      <div>
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.06em] text-ink-3">
+          {t("settings.savedProviders")}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {providers.map((provider) => (
+            <div key={provider.id} className="rounded-lg border border-line px-2.5 py-2 text-[11px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-medium text-ink-2">{provider.name}</span>
+                <span className="shrink-0 text-[10px] text-ink-3">
+                  {provider.hasSecret ? t("settings.secretStored") : t("settings.secretMissing")}
+                </span>
+              </div>
+              <div className="mt-0.5 truncate text-[10px] text-ink-3">
+                {provider.kind}
+                {provider.model ? ` · ${provider.model}` : ""}
+              </div>
+              <div className="mt-1.5 flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void test(provider.id)}
+                  className="rounded border border-line px-1.5 py-0.5 text-ink-2 hover:bg-hover"
+                >
+                  {testingId === provider.id ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    t("settings.providerTest")
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void remove(provider.id)}
+                  className="rounded border border-line px-1.5 py-0.5 text-ink-3 hover:text-danger"
+                >
+                  <Trash2 className="size-3" />
+                </button>
+              </div>
             </div>
-            <div className="truncate text-ink-3">
-              {provider.kind}
-              {provider.baseUrl ? ` · ${provider.baseUrl}` : ""}
-              {provider.model ? ` · ${provider.model}` : ""}
-            </div>
-            <div className="mt-1.5 flex gap-1.5">
-              <button
-                onClick={() => void test(provider.id)}
-                className="rounded border border-line px-1.5 py-0.5 text-ink-2 hover:bg-hover"
-              >
-                {testingId === provider.id ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  t("settings.providerTest")
-                )}
-              </button>
-              <button
-                onClick={() => void remove(provider.id)}
-                className="rounded border border-line px-1.5 py-0.5 text-ink-3 hover:text-danger"
-              >
-                <Trash2 className="size-3" />
-              </button>
-            </div>
-          </div>
-        ))}
-        {providers.length === 0 && !loading && (
-          <p className="text-[11px] text-ink-3">{t("settings.providersEmpty")}</p>
-        )}
+          ))}
+          {providers.length === 0 && !loading && (
+            <p className="text-[11px] text-ink-3">{t("settings.providersEmpty")}</p>
+          )}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
