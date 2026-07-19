@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI", monospace;
+}
+
+/* Map runtime-switchable app tokens to Tailwind utilities (bg-app, text-ink, …). */
+@theme inline {
+  --color-app: var(--bg-app);
+  --color-editor: var(--bg-editor);
+  --color-panel: var(--bg-panel);
+  --color-raised: var(--bg-raised);
+  --color-ink: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-hover: var(--hov);
+  --color-active: var(--act);
+  --color-danger: var(--danger);
+}
+
+:root {
+  color-scheme: light;
+  --danger: #e5484d;
+}
+
+:root[data-theme="light"] {
+  --bg-app: #f4f4f7;
+  --bg-editor: #fbfbfd;
+  --bg-panel: #eeeef2;
+  --bg-raised: #ffffff;
+  --ink-1: #1d1d24;
+  --ink-2: #5a5a66;
+  --ink-3: #90909c;
+  --line: rgba(22, 22, 34, 0.08);
+  --line-strong: rgba(22, 22, 34, 0.16);
+  --accent: #6a5cff;
+  --accent-hover: #5a4bf2;
+  --accent-ink: #ffffff;
+  --hov: rgba(22, 22, 34, 0.05);
+  --act: rgba(22, 22, 34, 0.09);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-app: #161619;
+  --bg-editor: #1c1c21;
+  --bg-panel: #19191d;
+  --bg-raised: #232329;
+  --ink-1: #e9e9ee;
+  --ink-2: #a5a5b0;
+  --ink-3: #70707c;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --accent: #8b7cff;
+  --accent-hover: #9c8fff;
+  --accent-ink: #ffffff;
+  --hov: rgba(255, 255, 255, 0.055);
+  --act: rgba(255, 255, 255, 0.1);
+}
+
+/* With Mica the OS supplies the backdrop: shell surfaces go translucent so the
+   material shows through. The editor surface stays near-opaque for legibility. */
+:root[data-mica="true"][data-theme="light"] {
+  --bg-app: rgba(244, 244, 247, 0.55);
+  --bg-panel: rgba(238, 238, 242, 0.38);
+  --bg-editor: rgba(251, 251, 253, 0.86);
+}
+
+:root[data-mica="true"][data-theme="dark"] {
+  --bg-app: rgba(18, 18, 21, 0.5);
+  --bg-panel: rgba(20, 20, 24, 0.36);
+  --bg-editor: rgba(28, 28, 33, 0.86);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  /* The window itself is transparent (Mica); the app root paints --bg-app. */
+  background: transparent;
+  color: var(--ink-1);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: -1px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-3) 32%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink-3) 55%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

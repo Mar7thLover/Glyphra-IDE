@@ -1,0 +1,40 @@
+{
+  "app": {
+    "name": "Glyphra",
+    "prealpha": "早期开发版"
+  },
+  "rail": {
+    "files": "资源管理器",
+    "search": "搜索",
+    "agent": "Agent",
+    "settings": "设置"
+  },
+  "panel": {
+    "files": "资源管理器",
+    "search": "搜索",
+    "agent": "Agent",
+    "settings": "设置",
+    "recent": "最近项目",
+    "comingSoon": "即将推出"
+  },
+  "empty": {
+    "title": "阅读 · 审阅 · 驾驭",
+    "subtitle": "打开一个文件夹,开始与你的 agent 协作。",
+    "openFolder": "打开文件夹"
+  },
+  "titlebar": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
+  "status": {
+    "ready": "就绪"
+  },
+  "settings": {
+    "theme": "主题",
+    "language": "语言",
+    "light": "浅色",
+    "dark": "深色"
+  }
+}

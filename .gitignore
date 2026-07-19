@@ -1,0 +1,19 @@
+# deps / build
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# logs / caches
+*.log
+pnpm-debug.log*
+.vite/
+coverage/
+.smoke/
+
+# editor / os
+.DS_Store
+Thumbs.db
+*.local
+.idea/
+.vscode/

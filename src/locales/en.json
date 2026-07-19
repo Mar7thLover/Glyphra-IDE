@@ -1,0 +1,40 @@
+{
+  "app": {
+    "name": "Glyphra",
+    "prealpha": "pre-alpha"
+  },
+  "rail": {
+    "files": "Explorer",
+    "search": "Search",
+    "agent": "Agent",
+    "settings": "Settings"
+  },
+  "panel": {
+    "files": "Explorer",
+    "search": "Search",
+    "agent": "Agent",
+    "settings": "Settings",
+    "recent": "Recent",
+    "comingSoon": "Coming soon"
+  },
+  "empty": {
+    "title": "Read. Review. Steer.",
+    "subtitle": "Open a folder to start working with your agent.",
+    "openFolder": "Open Folder"
+  },
+  "titlebar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "status": {
+    "ready": "Ready"
+  },
+  "settings": {
+    "theme": "Theme",
+    "language": "Language",
+    "light": "Light",
+    "dark": "Dark"
+  }
+}
