@@ -37,7 +37,15 @@
     "environment": "本机环境",
     "shortcuts": "快捷键",
     "toggleSidebar": "切换侧栏",
-    "footerHint": "Glyphra 不捆绑 agent CLI，按需安装即可。"
+    "footerHint": "Glyphra 不捆绑 agent CLI，按需安装即可。",
+    "nextSteps": "下一步",
+    "stepOpen": "打开一个本地项目文件夹",
+    "stepAgent": "在右侧面板启动 Agent 会话",
+    "stepProvider": "在设置里添加 Provider（可选）",
+    "stepSteer": "用对话驾驭 — 在中间 IDE 编辑文件",
+    "tipReview": "审阅这次改动",
+    "tipExplain": "解释当前文件",
+    "tipTest": "为改动补测试建议"
   },
   "titlebar": {
     "minimize": "最小化",

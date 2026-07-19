@@ -312,7 +312,47 @@ export default function WelcomeHome() {
           </div>
         </div>
 
-        <p className="mt-6 text-[10px] text-ink-3">{t("home.footerHint")}</p>
+        <section className="mt-6 border-t border-line pt-4">
+          <h2 className="mb-2 text-[11px] font-medium text-ink-3">{t("home.nextSteps")}</h2>
+          <ol className="grid grid-cols-1 gap-x-6 gap-y-1.5 text-[11px] text-ink-2 sm:grid-cols-2">
+            <li className="flex gap-2">
+              <span className="w-4 shrink-0 text-ink-3">1.</span>
+              {t("home.stepOpen")}
+            </li>
+            <li className="flex gap-2">
+              <span className="w-4 shrink-0 text-ink-3">2.</span>
+              {t("home.stepAgent")}
+            </li>
+            <li className="flex gap-2">
+              <span className="w-4 shrink-0 text-ink-3">3.</span>
+              {t("home.stepProvider")}
+            </li>
+            <li className="flex gap-2">
+              <span className="w-4 shrink-0 text-ink-3">4.</span>
+              {t("home.stepSteer")}
+            </li>
+          </ol>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {(
+              [
+                t("home.tipReview"),
+                t("home.tipExplain"),
+                t("home.tipTest"),
+              ] as const
+            ).map((tip) => (
+              <button
+                key={tip}
+                type="button"
+                onClick={openAgent}
+                className="rounded border border-line px-2 py-1 text-[10px] text-ink-3 hover:border-line-strong hover:text-ink-2"
+              >
+                {tip}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <p className="mt-4 text-[10px] text-ink-3">{t("home.footerHint")}</p>
       </div>
     </div>
   );

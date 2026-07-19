@@ -37,7 +37,15 @@
     "environment": "Environment",
     "shortcuts": "Shortcuts",
     "toggleSidebar": "Toggle sidebar",
-    "footerHint": "Glyphra never bundles agent CLIs — install only what you need."
+    "footerHint": "Glyphra never bundles agent CLIs — install only what you need.",
+    "nextSteps": "Next steps",
+    "stepOpen": "Open a local project folder",
+    "stepAgent": "Start an Agent session from the right panel",
+    "stepProvider": "Add a provider key in Settings (optional)",
+    "stepSteer": "Steer with chat — edit files in the center IDE",
+    "tipReview": "Review this diff",
+    "tipExplain": "Explain the selected file",
+    "tipTest": "Suggest tests for the change"
   },
   "titlebar": {
     "minimize": "Minimize",
