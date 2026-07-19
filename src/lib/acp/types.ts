@@ -1,5 +1,7 @@
 export type AgentBackendKind = "codex-acp" | "claude-acp" | "pi-agent" | "custom-agent";
 
+export type StartableBackend = AgentBackendKind | "fixture";
+
 export type CustomAgentProtocol = "acp" | "stdio-jsonl" | "shell-command";
 
 export interface CustomAgentHarness {
@@ -45,3 +47,39 @@ export const builtinAgentBackends: AgentBackendDescriptor[] = [
     detail: "Any ACP/stdio-jsonl/shell-command coding agent harness.",
   },
 ];
+
+export type ToolCallStatus = "pending" | "in_progress" | "completed" | "failed";
+
+export type AgentTimelineItem =
+  | { id: string; kind: "user"; text: string; at: number }
+  | { id: string; kind: "assistant"; text: string; at: number }
+  | { id: string; kind: "system"; text: string; at: number }
+  | {
+      id: string;
+      kind: "tool";
+      toolCallId: string;
+      title: string;
+      status: ToolCallStatus | string;
+      toolKind?: string;
+      detail?: string;
+      at: number;
+    }
+  | {
+      id: string;
+      kind: "plan";
+      entries: { content: string; status: string }[];
+      at: number;
+    };
+
+export interface PermissionOption {
+  optionId: string;
+  name: string;
+  kind: string;
+}
+
+export interface PermissionPrompt {
+  id: string;
+  title: string;
+  toolCallId?: string;
+  options: PermissionOption[];
+}

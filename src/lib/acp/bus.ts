@@ -1,51 +1,100 @@
-import type { AgentBackendKind } from "./types";
-import { openAgentTransport, type AcpTransport } from "./stream";
+import {
+  PROTOCOL_VERSION,
+  client,
+  methods,
+  type ActiveSession,
+  type ClientConnection,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+} from "@agentclientprotocol/sdk";
 
-export interface AgentBusMessage {
-  role: "assistant" | "system" | "user";
-  text: string;
-  at: number;
-}
+import { ipc } from "@/lib/ipc/ipc";
+
+import { openAgentTransport, type AcpTransport } from "./stream";
+import { applySessionUpdate } from "./sessionUpdates";
+import type { AgentTimelineItem, PermissionPrompt, StartableBackend } from "./types";
+
+export type { StartableBackend };
 
 export interface AgentSessionHandle {
-  backend: AgentBackendKind | "fixture";
-  sessionId: number;
-  transport: AcpTransport;
-  messages: AgentBusMessage[];
-  status: "running" | "exited" | "error";
+  backend: StartableBackend;
+  transportSessionId: number;
+  acpSessionId: string | null;
+  items: AgentTimelineItem[];
+  permission: PermissionPrompt | null;
+  status: "starting" | "running" | "busy" | "exited" | "error";
   error?: string;
+  agentName?: string;
 }
 
 type Listener = (session: AgentSessionHandle) => void;
 
 /**
- * Lightweight AgentBus (M1 skeleton). Owns transport lifecycle and a simple
- * NDJSON message log. Full ACP SDK client wiring lands in a follow-up.
+ * AgentBus — owns ACP client lifecycle for one live agent subprocess.
+ * UI consumes timeline items + permission prompts via subscribe().
  */
 export class AgentBus {
-  private session: AgentSessionHandle | null = null;
+  private handle: AgentSessionHandle | null = null;
+  private transport: AcpTransport | null = null;
+  private connection: ClientConnection | null = null;
+  private active: ActiveSession | null = null;
   private listeners = new Set<Listener>();
+  private permissionWaiters = new Map<
+    string,
+    (response: RequestPermissionResponse) => void
+  >();
+  private unsubStderr: (() => void) | null = null;
+  private unsubExit: (() => void) | null = null;
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
-    if (this.session) listener(this.session);
+    if (this.handle) listener(this.snapshot());
     return () => {
       this.listeners.delete(listener);
     };
   }
 
   getSession() {
-    return this.session;
+    return this.handle ? this.snapshot() : null;
+  }
+
+  private snapshot(): AgentSessionHandle {
+    if (!this.handle) throw new Error("no session");
+    return {
+      ...this.handle,
+      items: [...this.handle.items],
+      permission: this.handle.permission ? { ...this.handle.permission } : null,
+    };
   }
 
   private emit() {
-    if (!this.session) return;
-    const snapshot = { ...this.session, messages: [...this.session.messages] };
-    for (const listener of this.listeners) listener(snapshot);
+    if (!this.handle) return;
+    const snap = this.snapshot();
+    for (const listener of this.listeners) listener(snap);
   }
 
-  async start(backend: AgentBackendKind | "fixture", cwd: string) {
+  private pushSystem(text: string) {
+    if (!this.handle) return;
+    this.handle.items = [
+      ...this.handle.items,
+      { id: `sys-${Date.now()}`, kind: "system", text, at: Date.now() },
+    ];
+    this.emit();
+  }
+
+  async start(backend: StartableBackend, cwd: string) {
     await this.stop();
+
+    this.handle = {
+      backend,
+      transportSessionId: 0,
+      acpSessionId: null,
+      items: [],
+      permission: null,
+      status: "starting",
+    };
+    this.emit();
+
     const transport = await openAgentTransport({
       backend,
       cwd,
@@ -53,121 +102,197 @@ export class AgentBus {
       args: [],
       env: {},
     });
+    this.transport = transport;
+    this.handle.transportSessionId = transport.sessionId;
 
-    this.session = {
-      backend,
-      sessionId: transport.sessionId,
-      transport,
-      messages: [
-        {
-          role: "system",
-          text: `Started ${backend} session #${transport.sessionId}`,
-          at: Date.now(),
+    this.unsubStderr = transport.onStderr((line) => this.pushSystem(line));
+    this.unsubExit = transport.onExit((code) => {
+      if (!this.handle) return;
+      this.handle.status = "exited";
+      this.pushSystem(`Agent exited (${code})`);
+      this.active = null;
+      this.connection = null;
+    });
+
+    const connection = client({ name: "glyphra" })
+      .onRequest(methods.client.session.requestPermission, async (ctx) =>
+        this.handlePermission(ctx.params),
+      )
+      .onRequest(methods.client.fs.readTextFile, async (ctx) => {
+        const file = await ipc.fsRead(ctx.params.path);
+        return { content: file.content };
+      })
+      .onRequest(methods.client.fs.writeTextFile, async (ctx) => {
+        await ipc.fsWrite(ctx.params.path, ctx.params.content);
+        return {};
+      })
+      .connect(transport.stream);
+
+    this.connection = connection;
+
+    try {
+      const init = await connection.agent.request(methods.agent.initialize, {
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
         },
-      ],
-      status: "running",
-    };
-    this.emit();
-    void this.consume(transport);
-    return this.session;
+        clientInfo: {
+          name: "glyphra",
+          title: "Glyphra",
+          version: "0.1.0",
+        },
+      });
+
+      this.handle.agentName = init.agentInfo?.title ?? init.agentInfo?.name;
+      this.pushSystem(
+        `Connected${this.handle.agentName ? ` to ${this.handle.agentName}` : ""} (protocol v${init.protocolVersion})`,
+      );
+
+      const authMethods = init.authMethods ?? [];
+      if (authMethods.length > 0) {
+        const methodId = authMethods[0]?.id;
+        if (methodId) {
+          await connection.agent.request(methods.agent.authenticate, { methodId });
+          this.pushSystem(`Authenticated via ${methodId}`);
+        }
+      }
+
+      const active = await connection.agent.buildSession(cwd).start();
+      this.active = active;
+      this.handle.acpSessionId = active.sessionId;
+      this.handle.status = "running";
+      this.pushSystem(`Session ${active.sessionId}`);
+      this.emit();
+      return this.snapshot();
+    } catch (error) {
+      this.handle.status = "error";
+      this.handle.error = error instanceof Error ? error.message : String(error);
+      this.emit();
+      await this.stop();
+      throw error;
+    }
   }
 
   async prompt(text: string) {
-    if (!this.session || this.session.status !== "running") {
+    if (!this.handle || !this.active || this.handle.status === "exited") {
       throw new Error("No running agent session");
     }
-    this.session.messages.push({ role: "user", text, at: Date.now() });
-    this.emit();
-
-    // Minimal JSON-RPC prompt until @agentclientprotocol/sdk is wired.
-    const req = {
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "session/prompt",
-      params: {
-        sessionId: "fixture-session",
-        prompt: [{ type: "text", text }],
-      },
-    };
-    await this.session.transport.write(JSON.stringify(req));
-  }
-
-  async stop() {
-    if (!this.session) return;
-    try {
-      await this.session.transport.kill();
-    } catch {
-      // process may already be gone
+    if (this.handle.status === "busy") {
+      throw new Error("Agent is already answering");
     }
-    this.session = { ...this.session, status: "exited" };
-    this.emit();
-    this.session = null;
-  }
 
-  private async consume(transport: AcpTransport) {
-    const reader = transport.readable.getReader();
+    this.handle.items = [
+      ...this.handle.items,
+      { id: `user-${Date.now()}`, kind: "user", text, at: Date.now() },
+    ];
+    this.handle.status = "busy";
+    this.emit();
+
+    const active = this.active;
+    const promptPromise = active.prompt(text);
+
     try {
       for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        this.ingestLine(value);
-      }
-      if (this.session) {
-        this.session = { ...this.session, status: "exited" };
+        const message = await active.nextUpdate();
+        if (message.kind === "stop") {
+          this.handle.status = "running";
+          this.pushSystem(`Turn complete (${message.stopReason})`);
+          await promptPromise;
+          return;
+        }
+        this.handle.items = applySessionUpdate(this.handle.items, message.update);
         this.emit();
       }
     } catch (error) {
-      if (this.session) {
-        this.session = {
-          ...this.session,
-          status: "error",
-          error: error instanceof Error ? error.message : String(error),
-        };
-        this.emit();
-      }
-    } finally {
-      reader.releaseLock();
+      this.handle.status = "error";
+      this.handle.error = error instanceof Error ? error.message : String(error);
+      this.emit();
+      throw error;
     }
   }
 
-  private ingestLine(line: string) {
-    if (!this.session) return;
-    try {
-      const msg = JSON.parse(line) as {
-        method?: string;
-        params?: { update?: { content?: { text?: string }; sessionUpdate?: string } };
-        type?: string;
-        data?: string;
-        result?: unknown;
-      };
-      if (msg.type === "stderr" && msg.data) {
-        this.session.messages.push({
-          role: "system",
-          text: msg.data,
-          at: Date.now(),
-        });
-        this.emit();
-        return;
-      }
-      const chunk = msg.params?.update?.content?.text;
-      if (msg.method === "session/update" && chunk) {
-        const last = this.session.messages.at(-1);
-        if (last?.role === "assistant") {
-          last.text += chunk;
-        } else {
-          this.session.messages.push({ role: "assistant", text: chunk, at: Date.now() });
-        }
-        this.emit();
-      }
-    } catch {
-      this.session.messages.push({
-        role: "system",
-        text: line,
-        at: Date.now(),
-      });
+  respondPermission(optionId: string | "cancelled") {
+    const permission = this.handle?.permission;
+    if (!permission) return;
+    const waiter = this.permissionWaiters.get(permission.id);
+    if (!waiter) return;
+
+    const response: RequestPermissionResponse =
+      optionId === "cancelled"
+        ? { outcome: { outcome: "cancelled" } }
+        : { outcome: { outcome: "selected", optionId } };
+
+    waiter(response);
+    this.permissionWaiters.delete(permission.id);
+    if (this.handle) {
+      this.handle.permission = null;
       this.emit();
     }
+  }
+
+  private handlePermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    const id = `perm-${Date.now()}`;
+    return new Promise((resolve) => {
+      this.permissionWaiters.set(id, resolve);
+      if (this.handle) {
+        this.handle.permission = {
+          id,
+          title: params.toolCall.title ?? "Permission required",
+          toolCallId: params.toolCall.toolCallId,
+          options: params.options.map((option) => ({
+            optionId: option.optionId,
+            name: option.name,
+            kind: option.kind,
+          })),
+        };
+        this.emit();
+      }
+    });
+  }
+
+  async stop() {
+    for (const [, waiter] of this.permissionWaiters) {
+      waiter({ outcome: { outcome: "cancelled" } });
+    }
+    this.permissionWaiters.clear();
+
+    try {
+      this.active?.dispose();
+    } catch {
+      // ignore
+    }
+    this.active = null;
+
+    try {
+      this.connection?.close();
+    } catch {
+      // ignore
+    }
+    this.connection = null;
+
+    this.unsubStderr?.();
+    this.unsubExit?.();
+    this.unsubStderr = null;
+    this.unsubExit = null;
+
+    if (this.transport) {
+      try {
+        await this.transport.kill();
+      } catch {
+        // process may already be gone
+      }
+    }
+    this.transport = null;
+
+    if (this.handle) {
+      this.handle = { ...this.handle, status: "exited", permission: null };
+      this.emit();
+    }
+    this.handle = null;
   }
 }
 
 export const agentBus = new AgentBus();
+
+/** @deprecated Use AgentTimelineItem */
+export type AgentBusMessage = AgentTimelineItem;

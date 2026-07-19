@@ -1,56 +1,83 @@
 import { Channel } from "@tauri-apps/api/core";
+import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk";
 
-import { ipc, type AgentIoEvent } from "@/lib/ipc/ipc";
-import type { AgentSpawnRequest } from "@/lib/ipc/ipc";
+import { ipc, type AgentIoEvent, type AgentSpawnRequest } from "@/lib/ipc/ipc";
 
-/**
- * Bridge a Tauri Channel of AgentIo events into a ReadableStream of stdout
- * lines, while exposing write/kill helpers for the AgentBus.
- */
 export interface AcpTransport {
   sessionId: number;
-  readable: ReadableStream<string>;
-  write(line: string): Promise<void>;
+  /** ACP NDJSON stream for `@agentclientprotocol/sdk`. */
+  stream: Stream;
   kill(): Promise<void>;
+  onStderr(listener: (line: string) => void): () => void;
+  onExit(listener: (code: string) => void): () => void;
 }
 
+/**
+ * Spawn an agent subprocess and expose an ACP `Stream` over its stdio.
+ * Stderr/exit are delivered separately so they never corrupt NDJSON framing.
+ */
 export async function openAgentTransport(request: AgentSpawnRequest): Promise<AcpTransport> {
-  let controller: ReadableStreamDefaultController<string> | null = null;
-  const readable = new ReadableStream<string>({
-    start(c) {
-      controller = c;
+  let bytesController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const encoder = new TextEncoder();
+  const stderrListeners = new Set<(line: string) => void>();
+  const exitListeners = new Set<(code: string) => void>();
+
+  const readable = new ReadableStream<Uint8Array>({
+    start(controller) {
+      bytesController = controller;
     },
     cancel() {
-      controller = null;
+      bytesController = null;
     },
   });
 
-  const sessionId = await ipc.agentSpawn(request, (event: AgentIoEvent) => {
-    if (!controller) return;
+  let sessionId = 0;
+
+  const writable = new WritableStream<Uint8Array>({
+    async write(chunk) {
+      const text = new TextDecoder().decode(chunk);
+      // `agent_write` preserves a trailing newline when present.
+      await ipc.agentWrite(sessionId, text);
+    },
+  });
+
+  sessionId = await ipc.agentSpawn(request, (event: AgentIoEvent) => {
     if (event.kind === "stdout") {
-      controller.enqueue(event.data);
+      if (!bytesController) return;
+      // Channel delivers one complete line without the trailing newline.
+      bytesController.enqueue(encoder.encode(`${event.data}\n`));
     } else if (event.kind === "stderr") {
-      // Surface stderr as a synthetic comment line for the UI stream.
-      controller.enqueue(JSON.stringify({ type: "stderr", data: event.data }));
+      for (const listener of stderrListeners) listener(event.data);
     } else if (event.kind === "exit") {
       try {
-        controller.close();
+        bytesController?.close();
       } catch {
         // already closed
       }
-      controller = null;
+      bytesController = null;
+      for (const listener of exitListeners) listener(event.data);
     }
   });
 
   return {
     sessionId,
-    readable,
-    write: (line) => ipc.agentWrite(sessionId, line),
+    stream: ndJsonStream(writable, readable),
     kill: () => ipc.agentKill(sessionId),
+    onStderr: (listener) => {
+      stderrListeners.add(listener);
+      return () => {
+        stderrListeners.delete(listener);
+      };
+    },
+    onExit: (listener) => {
+      exitListeners.add(listener);
+      return () => {
+        exitListeners.delete(listener);
+      };
+    },
   };
 }
 
-/** Helper kept for callers that want a raw Channel without the stream wrap. */
 export function createAgentIoChannel(onEvent: (event: AgentIoEvent) => void) {
   return new Channel<AgentIoEvent>(onEvent);
 }

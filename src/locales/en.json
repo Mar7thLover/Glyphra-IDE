@@ -43,7 +43,7 @@
     "longLinesBanner": "File contains very long lines; opened as a read-only preview without syntax highlighting."
   },
   "agent": {
-    "subtitle": "Agent session · ACP transport",
+    "subtitle": "Agent session · ACP",
     "fixture": "Fixture replay (offline)",
     "start": "Start",
     "stop": "Stop",
@@ -52,6 +52,8 @@
     "installed": "found",
     "missing": "missing",
     "promptPlaceholder": "Steer the agent…",
-    "send": "Send"
+    "send": "Send",
+    "permissionTitle": "Permission required",
+    "permissionCancel": "Cancel"
   }
 }
