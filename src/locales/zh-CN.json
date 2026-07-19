@@ -41,5 +41,17 @@
     "save": "保存",
     "truncatedBanner": "文件超过 10MB，已以只读预览打开，并关闭语法高亮。",
     "longLinesBanner": "文件包含超长行，已以只读预览打开，并关闭语法高亮。"
+  },
+  "agent": {
+    "subtitle": "Agent 会话 · ACP 传输层",
+    "fixture": "Fixture 回放（离线）",
+    "start": "启动",
+    "stop": "停止",
+    "detect": "检测",
+    "needProject": "请先打开一个文件夹再启动 agent。",
+    "installed": "已安装",
+    "missing": "未找到",
+    "promptPlaceholder": "向 agent 下达指令…",
+    "send": "发送"
   }
 }

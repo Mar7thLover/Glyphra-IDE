@@ -1,25 +1,23 @@
 import { Bot, Search } from "lucide-react";
 import { motion } from "motion/react";
+import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 
 import SettingsPanel from "@/features/settings/SettingsPanel";
 import FilePanel from "@/features/tree/FilePanel";
 import { useUiStore, type Panel } from "@/lib/stores/uiStore";
 
+const AgentPanel = lazy(() => import("@/features/agent/AgentPanel"));
+
 export const SIDEBAR_WIDTH = 268;
 
-function Placeholder({ panel }: { panel: Exclude<Panel, "settings" | "files"> }) {
+function Placeholder(_props: { panel: Exclude<Panel, "settings" | "files" | "agent"> }) {
   const { t } = useTranslation();
-  const icon = {
-    search: Search,
-    agent: Bot,
-  }[panel];
-  const Icon = icon;
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center text-xs text-ink-3">
       <div className="grid size-10 place-items-center rounded-xl border border-line bg-raised/50 text-ink-2">
-        <Icon className="size-5" strokeWidth={1.6} />
+        <Search className="size-5" strokeWidth={1.6} />
       </div>
       <p>{t("panel.comingSoon")}</p>
     </div>
@@ -45,7 +43,18 @@ export default function SideBar() {
         </div>
         {panel === "files" && <FilePanel />}
         {panel === "settings" && <SettingsPanel />}
-        {(panel === "search" || panel === "agent") && <Placeholder panel={panel} />}
+        {panel === "agent" && (
+          <Suspense
+            fallback={
+              <div className="flex flex-1 items-center justify-center text-ink-3">
+                <Bot className="size-4 animate-pulse" />
+              </div>
+            }
+          >
+            <AgentPanel />
+          </Suspense>
+        )}
+        {panel === "search" && <Placeholder panel={panel} />}
       </div>
     </motion.aside>
   );

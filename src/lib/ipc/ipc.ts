@@ -1,5 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
+export type { AgentDetectInfo } from "./gen/AgentDetectInfo";
+export type { AgentIoEvent } from "./gen/AgentIoEvent";
+export type { AgentSpawnRequest } from "./gen/AgentSpawnRequest";
 export type { AppSettings } from "./gen/AppSettings";
 export type { DirEntryInfo } from "./gen/DirEntryInfo";
 export type { EnvInfo } from "./gen/EnvInfo";
@@ -9,6 +12,9 @@ export type { FsEvent } from "./gen/FsEvent";
 export type { ProjectInfo } from "./gen/ProjectInfo";
 export type { RecentProject } from "./gen/RecentProject";
 
+import type { AgentDetectInfo } from "./gen/AgentDetectInfo";
+import type { AgentIoEvent } from "./gen/AgentIoEvent";
+import type { AgentSpawnRequest } from "./gen/AgentSpawnRequest";
 import type { AppSettings } from "./gen/AppSettings";
 import type { DirEntryInfo } from "./gen/DirEntryInfo";
 import type { EnvInfo } from "./gen/EnvInfo";
@@ -34,4 +40,12 @@ export const ipc = {
   fsWatchStop: (watcherId: number) => invoke<void>("fs_watch_stop", { watcherId }),
   settingsGet: () => invoke<AppSettings>("settings_get"),
   settingsSet: (settings: AppSettings) => invoke<void>("settings_set", { settings }),
+  agentDetect: () => invoke<AgentDetectInfo[]>("agent_detect"),
+  agentSpawn: (request: AgentSpawnRequest, onEvent: (event: AgentIoEvent) => void) => {
+    const channel = new Channel<AgentIoEvent>(onEvent);
+    return invoke<number>("agent_spawn", { request, channel });
+  },
+  agentWrite: (sessionId: number, line: string) =>
+    invoke<void>("agent_write", { sessionId, line }),
+  agentKill: (sessionId: number) => invoke<void>("agent_kill", { sessionId }),
 };

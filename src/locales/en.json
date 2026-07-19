@@ -41,5 +41,17 @@
     "save": "Save",
     "truncatedBanner": "File is larger than 10MB; opened as a read-only preview without syntax highlighting.",
     "longLinesBanner": "File contains very long lines; opened as a read-only preview without syntax highlighting."
+  },
+  "agent": {
+    "subtitle": "Agent session · ACP transport",
+    "fixture": "Fixture replay (offline)",
+    "start": "Start",
+    "stop": "Stop",
+    "detect": "Detect",
+    "needProject": "Open a folder before starting an agent.",
+    "installed": "found",
+    "missing": "missing",
+    "promptPlaceholder": "Steer the agent…",
+    "send": "Send"
   }
 }
