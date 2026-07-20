@@ -86,16 +86,26 @@ fn project_key(project: &Path) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn checkpoint_root(app: &AppHandle, project: &Path) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
         .app_data_dir()
-        .map_err(|err| format!("app data dir: {err}"))?
+        .map_err(|err| format!("app data dir: {err}"))
+}
+
+fn checkpoint_root_at(data_dir: &Path, project: &Path) -> Result<PathBuf, String> {
+    let dir = data_dir
         .join("checkpoints")
         .join(project_key(project));
     fs::create_dir_all(&dir).map_err(|err| format!("create checkpoint dir: {err}"))?;
     Ok(dir)
 }
+
+fn checkpoint_root(app: &AppHandle, project: &Path) -> Result<PathBuf, String> {
+    checkpoint_root_at(&app_data_dir(app)?, project)
+}
+
+/// Skip huge binaries — restore is unavailable (no baseline stored).
+const MAX_PREIMAGE_BYTES: u64 = 5 * 1024 * 1024;
 
 fn turn_dir(root: &Path, turn_id: &str) -> PathBuf {
     root.join("turns").join(turn_id)
@@ -158,8 +168,18 @@ impl CheckpointEngine {
         project_path: &str,
         label: Option<String>,
     ) -> Result<CkptTurnMeta, String> {
+        self.begin_turn_at(&app_data_dir(app)?, project_path, label)
+    }
+
+    /// Begin a turn under an explicit data directory (tests + AppHandle path).
+    pub fn begin_turn_at(
+        &self,
+        data_dir: &Path,
+        project_path: &str,
+        label: Option<String>,
+    ) -> Result<CkptTurnMeta, String> {
         let project = project_root(project_path)?;
-        let root = checkpoint_root(app, &project)?;
+        let root = checkpoint_root_at(data_dir, &project)?;
         ensure_shadow_git(&root, &project)?;
 
         let id = Uuid::new_v4().to_string();
@@ -178,6 +198,22 @@ impl CheckpointEngine {
         write_meta(&dir, &meta)?;
 
         let key = project.to_string_lossy().to_string();
+        let mut preimaged = HashSet::new();
+
+        // L3: snapshot currently dirty tracked/untracked files so restore works
+        // even when the agent mutates via shell instead of ACP fs.write.
+        if let Ok(dirty) = cli::status_porcelain(&project) {
+            for entry in dirty {
+                if entry.path.contains('\0') || entry.path.ends_with('/') {
+                    continue;
+                }
+                let abs = project.join(&entry.path);
+                if let Ok(()) = capture_preimage(data_dir, &project, &id, &abs, &entry.path) {
+                    preimaged.insert(entry.path);
+                }
+            }
+        }
+
         self.active
             .lock()
             .map_err(|_| "ckpt lock poisoned")?
@@ -186,7 +222,7 @@ impl CheckpointEngine {
                 ActiveTurn {
                     id,
                     project,
-                    preimaged: HashSet::new(),
+                    preimaged,
                 },
             );
         Ok(meta)
@@ -194,6 +230,15 @@ impl CheckpointEngine {
 
     /// L1: capture current disk bytes (or empty) before first mutation in the turn.
     pub fn preimage(&self, app: &AppHandle, project_path: &str, path: &str) -> Result<(), String> {
+        self.preimage_at(&app_data_dir(app)?, project_path, path)
+    }
+
+    pub fn preimage_at(
+        &self,
+        data_dir: &Path,
+        project_path: &str,
+        path: &str,
+    ) -> Result<(), String> {
         let project = project_root(project_path)?;
         let key = project.to_string_lossy().to_string();
         let mut guard = self.active.lock().map_err(|_| "ckpt lock poisoned")?;
@@ -205,24 +250,7 @@ impl CheckpointEngine {
         if turn.preimaged.contains(&rel) {
             return Ok(());
         }
-
-        let root = checkpoint_root(app, &project)?;
-        let dir = turn_dir(&root, &turn.id);
-        let dest = pre_path(&dir, &rel);
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|err| format!("preimage mkdir: {err}"))?;
-        }
-
-        // Prefer L1 disk bytes; fall back to L2 git HEAD for clean tracked files.
-        let content = if abs.exists() {
-            fs::read(&abs).map_err(|err| format!("preimage read: {err}"))?
-        } else if let Ok(Some(text)) = cli::show_head_file(&project, &rel) {
-            text.into_bytes()
-        } else {
-            Vec::new()
-        };
-        fs::write(&dest, content).map_err(|err| format!("preimage write: {err}"))?;
-        // Marker for "new file had no preimage"
+        capture_preimage(data_dir, &project, &turn.id, &abs, &rel)?;
         turn.preimaged.insert(rel);
         Ok(())
     }
@@ -254,6 +282,15 @@ impl CheckpointEngine {
         project_path: &str,
         turn_id: Option<String>,
     ) -> Result<CkptTurnMeta, String> {
+        self.commit_turn_at(&app_data_dir(app)?, project_path, turn_id)
+    }
+
+    pub fn commit_turn_at(
+        &self,
+        data_dir: &Path,
+        project_path: &str,
+        turn_id: Option<String>,
+    ) -> Result<CkptTurnMeta, String> {
         let project = project_root(project_path)?;
         let key = project.to_string_lossy().to_string();
         let mut guard = self.active.lock().map_err(|_| "ckpt lock poisoned")?;
@@ -268,13 +305,15 @@ impl CheckpointEngine {
         };
         drop(guard);
 
-        let root = checkpoint_root(app, &project)?;
+        let root = checkpoint_root_at(data_dir, &project)?;
         let dir = turn_dir(&root, &turn.id);
         let mut files = Vec::new();
 
         for rel in &turn.preimaged {
             let abs = project.join(rel);
-            let before = fs::read(pre_path(&dir, rel)).unwrap_or_default();
+            let pre = pre_path(&dir, rel);
+            let preimage_available = pre.exists();
+            let before = fs::read(&pre).unwrap_or_default();
             let after = if abs.exists() {
                 fs::read(&abs).unwrap_or_default()
             } else {
@@ -295,7 +334,7 @@ impl CheckpointEngine {
             files.push(CkptFileDiff {
                 path: rel.clone(),
                 status: status.into(),
-                preimage_available: true,
+                preimage_available,
             });
         }
 
@@ -380,23 +419,20 @@ impl CheckpointEngine {
         project_path: &str,
         turn_id: &str,
     ) -> Result<CkptTurnMeta, String> {
+        self.restore_turn_at(&app_data_dir(app)?, project_path, turn_id)
+    }
+
+    pub fn restore_turn_at(
+        &self,
+        data_dir: &Path,
+        project_path: &str,
+        turn_id: &str,
+    ) -> Result<CkptTurnMeta, String> {
         let project = project_root(project_path)?;
-        let root = checkpoint_root(app, &project)?;
+        let root = checkpoint_root_at(data_dir, &project)?;
         let dir = turn_dir(&root, turn_id);
         let meta = read_meta(&dir)?;
-        for file in &meta.files {
-            let dest = project.join(&file.path);
-            let pre = pre_path(&dir, &file.path);
-            if file.status == "added" {
-                let _ = fs::remove_file(&dest);
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-            }
-            let bytes = fs::read(&pre).unwrap_or_default();
-            fs::write(&dest, bytes).map_err(|err| format!("restore {}: {err}", file.path))?;
-        }
+        apply_restore(&project, &dir, &meta.files)?;
         Ok(meta)
     }
 
@@ -407,26 +443,27 @@ impl CheckpointEngine {
         turn_id: &str,
         rel_path: &str,
     ) -> Result<(), String> {
+        self.restore_file_at(&app_data_dir(app)?, project_path, turn_id, rel_path)
+    }
+
+    pub fn restore_file_at(
+        &self,
+        data_dir: &Path,
+        project_path: &str,
+        turn_id: &str,
+        rel_path: &str,
+    ) -> Result<(), String> {
         let project = project_root(project_path)?;
-        let root = checkpoint_root(app, &project)?;
+        let root = checkpoint_root_at(data_dir, &project)?;
         let dir = turn_dir(&root, turn_id);
         let meta = read_meta(&dir)?;
         let file = meta
             .files
             .iter()
             .find(|f| f.path == rel_path)
-            .ok_or_else(|| format!("file `{rel_path}` not in turn"))?;
-        let dest = project.join(rel_path);
-        if file.status == "added" {
-            let _ = fs::remove_file(&dest);
-            return Ok(());
-        }
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-        }
-        let bytes = fs::read(pre_path(&dir, rel_path)).unwrap_or_default();
-        fs::write(dest, bytes).map_err(|err| err.to_string())?;
-        Ok(())
+            .ok_or_else(|| format!("file `{rel_path}` not in turn"))?
+            .clone();
+        apply_restore(&project, &dir, &[file])
     }
 
     pub fn write_file_content(
@@ -446,6 +483,63 @@ impl CheckpointEngine {
     }
 }
 
+fn capture_preimage(
+    data_dir: &Path,
+    project: &Path,
+    turn_id: &str,
+    abs: &Path,
+    rel: &str,
+) -> Result<(), String> {
+    let root = checkpoint_root_at(data_dir, project)?;
+    let dir = turn_dir(&root, turn_id);
+    let dest = pre_path(&dir, rel);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("preimage mkdir: {err}"))?;
+    }
+
+    if abs.exists() {
+        let meta = fs::metadata(abs).map_err(|err| format!("preimage stat: {err}"))?;
+        if meta.len() > MAX_PREIMAGE_BYTES {
+            // No baseline — leave pre missing so restore skips / marks unavailable.
+            return Err(format!(
+                "skip preimage >{}MB: {rel}",
+                MAX_PREIMAGE_BYTES / (1024 * 1024)
+            ));
+        }
+    }
+
+    // Prefer L1 disk bytes; fall back to L2 git HEAD for clean tracked files.
+    let content = if abs.exists() {
+        fs::read(abs).map_err(|err| format!("preimage read: {err}"))?
+    } else if let Ok(Some(text)) = cli::show_head_file(project, rel) {
+        text.into_bytes()
+    } else {
+        Vec::new()
+    };
+    fs::write(&dest, content).map_err(|err| format!("preimage write: {err}"))?;
+    Ok(())
+}
+
+fn apply_restore(project: &Path, dir: &Path, files: &[CkptFileDiff]) -> Result<(), String> {
+    for file in files {
+        if !file.preimage_available {
+            continue;
+        }
+        let dest = project.join(&file.path);
+        let pre = pre_path(dir, &file.path);
+        if file.status == "added" {
+            let _ = fs::remove_file(&dest);
+            continue;
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
+        let bytes = fs::read(&pre).unwrap_or_default();
+        fs::write(&dest, bytes).map_err(|err| format!("restore {}: {err}", file.path))?;
+    }
+    Ok(())
+}
+
 fn write_meta(dir: &Path, meta: &CkptTurnMeta) -> Result<(), String> {
     let data = serde_json::to_string_pretty(meta).map_err(|err| err.to_string())?;
     fs::write(dir.join("meta.json"), data).map_err(|err| err.to_string())
@@ -460,10 +554,125 @@ fn read_meta(dir: &Path) -> Result<CkptTurnMeta, String> {
 mod tests {
     use super::*;
 
+    fn temp_pair() -> (PathBuf, PathBuf) {
+        let base = std::env::temp_dir().join(format!("glyphra-ckpt-{}", Uuid::new_v4()));
+        let project = base.join("project");
+        let data = base.join("data");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&data).unwrap();
+        (project, data)
+    }
+
     #[test]
     fn pre_path_sanitizes() {
         let dir = PathBuf::from("/tmp/turn");
         let path = pre_path(&dir, "src/../src/a.ts");
         assert!(path.ends_with("src/a.ts") || path.ends_with("a.ts"));
+    }
+
+    #[test]
+    fn restore_turn_is_byte_accurate_for_modify_add_delete() {
+        let (project, data) = temp_pair();
+        let engine = CheckpointEngine::default();
+
+        let keep = project.join("keep.bin");
+        let modify = project.join("src/modify.bin");
+        let delete = project.join("gone.bin");
+        fs::create_dir_all(project.join("src")).unwrap();
+        fs::write(&keep, b"untouched\x00\xff").unwrap();
+        fs::write(&modify, b"before\x00data").unwrap();
+        fs::write(&delete, b"will-delete").unwrap();
+
+        let meta = engine
+            .begin_turn_at(&data, &project.to_string_lossy(), Some("byte test".into()))
+            .expect("begin");
+
+        engine
+            .preimage_at(&data, &project.to_string_lossy(), &modify.to_string_lossy())
+            .unwrap();
+        engine
+            .preimage_at(&data, &project.to_string_lossy(), &delete.to_string_lossy())
+            .unwrap();
+        let added = project.join("new.bin");
+        engine
+            .preimage_at(&data, &project.to_string_lossy(), &added.to_string_lossy())
+            .unwrap();
+
+        fs::write(&modify, b"after\x01MUTATED").unwrap();
+        fs::remove_file(&delete).unwrap();
+        fs::write(&added, b"brand-new\xfe").unwrap();
+
+        let committed = engine
+            .commit_turn_at(&data, &project.to_string_lossy(), Some(meta.id.clone()))
+            .expect("commit");
+        assert!(committed.files.iter().any(|f| f.path == "src/modify.bin"));
+        assert!(committed.files.iter().any(|f| f.path == "gone.bin"));
+        assert!(committed.files.iter().any(|f| f.path == "new.bin"));
+
+        engine
+            .restore_turn_at(&data, &project.to_string_lossy(), &meta.id)
+            .expect("restore");
+
+        assert_eq!(fs::read(&modify).unwrap(), b"before\x00data");
+        assert_eq!(fs::read(&delete).unwrap(), b"will-delete");
+        assert!(!added.exists(), "added file should be removed on restore");
+        assert_eq!(fs::read(&keep).unwrap(), b"untouched\x00\xff");
+
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn restore_file_is_byte_accurate() {
+        let (project, data) = temp_pair();
+        let engine = CheckpointEngine::default();
+        let target = project.join("only.bin");
+        fs::write(&target, &[0u8, 1, 2, 3, 255]).unwrap();
+
+        let meta = engine
+            .begin_turn_at(&data, &project.to_string_lossy(), None)
+            .unwrap();
+        engine
+            .preimage_at(&data, &project.to_string_lossy(), &target.to_string_lossy())
+            .unwrap();
+        fs::write(&target, &[9u8, 8, 7]).unwrap();
+        engine
+            .commit_turn_at(&data, &project.to_string_lossy(), Some(meta.id.clone()))
+            .unwrap();
+
+        engine
+            .restore_file_at(&data, &project.to_string_lossy(), &meta.id, "only.bin")
+            .unwrap();
+        assert_eq!(fs::read(&target).unwrap(), vec![0u8, 1, 2, 3, 255]);
+
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn skips_oversized_binary_preimage() {
+        let (project, data) = temp_pair();
+        let engine = CheckpointEngine::default();
+        let big = project.join("huge.bin");
+        // Allocate just over the limit without writing 5MB+ of real I/O if possible —
+        // write a sparse-ish file via set_len when available; fall back to chunk write.
+        {
+            let file = fs::File::create(&big).unwrap();
+            file.set_len(MAX_PREIMAGE_BYTES + 1).unwrap();
+        }
+
+        let meta = engine
+            .begin_turn_at(&data, &project.to_string_lossy(), None)
+            .unwrap();
+        let err = engine
+            .preimage_at(&data, &project.to_string_lossy(), &big.to_string_lossy())
+            .unwrap_err();
+        assert!(err.contains("skip preimage"), "{err}");
+
+        // Turn can still commit with no files if only oversized paths failed L1.
+        let committed = engine
+            .commit_turn_at(&data, &project.to_string_lossy(), Some(meta.id))
+            .unwrap();
+        assert!(committed.files.is_empty());
+
+        let _ = fs::remove_dir_all(project.parent().unwrap());
     }
 }

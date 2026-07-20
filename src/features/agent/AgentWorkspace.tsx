@@ -60,6 +60,7 @@ export default function AgentWorkspace() {
   const backends = useAgentStore((s) => s.backends);
   const detecting = useAgentStore((s) => s.detecting);
   const stderrTail = useAgentStore((s) => s.stderrTail);
+  const circuitOpen = useAgentStore((s) => s.circuitOpen);
   const archives = useAgentStore((s) => s.archives);
   const viewingArchiveId = useAgentStore((s) => s.viewingArchiveId);
   const detect = useAgentStore((s) => s.detect);
@@ -67,6 +68,7 @@ export default function AgentWorkspace() {
   const setProviderId = useAgentStore((s) => s.setProviderId);
   const setBackend = useAgentStore((s) => s.setBackend);
   const clearError = useAgentStore((s) => s.clearError);
+  const clearCircuit = useAgentStore((s) => s.clearCircuit);
   const start = useAgentStore((s) => s.start);
   const prompt = useAgentStore((s) => s.prompt);
   const cancel = useAgentStore((s) => s.cancel);
@@ -216,9 +218,9 @@ export default function AgentWorkspace() {
           {!running && !crashed ? (
             <button
               type="button"
-              disabled={!current || busy || !backendReady}
+              disabled={!current || busy || !backendReady || circuitOpen}
               onClick={startSession}
-              title={t("agent.start")}
+              title={circuitOpen ? t("agent.circuitOpen") : t("agent.start")}
               className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-30"
             >
               {busy ? (
@@ -230,9 +232,9 @@ export default function AgentWorkspace() {
           ) : crashed ? (
             <button
               type="button"
-              disabled={!current || busy}
+              disabled={!current || busy || circuitOpen}
               onClick={() => void restart()}
-              className="px-1.5 text-[11px] text-accent hover:text-ink"
+              className="px-1.5 text-[11px] text-accent hover:text-ink disabled:opacity-40"
             >
               {t("agent.restart")}
             </button>
@@ -321,7 +323,20 @@ export default function AgentWorkspace() {
           </div>
         )}
 
-        {crashed && stderrTail.length > 0 && (
+        {circuitOpen && (
+          <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-1.5 text-[11px] text-danger/90">
+            <span className="min-w-0">{t("agent.circuitOpen")}</span>
+            <button
+              type="button"
+              onClick={clearCircuit}
+              className="shrink-0 text-ink-2 underline hover:text-ink"
+            >
+              {t("agent.circuitReset")}
+            </button>
+          </div>
+        )}
+
+        {(crashed || circuitOpen) && stderrTail.length > 0 && (
           <pre className="max-h-24 overflow-auto border-b border-line bg-app/40 px-3 py-1.5 font-mono text-[10px] leading-relaxed text-ink-3">
             {stderrTail.join("\n")}
           </pre>

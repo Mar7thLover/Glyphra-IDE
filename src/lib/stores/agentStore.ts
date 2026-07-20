@@ -32,6 +32,7 @@ interface AgentState {
   providerId: string | null;
   backend: StartableBackend;
   stderrTail: string[];
+  circuitOpen: boolean;
   archives: SessionSummary[];
   /** When set, timeline is a read-only past archive (no live ACP session). */
   viewingArchiveId: string | null;
@@ -40,6 +41,7 @@ interface AgentState {
   setProviderId: (id: string | null) => void;
   setBackend: (backend: StartableBackend) => void;
   clearError: () => void;
+  clearCircuit: () => void;
   start: (cwd?: string) => Promise<void>;
   prompt: (text: string) => Promise<void>;
   cancel: () => Promise<void>;
@@ -83,6 +85,7 @@ function ensureBusSubscription(set: (partial: Partial<AgentState>) => void, get:
       error: session.error ?? null,
       busy: session.status === "busy" || session.status === "starting",
       stderrTail: session.stderrTail,
+      circuitOpen: session.circuitOpen,
       viewingArchiveId: null,
     });
     schedulePersist(session);
@@ -116,6 +119,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   providerId: usePrefsStore.getState().defaultProviderId,
   backend: usePrefsStore.getState().defaultBackend,
   stderrTail: [],
+  circuitOpen: false,
   archives: [],
   viewingArchiveId: null,
 
@@ -153,8 +157,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 
+  clearCircuit: () => {
+    agentBus.clearCircuit();
+    set({ circuitOpen: false, error: null });
+  },
+
   start: async (cwd) => {
     ensureBusSubscription(set, get);
+    if (agentBus.isCircuitOpen()) {
+      set({
+        circuitOpen: true,
+        error:
+          "Circuit open: too many crashes. Reset the breaker, then start again.",
+      });
+      return;
+    }
     const projectPath = cwd ?? useProjectStore.getState().current?.path;
     if (!projectPath) {
       set({ error: "Open a project folder before starting an agent." });
@@ -282,6 +299,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   restart: async () => {
+    if (agentBus.isCircuitOpen() || get().circuitOpen) {
+      set({
+        circuitOpen: true,
+        error:
+          "Circuit open: too many crashes. Reset the breaker, then restart.",
+      });
+      return;
+    }
     await get().stop();
     await get().start();
   },

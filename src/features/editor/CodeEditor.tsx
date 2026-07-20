@@ -1,9 +1,9 @@
 import { indentUnit, LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { Compartment, EditorState } from "@codemirror/state";
-import { keymap } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { vscodeKeymap } from "@replit/codemirror-vscode-keymap";
-import { EditorView, basicSetup } from "codemirror";
+import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 
 import type { EditorTab } from "@/lib/stores/editorStore";
@@ -31,6 +31,27 @@ function editorChrome(fontSize: number, wordWrap: boolean, showLineNumbers: bool
     indentUnit.of(" ".repeat(tabSize)),
     EditorState.tabSize.of(tabSize),
     wordWrap ? EditorView.lineWrapping : [],
+  ];
+}
+
+/**
+ * IME guard — while composing (Microsoft Pinyin / Sogou / etc.), skip
+ * docChanged side-effects so custom decorations/handlers never fight the IME.
+ * Flush once on compositionend. See docs/ime-checklist.md.
+ */
+function imeSafeUpdateListener(onChange: (content: string) => void) {
+  return [
+    EditorView.updateListener.of((update) => {
+      if (!update.docChanged) return;
+      if (update.view.composing) return;
+      onChange(update.state.doc.toString());
+    }),
+    EditorView.domEventHandlers({
+      compositionend: (_event, view) => {
+        onChange(view.state.doc.toString());
+        return false;
+      },
+    }),
   ];
 }
 
@@ -80,9 +101,7 @@ export default function CodeEditor({ tab, onChange, onSave }: CodeEditorProps) {
             editorChrome(fontSize, wordWrap, showLineNumbers, tabSize),
           ),
           themeCompartment.current.of(editorThemeExtensions(theme)),
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) onChangeRef.current(update.state.doc.toString());
-          }),
+          imeSafeUpdateListener((content) => onChangeRef.current(content)),
         ],
       });
 

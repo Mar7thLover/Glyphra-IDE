@@ -114,22 +114,10 @@ fn run_search(
     let mut batch = Vec::new();
     const BATCH_SIZE: usize = 200;
 
-    let walker = WalkBuilder::new(&root)
-        .hidden(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .build();
-
-    for entry in walker {
+    for path in searchable_files(&root) {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
-        let Ok(entry) = entry else { continue };
-        if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-            continue;
-        }
-        let path = entry.path().to_path_buf();
         let path_str = path.to_string_lossy().to_string();
 
         let sink = UTF8(|line_num, line| {
@@ -182,4 +170,74 @@ fn regex_escape_literal(text: &str) -> String {
         out.push(ch);
     }
     out
+}
+
+/// Files WalkBuilder yields with gitignore enabled (shared with unit tests).
+fn searchable_files(root: &std::path::Path) -> Vec<PathBuf> {
+    let walker = WalkBuilder::new(root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .build();
+    let mut files = Vec::new();
+    for entry in walker {
+        let Ok(entry) = entry else { continue };
+        if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+            continue;
+        }
+        files.push(entry.path().to_path_buf());
+    }
+    files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn searchable_files_respects_gitignore() {
+        let root = std::env::temp_dir().join(format!(
+            "glyphra-search-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join(".gitignore"), "secret.txt\nbuild/\n").unwrap();
+        fs::write(root.join("src/keep.rs"), "fn keep() {}").unwrap();
+        fs::write(root.join("secret.txt"), "SECRET_TOKEN").unwrap();
+        fs::create_dir_all(root.join("build")).unwrap();
+        fs::write(root.join("build/out.js"), "SECRET_TOKEN").unwrap();
+
+        // ignore crate needs a git repo (or explicit ignore file) — init one.
+        let _ = std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&root)
+            .status();
+
+        let files = searchable_files(&root);
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|p| p.strip_prefix(&root).ok())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+
+        assert!(
+            names.iter().any(|n| n == "src/keep.rs"),
+            "expected keep.rs in {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n == "secret.txt"),
+            "gitignore'd secret.txt should be skipped: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|n| n.starts_with("build/")),
+            "gitignore'd build/ should be skipped: {names:?}"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }

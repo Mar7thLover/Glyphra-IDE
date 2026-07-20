@@ -188,6 +188,8 @@
     "sessionDismiss": "关闭",
     "promptReadonly": "正在浏览存档 — 按 + 启动新会话…",
     "crashed": "Agent 进程意外退出。",
+    "circuitOpen": "熔断已触发 — 30 秒内崩溃 3 次。重置后再重启。",
+    "circuitReset": "重置熔断",
     "permissionHint": "Y 允许 · N 拒绝 · A 始终允许 · Esc 取消"
   },
   "review": {
