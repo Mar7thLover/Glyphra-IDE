@@ -93,9 +93,7 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn checkpoint_root_at(data_dir: &Path, project: &Path) -> Result<PathBuf, String> {
-    let dir = data_dir
-        .join("checkpoints")
-        .join(project_key(project));
+    let dir = data_dir.join("checkpoints").join(project_key(project));
     fs::create_dir_all(&dir).map_err(|err| format!("create checkpoint dir: {err}"))?;
     Ok(dir)
 }
@@ -626,7 +624,7 @@ mod tests {
         let (project, data) = temp_pair();
         let engine = CheckpointEngine::default();
         let target = project.join("only.bin");
-        fs::write(&target, &[0u8, 1, 2, 3, 255]).unwrap();
+        fs::write(&target, [0u8, 1, 2, 3, 255]).unwrap();
 
         let meta = engine
             .begin_turn_at(&data, &project.to_string_lossy(), None)
@@ -634,7 +632,7 @@ mod tests {
         engine
             .preimage_at(&data, &project.to_string_lossy(), &target.to_string_lossy())
             .unwrap();
-        fs::write(&target, &[9u8, 8, 7]).unwrap();
+        fs::write(&target, [9u8, 8, 7]).unwrap();
         engine
             .commit_turn_at(&data, &project.to_string_lossy(), Some(meta.id.clone()))
             .unwrap();

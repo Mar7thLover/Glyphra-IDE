@@ -41,6 +41,7 @@ export default function FilePanel() {
   const openProject = useProjectStore((s) => s.openProject);
   const toggleDirectory = useProjectStore((s) => s.toggleDirectory);
   const openFile = useEditorStore((s) => s.openFile);
+  const activePath = useEditorStore((s) => s.activePath);
   const statuses = useGitStore((s) => s.statuses);
   const badgeFor = useGitStore((s) => s.badgeFor);
 
@@ -91,14 +92,17 @@ export default function FilePanel() {
             const open = expanded.has(entry.path);
             const Icon = isDirectory ? (open ? FolderOpen : Folder) : FileCode2;
             const badge = current ? badgeFor(current.path, entry.path) : null;
+            const isActive = entry.path === activePath;
             return (
               <button
                 onClick={() => {
                   if (isDirectory) void toggleDirectory(entry);
                   else void openFile(entry.path);
                 }}
-                className="flex h-7 w-full items-center gap-1.5 text-left text-xs text-ink-2 transition-colors hover:bg-hover hover:text-ink"
-                style={{ paddingLeft: 12 + depth * 14 }}
+                className={`mx-1.5 flex h-[26px] w-[calc(100%-0.75rem)] items-center gap-1.5 rounded-md text-left text-xs transition-colors duration-100 ${
+                  isActive ? "bg-active text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"
+                }`}
+                style={{ paddingLeft: 6 + depth * 14, paddingRight: 8 }}
               >
                 <ChevronRight
                   className={`size-3 shrink-0 text-ink-3 transition-transform ${isDirectory && open ? "rotate-90" : ""} ${

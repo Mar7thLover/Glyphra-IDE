@@ -30,6 +30,8 @@
     "connectSsh": "Connect via SSH",
     "openAgent": "Open Agent",
     "openAgentHint": "Right panel",
+    "agentsWindow": "Agents window",
+    "agentsWindowHint": "Standalone steering surface",
     "soon": "Coming soon",
     "setup": "Setup",
     "workspace": "Workspace",
@@ -52,7 +54,14 @@
     "minimize": "Minimize",
     "maximize": "Maximize",
     "restore": "Restore",
-    "close": "Close"
+    "close": "Close",
+    "palette": "Search & commands"
+  },
+  "agentWindow": {
+    "title": "Glyphra Agents",
+    "newSession": "New session",
+    "projects": "Projects",
+    "noProject": "Pick a project to begin"
   },
   "status": {
     "ready": "Ready"
@@ -136,6 +145,11 @@
     "shortcutWindow": "Agent",
     "toggleShow": "Open Agent sidebar",
     "toggleHide": "Collapse Agent sidebar",
+    "openWindow": "Open standalone Agents window",
+    "emptyHello": "What are we building?",
+    "promptIdle": "Describe a task — Enter starts a session…",
+    "modeSafeHint": "Read-oriented; asks before edits",
+    "modeStandardHint": "Balanced approvals (recommended)",
     "idleTitle": "Agent",
     "newAgent": "New Agent",
     "emptyTitle": "Agent",
@@ -217,10 +231,13 @@
     "placeholder": "Type a command…",
     "empty": "No matching commands.",
     "groupNav": "Navigate",
+    "groupAppearance": "Appearance",
     "toggleAgent": "Toggle Agent panel",
+    "openAgentsWindow": "Open Agents window",
     "openSettings": "Open Settings",
     "openSearch": "Search in files",
     "toggleTerminal": "Toggle Terminal",
-    "openReview": "Open Review"
+    "openReview": "Open Review",
+    "toggleTheme": "Toggle light / dark theme"
   }
 }

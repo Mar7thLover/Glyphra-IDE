@@ -32,42 +32,41 @@ export default function StatusBar() {
     persist(next, i18n.language);
   };
 
+  const item =
+    "flex h-full items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-hover hover:text-ink-2";
+
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-1 border-t border-line bg-panel px-2 text-[11px] text-ink-3">
-      <span className="text-ink-3">{t("app.prealpha")}</span>
-      <span className="ml-1">{t("status.ready")}</span>
+    <footer className="glass-panel flex h-6 shrink-0 items-center gap-1 border-t border-line px-2 text-[11px] text-ink-3">
+      <span className="inline-flex items-center gap-1.5 px-1">
+        <span className="size-1.5 rounded-full bg-ok/80" />
+        {t("status.ready")}
+      </span>
+      <span className="text-ink-3/60">{t("app.prealpha")}</span>
       <div className="flex-1" />
-      <button
-        type="button"
-        onClick={() => openReview()}
-        title={t("review.title")}
-        className="flex h-full items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
-      >
+      <button type="button" onClick={() => openReview()} title={t("review.title")} className={item}>
         <GitPullRequestArrow className="size-3" />
-        {turnCount > 0 ? turnCount : t("review.title")}
+        {turnCount > 0 ? (
+          <span className="inline-flex min-w-[14px] items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium text-accent">
+            {turnCount}
+          </span>
+        ) : (
+          t("review.title")
+        )}
       </button>
       <button
         type="button"
         onClick={() => toggleTerminal()}
         title={t("terminal.title")}
-        className="flex h-full items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
+        className={item}
       >
         <TerminalSquare className="size-3" />
         {t("terminal.title")}
       </button>
-      <button
-        onClick={toggleLang}
-        title={t("settings.language")}
-        className="flex h-full items-center gap-1 rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
-      >
+      <button onClick={toggleLang} title={t("settings.language")} className={item}>
         <Languages className="size-3" />
         {i18n.language === "zh-CN" ? "中文" : "EN"}
       </button>
-      <button
-        onClick={toggleTheme}
-        title={t("settings.theme")}
-        className="flex h-full items-center rounded-sm px-1.5 transition-colors hover:bg-hover hover:text-ink-2"
-      >
+      <button onClick={toggleTheme} title={t("settings.theme")} className={item}>
         {theme === "dark" ? <Moon className="size-3" /> : <Sun className="size-3" />}
       </button>
     </footer>

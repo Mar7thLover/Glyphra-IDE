@@ -1,46 +1,65 @@
 import {
-  ArrowUpRight,
+  AppWindow,
   Loader2,
-  Plus,
   PanelRightClose,
+  Plus,
   RefreshCw,
-  Square,
   X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { AgentPermissionMode, StartableBackend } from "@/lib/acp/types";
+import GlyphMark from "@/app/GlyphMark";
+import { openAgentsWindow } from "@/lib/agentWindow";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProviderStore } from "@/lib/stores/providerStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
+import AgentComposer, { useComposerDraft } from "./AgentComposer";
 import MessageList from "./MessageList";
+import Notice from "./Notice";
 import PermissionModal from "./PermissionModal";
 import SessionList from "./SessionList";
 
 export const AGENT_WIDTH = 380;
 
-const pillSelect =
-  "h-6 max-w-[9rem] cursor-pointer appearance-none truncate rounded-full border border-line bg-raised/80 px-2.5 text-[11px] text-ink-2 outline-none hover:border-line-strong hover:text-ink disabled:opacity-40";
+function EmptyState({ ready }: { ready: boolean }) {
+  const { t } = useTranslation();
+  const setDraft = useComposerDraft((s) => s.setDraft);
+  const tips = [t("home.tipReview"), t("home.tipExplain"), t("home.tipTest")];
 
-function providerCompatible(backend: StartableBackend, kind: string): boolean {
-  if (!kind) return true;
-  if (backend === "fixture") return true;
-  if (backend === "codex-acp") {
-    return kind === "custom-openai" || kind === "openai-key" || kind === "codex-login";
-  }
-  if (backend === "claude-acp") {
-    return kind === "anthropic-key" || kind === "claude-subscription";
-  }
-  return true;
+  return (
+    <div className="rise-in flex h-full flex-col items-center justify-center gap-3 px-6 pb-10">
+      <GlyphMark size={34} className="opacity-80" />
+      <div className="text-center">
+        <div className="text-[14px] font-medium text-ink">{t("agent.emptyHello")}</div>
+        <p className="mt-1 max-w-[260px] text-[11.5px] leading-relaxed text-ink-3">
+          {ready ? t("agent.emptyBody") : t("agent.needInstall")}
+        </p>
+      </div>
+      {ready && (
+        <div className="mt-2 flex flex-col items-stretch gap-1.5">
+          {tips.map((tip) => (
+            <button
+              key={tip}
+              type="button"
+              onClick={() => setDraft(tip)}
+              className="rounded-full border border-line bg-raised/50 px-3 py-1.5 text-[11px] text-ink-2 transition-all duration-150 hover:border-line-strong hover:bg-raised hover:text-ink"
+            >
+              {tip}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
- * Right-hand Agent workspace — input-first, readiness-aware composer.
+ * Right-hand Agent workspace — input-first, readiness-aware chat surface.
  */
 export default function AgentWorkspace() {
   const { t } = useTranslation();
@@ -55,7 +74,6 @@ export default function AgentWorkspace() {
   const busy = useAgentStore((s) => s.busy);
   const error = useAgentStore((s) => s.error);
   const mode = useAgentStore((s) => s.mode);
-  const providerId = useAgentStore((s) => s.providerId);
   const backend = useAgentStore((s) => s.backend);
   const backends = useAgentStore((s) => s.backends);
   const detecting = useAgentStore((s) => s.detecting);
@@ -66,12 +84,9 @@ export default function AgentWorkspace() {
   const detect = useAgentStore((s) => s.detect);
   const setMode = useAgentStore((s) => s.setMode);
   const setProviderId = useAgentStore((s) => s.setProviderId);
-  const setBackend = useAgentStore((s) => s.setBackend);
   const clearError = useAgentStore((s) => s.clearError);
   const clearCircuit = useAgentStore((s) => s.clearCircuit);
   const start = useAgentStore((s) => s.start);
-  const prompt = useAgentStore((s) => s.prompt);
-  const cancel = useAgentStore((s) => s.cancel);
   const respondPermission = useAgentStore((s) => s.respondPermission);
   const stop = useAgentStore((s) => s.stop);
   const restart = useAgentStore((s) => s.restart);
@@ -79,11 +94,7 @@ export default function AgentWorkspace() {
   const openArchive = useAgentStore((s) => s.openArchive);
   const clearArchiveView = useAgentStore((s) => s.clearArchiveView);
   const removeArchive = useAgentStore((s) => s.removeArchive);
-  const providers = useProviderStore((s) => s.providers);
   const refreshProviders = useProviderStore((s) => s.refresh);
-
-  const [draft, setDraft] = useState("");
-  const [unleashedArmed, setUnleashedArmed] = useState(false);
 
   useEffect(() => {
     void detect();
@@ -99,17 +110,13 @@ export default function AgentWorkspace() {
 
   const backendInfo = backends.find((b) => b.backend === backend);
   const backendReady = backend === "fixture" || Boolean(backendInfo?.installed);
-  const filteredProviders = useMemo(
-    () => providers.filter((p) => providerCompatible(backend, p.kind)),
-    [providers, backend],
-  );
 
   const running = session?.status === "running" || session?.status === "busy";
   const crashed = session?.status === "crashed";
-  const canSend = session?.status === "running" && !busy;
   const isFixture = backend === "fixture";
   const readOnly = Boolean(viewingArchiveId);
 
+  const statusTone = running ? "live" : crashed ? "crashed" : "idle";
   const statusLabel = detecting
     ? t("agent.detecting")
     : session?.status === "busy"
@@ -120,62 +127,27 @@ export default function AgentWorkspace() {
           ? t("agent.statusCrashed")
           : readOnly
             ? t("agent.sessionArchive")
-            : isFixture
-              ? t("agent.fixtureShort")
-              : backendReady
-                ? t("agent.ready")
-                : t("agent.missing");
+            : backendReady
+              ? t("agent.ready")
+              : t("agent.missing");
 
   const sessionLabel = readOnly
     ? (archives.find((entry) => entry.id === viewingArchiveId)?.title ?? t("agent.sessionArchive"))
     : (session?.agentName ??
       (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent")));
 
-  const submit = (event?: FormEvent) => {
-    event?.preventDefault();
-    const value = draft.trim();
-    if (!value || !canSend) return;
-    setDraft("");
-    void prompt(value);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      submit();
-    }
-  };
-
-  const startSession = () => {
-    if (!current || busy || running) return;
-    if (readOnly) clearArchiveView();
-    if (mode === "unleashed" && !unleashedArmed) {
-      setUnleashedArmed(true);
-      return;
-    }
-    setUnleashedArmed(false);
-    void start(current.path);
-  };
-
-  const onBackendChange = (value: StartableBackend) => {
-    setBackend(value);
-    if (providerId) {
-      const provider = providers.find((p) => p.id === providerId);
-      if (provider && !providerCompatible(value, provider.kind)) {
-        setProviderId(null);
-      }
-    }
-  };
+  const iconBtn =
+    "grid size-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-30";
 
   return (
     <motion.aside
       initial={false}
       animate={{ width: open ? AGENT_WIDTH : 0 }}
       transition={{ type: "spring", stiffness: 480, damping: 44 }}
-      className="relative shrink-0 overflow-hidden border-l border-line bg-panel"
+      className="glass-panel relative shrink-0 overflow-hidden border-l border-line"
     >
       <div className="relative flex h-full flex-col" style={{ width: AGENT_WIDTH }}>
-        <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
+        <header className="flex h-10 shrink-0 items-center gap-1.5 px-2">
           <SessionList
             archives={archives}
             activeId={session?.archiveId ?? null}
@@ -189,21 +161,25 @@ export default function AgentWorkspace() {
               void removeArchive(current.path, id);
             }}
           />
-          <button
-            type="button"
-            className="min-w-0 truncate rounded-md px-2 py-1 text-[11px] font-medium text-ink"
-          >
-            {sessionLabel}
-          </button>
+          <span className="min-w-0 truncate text-[12px] font-medium text-ink">{sessionLabel}</span>
           <span
-            className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-              session?.status === "running" || session?.status === "busy"
-                ? "bg-accent/15 text-accent"
-                : crashed
-                  ? "bg-danger/15 text-danger"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] ${
+              statusTone === "live"
+                ? "bg-accent-soft text-accent"
+                : statusTone === "crashed"
+                  ? "bg-danger/12 text-danger"
                   : "bg-hover text-ink-3"
             }`}
           >
+            <span
+              className={`size-1.5 rounded-full ${
+                statusTone === "live"
+                  ? "status-pulse bg-accent"
+                  : statusTone === "crashed"
+                    ? "bg-danger"
+                    : "bg-ink-3/50"
+              }`}
+            />
             {statusLabel}
           </span>
           <div className="flex-1" />
@@ -211,17 +187,37 @@ export default function AgentWorkspace() {
             type="button"
             title={t("agent.detect")}
             onClick={() => void detect()}
-            className="rounded p-1 text-ink-3 hover:bg-hover hover:text-ink"
+            className={iconBtn}
           >
             <RefreshCw className={`size-3.5 ${detecting ? "animate-spin" : ""}`} strokeWidth={1.6} />
           </button>
-          {!running && !crashed ? (
+          {crashed ? (
+            <button
+              type="button"
+              disabled={!current || busy || circuitOpen}
+              onClick={() => void restart()}
+              className="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-40"
+            >
+              {t("agent.restart")}
+            </button>
+          ) : running ? (
+            <button
+              type="button"
+              onClick={() => void stop()}
+              className="rounded-md px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors hover:bg-hover hover:text-ink-2"
+            >
+              {t("agent.stop")}
+            </button>
+          ) : (
             <button
               type="button"
               disabled={!current || busy || !backendReady || circuitOpen}
-              onClick={startSession}
+              onClick={() => {
+                if (readOnly) clearArchiveView();
+                if (current) void start(current.path);
+              }}
               title={circuitOpen ? t("agent.circuitOpen") : t("agent.start")}
-              className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-30"
+              className={iconBtn}
             >
               {busy ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -229,239 +225,112 @@ export default function AgentWorkspace() {
                 <Plus className="size-3.5" strokeWidth={1.6} />
               )}
             </button>
-          ) : crashed ? (
-            <button
-              type="button"
-              disabled={!current || busy || circuitOpen}
-              onClick={() => void restart()}
-              className="px-1.5 text-[11px] text-accent hover:text-ink disabled:opacity-40"
-            >
-              {t("agent.restart")}
-            </button>
-          ) : (
-            <>
-              {busy && (
-                <button
-                  type="button"
-                  onClick={() => void cancel()}
-                  title={t("agent.cancel")}
-                  className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink"
-                >
-                  <Square className="size-3 fill-current" strokeWidth={1.6} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => void stop()}
-                className="px-1.5 text-[11px] text-ink-3 hover:text-ink-2"
-              >
-                {t("agent.stop")}
-              </button>
-            </>
           )}
+          <button
+            type="button"
+            title={t("agent.openWindow")}
+            onClick={() => void openAgentsWindow()}
+            className={iconBtn}
+          >
+            <AppWindow className="size-3.5" strokeWidth={1.6} />
+          </button>
           <button
             type="button"
             title={t("agent.toggleHide")}
             onClick={() => setAgentOpen(false)}
-            className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink-2"
+            className={iconBtn}
           >
             <PanelRightClose className="size-3.5" strokeWidth={1.6} />
           </button>
         </header>
 
+        {busy ? <div className="thinking-bar" /> : <div className="h-px bg-line" />}
+
         {mode === "unleashed" && (
-          <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-danger/90">
+          <Notice tone="danger">
             <span>{t("agent.modeUnleashedWarn")}</span>
-            {unleashedArmed && !running && (
-              <button
-                type="button"
-                onClick={startSession}
-                className="shrink-0 text-ink-2 underline hover:text-ink"
-              >
-                {t("agent.confirmUnleashed")}
-              </button>
-            )}
-          </div>
+          </Notice>
         )}
 
         {isFixture && !running && !readOnly && (
-          <div className="px-3 py-1.5 text-[11px] text-ink-3">{t("agent.fixtureHint")}</div>
+          <Notice>
+            <span>{t("agent.fixtureHint")}</span>
+          </Notice>
         )}
 
         {!backendReady && backendInfo && (
-          <div className="flex items-start justify-between gap-2 px-3 py-1.5 text-[11px] text-danger/90">
+          <Notice tone="danger">
             <span className="min-w-0">{backendInfo.detail}</span>
             <button
               type="button"
               onClick={openSettings}
-              className="shrink-0 text-ink-2 underline hover:text-ink"
+              className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
             >
               {t("agent.openSetup")}
             </button>
-          </div>
+          </Notice>
         )}
 
         {readOnly && (
-          <div className="flex items-center justify-between gap-2 px-3 py-1.5 text-[11px] text-ink-3">
+          <Notice>
             <span>{t("agent.sessionReadonly")}</span>
             <button
               type="button"
               onClick={clearArchiveView}
-              className="text-ink-2 hover:text-ink"
+              className="shrink-0 text-ink-2 hover:text-ink"
             >
               {t("agent.sessionDismiss")}
             </button>
-          </div>
+          </Notice>
         )}
 
         {error && (
-          <div className="flex items-start gap-2 px-3 py-1.5 text-[11px] text-danger">
+          <Notice tone="danger">
             <span className="min-w-0 flex-1">{error}</span>
-            <button type="button" onClick={clearError} className="shrink-0 text-ink-3 hover:text-ink">
+            <button type="button" onClick={clearError} className="shrink-0 hover:opacity-80">
               <X className="size-3" />
             </button>
-          </div>
+          </Notice>
         )}
 
         {circuitOpen && (
-          <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-1.5 text-[11px] text-danger/90">
+          <Notice tone="danger">
             <span className="min-w-0">{t("agent.circuitOpen")}</span>
             <button
               type="button"
               onClick={clearCircuit}
-              className="shrink-0 text-ink-2 underline hover:text-ink"
+              className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
             >
               {t("agent.circuitReset")}
             </button>
-          </div>
+          </Notice>
         )}
 
         {(crashed || circuitOpen) && stderrTail.length > 0 && (
-          <pre className="max-h-24 overflow-auto border-b border-line bg-app/40 px-3 py-1.5 font-mono text-[10px] leading-relaxed text-ink-3">
+          <pre className="mx-3 mt-2 max-h-24 overflow-auto rounded-lg border border-line bg-app/50 px-2.5 py-1.5 font-mono text-[10px] leading-relaxed text-ink-3">
             {stderrTail.join("\n")}
           </pre>
         )}
 
         <div className="min-h-0 flex-1">
           {items.length === 0 ? (
-            <div className="flex h-full flex-col px-4 pt-5">
-              <p className="text-[12px] leading-relaxed text-ink-3">
-                {!current
-                  ? t("agent.needProject")
-                  : !backendReady
-                    ? t("agent.needInstall")
-                    : t("agent.emptyBody")}
-              </p>
-              <ul className="mt-5 space-y-2 border-t border-line pt-4 text-[11px] text-ink-3">
-                <li className="flex justify-between gap-3">
-                  <span>{t("agent.hintStart")}</span>
-                  <kbd className="font-mono text-[10px]">+</kbd>
-                </li>
-                <li className="flex justify-between gap-3">
-                  <span>{t("agent.hintMode")}</span>
-                  <span className="text-ink-2">∞ Agent</span>
-                </li>
-                <li className="flex justify-between gap-3">
-                  <span>{t("agent.hintProvider")}</span>
-                  <span className="text-ink-2">{t("settings.nav.models")}</span>
-                </li>
-              </ul>
-            </div>
+            !current ? (
+              <div className="flex h-full items-center justify-center px-6 pb-10">
+                <p className="max-w-[240px] text-center text-[12px] leading-relaxed text-ink-3">
+                  {t("agent.needProject")}
+                </p>
+              </div>
+            ) : (
+              <EmptyState ready={backendReady} />
+            )
           ) : (
             <MessageList items={items} />
           )}
         </div>
 
-        <form onSubmit={submit} className="shrink-0 px-3 pb-3 pt-1">
-          <div className="rounded-2xl border border-line bg-raised shadow-[0_1px_0_rgba(0,0,0,0.02)] focus-within:border-line-strong">
-            <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onKeyDown}
-              disabled={!canSend}
-              rows={3}
-              placeholder={
-                readOnly
-                  ? t("agent.promptReadonly")
-                  : running
-                    ? t("agent.promptPlaceholder")
-                    : t("agent.promptNeedSession")
-              }
-              className="max-h-40 min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-3 text-[13px] leading-relaxed text-ink outline-none placeholder:text-ink-3 disabled:opacity-50"
-            />
-            <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-2.5">
-              <select
-                value={mode}
-                onChange={(event) => {
-                  setUnleashedArmed(false);
-                  setMode(event.target.value as AgentPermissionMode);
-                }}
-                disabled={running}
-                className={pillSelect}
-                title={t("agent.modeStandard")}
-              >
-                <option value="safe">{t("agent.modeSafeShort")}</option>
-                <option value="standard">∞ {t("agent.modeStandardShort")}</option>
-                <option value="unleashed">{t("agent.modeUnleashedShort")}</option>
-              </select>
-              <select
-                value={backend}
-                onChange={(event) => onBackendChange(event.target.value as StartableBackend)}
-                disabled={running}
-                className={pillSelect}
-                title={backendInfo?.detail}
-              >
-                {backends
-                  .filter((b) => b.backend !== "custom-agent")
-                  .map((b) => (
-                    <option key={b.backend} value={b.backend}>
-                      {b.backend === "fixture"
-                        ? t("agent.fixtureShort")
-                        : b.backend === "codex-acp"
-                          ? "Codex"
-                          : b.backend === "claude-acp"
-                            ? "Claude"
-                            : b.backend === "pi-agent"
-                              ? "Pi"
-                              : b.backend}
-                      {b.installed ? "" : ` (${t("agent.missing")})`}
-                    </option>
-                  ))}
-              </select>
-              <select
-                value={providerId ?? ""}
-                onChange={(event) => setProviderId(event.target.value || null)}
-                disabled={running}
-                className={`${pillSelect} min-w-0 flex-1`}
-                title={t("agent.providerHint")}
-              >
-                <option value="">{t("agent.providerNoneShort")}</option>
-                {filteredProviders.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                    {provider.hasSecret ? "" : ` · ${t("settings.secretMissing")}`}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={!canSend || !draft.trim()}
-                className="ml-auto grid size-7 place-items-center rounded-full bg-ink text-[var(--bg-raised)] transition-opacity disabled:opacity-25"
-                title={t("agent.send")}
-              >
-                {busy ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <ArrowUpRight className="size-3.5" strokeWidth={1.8} />
-                )}
-              </button>
-            </div>
-          </div>
-        </form>
+        <AgentComposer />
 
-        {permission && (
-          <PermissionModal prompt={permission} onRespond={respondPermission} />
-        )}
+        {permission && <PermissionModal prompt={permission} onRespond={respondPermission} />}
       </div>
     </motion.aside>
   );

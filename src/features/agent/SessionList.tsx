@@ -51,12 +51,12 @@ export default function SessionList({
         type="button"
         title={t("agent.sessions")}
         onClick={() => setOpen((value) => !value)}
-        className="rounded p-1 text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+        className="grid size-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-hover hover:text-ink"
       >
         <History className="size-3.5" strokeWidth={1.6} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-lg border border-line bg-raised shadow-lg">
+        <div className="glass-float pop-in absolute left-0 top-full z-30 mt-1.5 w-64 overflow-hidden rounded-xl">
           <div className="border-b border-line px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
             {t("agent.sessions")}
           </div>

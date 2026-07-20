@@ -53,6 +53,8 @@ import type { SessionSummary } from "./gen/SessionSummary";
 export const ipc = {
   appReady: () => invoke<EnvInfo>("app_ready"),
   perfMark: (name: string) => invoke<void>("perf_mark", { name }),
+  windowOpenAgent: () => invoke<void>("window_open_agent"),
+  windowFocusMain: () => invoke<void>("window_focus_main"),
   projectOpen: (path: string) => invoke<ProjectInfo>("project_open", { path }),
   projectRecent: () => invoke<RecentProject[]>("project_recent"),
   fsList: (path: string) => invoke<DirEntryInfo[]>("fs_list", { path }),

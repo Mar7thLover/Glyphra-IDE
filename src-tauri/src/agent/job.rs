@@ -4,6 +4,7 @@
 //! `KILL_ON_JOB_CLOSE` so `npx` → node → agent grandchildren die when Glyphra
 //! drops the job (kill / window close). Elsewhere this is a no-op.
 
+#[cfg(not(windows))]
 use tokio::process::Child;
 
 #[cfg(windows)]
@@ -13,15 +14,22 @@ mod windows_impl {
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
 
+    /// Owned process handle. SAFETY: a Win32 kernel HANDLE is a plain value,
+    /// valid process-wide and usable from any thread; the raw pointer inside
+    /// `HANDLE` is opaque, never dereferenced.
+    struct OwnedProcessHandle(HANDLE);
+    unsafe impl Send for OwnedProcessHandle {}
+    unsafe impl Sync for OwnedProcessHandle {}
+
     pub struct JobGuard {
-        job: Option<Job>,
-        process: Option<HANDLE>,
+        _job: Option<Job>,
+        process: Option<OwnedProcessHandle>,
     }
 
     impl JobGuard {
         pub fn detached() -> Self {
             Self {
-                job: None,
+                _job: None,
                 process: None,
             }
         }
@@ -31,7 +39,7 @@ mod windows_impl {
         fn drop(&mut self) {
             if let Some(handle) = self.process.take() {
                 unsafe {
-                    let _ = CloseHandle(handle);
+                    let _ = CloseHandle(handle.0);
                 }
             }
             // Dropping `job` closes the job handle → KILL_ON_JOB_CLOSE terminates
@@ -49,7 +57,7 @@ mod windows_impl {
             .query_extended_limit_info()
             .map_err(|err| format!("query job limits: {err}"))?;
         info.limit_kill_on_job_close();
-        job.set_extended_limit_info(&mut info)
+        job.set_extended_limit_info(&info)
             .map_err(|err| format!("set job limits: {err}"))?;
 
         let process = unsafe {
@@ -64,8 +72,8 @@ mod windows_impl {
         }
 
         Ok(JobGuard {
-            job: Some(job),
-            process: Some(process),
+            _job: Some(job),
+            process: Some(OwnedProcessHandle(process)),
         })
     }
 }

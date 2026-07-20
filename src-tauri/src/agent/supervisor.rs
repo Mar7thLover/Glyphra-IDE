@@ -156,18 +156,26 @@ impl AgentSupervisor {
         let wait_supervisor = Arc::clone(&supervisor);
         let wait_channel = channel;
         tokio::spawn(async move {
-            let code = {
-                let mut agents = wait_supervisor.agents.lock().await;
-                if let Some(agent) = agents.get_mut(&session_id) {
-                    match agent.child.wait().await {
-                        Ok(status) => status
-                            .code()
-                            .map(|c| c.to_string())
-                            .unwrap_or_else(|| "signal".into()),
-                        Err(err) => format!("wait-error:{err}"),
+            // Never await child exit while holding the agents map lock. Writes and
+            // kills need the same lock, so doing so deadlocks every live session.
+            let code = loop {
+                let poll = {
+                    let mut agents = wait_supervisor.agents.lock().await;
+                    match agents.get_mut(&session_id) {
+                        Some(agent) => agent.child.try_wait(),
+                        None => break "missing".into(),
                     }
-                } else {
-                    "missing".into()
+                };
+
+                match poll {
+                    Ok(Some(status)) => {
+                        break status
+                            .code()
+                            .map(|code| code.to_string())
+                            .unwrap_or_else(|| "signal".into());
+                    }
+                    Ok(None) => tokio::time::sleep(std::time::Duration::from_millis(25)).await,
+                    Err(err) => break format!("wait-error:{err}"),
                 }
             };
             let _ = wait_channel.send(AgentIoEvent {
