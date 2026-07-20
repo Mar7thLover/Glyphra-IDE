@@ -48,10 +48,12 @@ export default function PermissionModal({ prompt, onRespond }: PermissionModalPr
   }, [onRespond, prompt.options]);
 
   return (
-    <div className="absolute inset-0 z-20 grid place-items-end bg-app/55 p-3 backdrop-blur-[1px]">
-      <div className="w-full rounded-xl border border-line bg-raised p-3 shadow-lg">
+    <div className="absolute inset-0 z-20 grid place-items-end bg-app/45 p-3 backdrop-blur-[2px]">
+      <div className="glass-float pop-in w-full rounded-2xl p-3">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-ink">
-          <ShieldAlert className="size-4 text-accent" />
+          <span className="grid size-6 place-items-center rounded-lg bg-accent-soft">
+            <ShieldAlert className="size-3.5 text-accent" />
+          </span>
           {t("agent.permissionTitle")}
         </div>
         <p className="mb-1 text-xs text-ink-2">{prompt.title}</p>
@@ -74,16 +76,16 @@ export default function PermissionModal({ prompt, onRespond }: PermissionModalPr
                 key={option.optionId}
                 type="button"
                 onClick={() => onRespond(option.optionId)}
-                className={`rounded-lg border px-2.5 py-1.5 text-left text-xs transition-colors ${
+                className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs transition-all duration-100 ${
                   isAllow
-                    ? "border-accent/40 bg-accent/10 text-ink hover:border-accent"
+                    ? "border-accent/35 bg-accent-soft text-ink hover:border-accent"
                     : isReject
-                      ? "border-danger/30 bg-danger/5 text-ink-2 hover:border-danger/50"
-                      : "border-line bg-panel text-ink-2 hover:border-accent hover:text-ink"
+                      ? "border-danger/25 bg-danger/5 text-ink-2 hover:border-danger/50"
+                      : "border-line bg-raised/40 text-ink-2 hover:border-accent hover:text-ink"
                 }`}
               >
-                <span className="mr-2 font-mono text-[10px] text-ink-3">{index + 1}</span>
-                {option.name}
+                <kbd className="shrink-0">{index + 1}</kbd>
+                <span className="min-w-0 flex-1">{option.name}</span>
               </button>
             );
           })}

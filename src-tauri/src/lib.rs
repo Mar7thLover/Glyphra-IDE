@@ -35,6 +35,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_ready,
             ipc::app::perf_mark,
+            ipc::app::window_open_agent,
+            ipc::app::window_focus_main,
             ipc::project::project_open,
             ipc::project::project_recent,
             ipc::project::fs_list,

@@ -90,10 +90,31 @@ pub fn exec_readonly(cwd: &Path, args: &[String]) -> Result<String, String> {
     run_git(cwd, &refs)
 }
 
+fn canonicalize_allow_missing(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+
+    let mut cursor = path;
+    let mut missing = Vec::new();
+    while let Some(parent) = cursor.parent() {
+        if let Some(name) = cursor.file_name() {
+            missing.push(name.to_os_string());
+        }
+        if let Ok(mut canonical) = parent.canonicalize() {
+            for part in missing.iter().rev() {
+                canonical.push(part);
+            }
+            return canonical;
+        }
+        cursor = parent;
+    }
+
+    path.to_path_buf()
+}
+
 pub fn rel_path(project: &Path, absolute: &Path) -> Result<String, String> {
-    let abs = absolute
-        .canonicalize()
-        .unwrap_or_else(|_| absolute.to_path_buf());
+    let abs = canonicalize_allow_missing(absolute);
     let root = project
         .canonicalize()
         .unwrap_or_else(|_| project.to_path_buf());

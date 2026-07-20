@@ -18,18 +18,18 @@ function RailButton({ id, icon: Icon }: { id: Panel; icon: LucideIcon }) {
     <button
       title={t(`rail.${id}`)}
       onClick={() => toggle(id)}
-      className={`relative flex h-11 w-full items-center justify-center transition-colors duration-100 ${
+      className={`relative grid size-9 place-items-center rounded-[10px] transition-colors duration-100 ${
         active ? "text-ink" : "text-ink-3 hover:text-ink-2"
       }`}
     >
       {active && (
         <motion.span
-          layoutId="rail-indicator"
-          className="absolute left-0 top-3 h-5 w-[2.5px] rounded-full bg-accent"
+          layoutId="rail-active"
+          className="absolute inset-0 rounded-[10px] bg-active shadow-[var(--shadow-soft)]"
           transition={{ type: "spring", stiffness: 520, damping: 42 }}
         />
       )}
-      <Icon className="size-[18px]" strokeWidth={1.75} />
+      <Icon className="relative size-[17px]" strokeWidth={1.75} />
     </button>
   );
 }
@@ -39,7 +39,7 @@ export default function ActivityRail() {
   const openSettings = useUiStore((s) => s.openSettings);
 
   return (
-    <nav className="flex w-12 shrink-0 flex-col items-center border-r border-line bg-panel pt-1">
+    <nav className="flex w-12 shrink-0 flex-col items-center gap-1 pt-1.5">
       {mainItems.map((item) => (
         <RailButton key={item.id} {...item} />
       ))}
@@ -48,11 +48,11 @@ export default function ActivityRail() {
         type="button"
         title={t("rail.settings")}
         onClick={openSettings}
-        className="flex h-11 w-full items-center justify-center text-ink-3 transition-colors hover:text-ink-2"
+        className="grid size-9 place-items-center rounded-[10px] text-ink-3 transition-colors hover:bg-hover hover:text-ink-2"
       >
-        <Settings className="size-[18px]" strokeWidth={1.75} />
+        <Settings className="size-[17px]" strokeWidth={1.75} />
       </button>
-      <div className="h-1.5" />
+      <div className="h-2" />
     </nav>
   );
 }

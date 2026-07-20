@@ -1,14 +1,35 @@
-import { ChevronDown, ChevronRight, Circle, Loader2, X } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Circle,
+  FileText,
+  Loader2,
+  Pencil,
+  Search,
+  TerminalSquare,
+  Wrench,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import type { AgentTimelineItem } from "@/lib/acp/types";
 
 type ToolItem = Extract<AgentTimelineItem, { kind: "tool" }>;
 
+const kindIcons: Record<string, LucideIcon> = {
+  edit: Pencil,
+  terminal: TerminalSquare,
+  execute: TerminalSquare,
+  read: FileText,
+  fetch: Search,
+  search: Search,
+};
+
 function StatusMark({ status }: { status: string }) {
-  if (status === "completed") return <span className="text-[10px] text-ink-3">done</span>;
-  if (status === "failed") return <X className="size-3 text-danger" strokeWidth={1.6} />;
-  if (status === "in_progress") return <Loader2 className="size-3 animate-spin text-ink-3" />;
+  if (status === "completed") return <Check className="size-3 text-ok" strokeWidth={2.2} />;
+  if (status === "failed") return <X className="size-3 text-danger" strokeWidth={2} />;
+  if (status === "in_progress") return <Loader2 className="size-3 animate-spin text-accent" />;
   return <Circle className="size-2.5 text-ink-3" strokeWidth={1.5} />;
 }
 
@@ -21,24 +42,17 @@ export default function ToolCard({ item }: { item: ToolItem }) {
       item.toolKind === "execute" ||
       (item.detail?.includes("\n") ?? false));
   const [expanded, setExpanded] = useState(false);
+  const KindIcon = kindIcons[item.toolKind ?? ""] ?? Wrench;
 
   return (
-    <div className="w-full py-1 text-left">
+    <div className="overflow-hidden rounded-lg border border-line bg-raised/35 transition-colors hover:border-line-strong/70">
       <button
         type="button"
         disabled={!collapsible}
         onClick={() => setExpanded((value) => !value)}
-        className="flex w-full items-center gap-2 disabled:cursor-default"
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left disabled:cursor-default"
       >
-        {collapsible ? (
-          expanded ? (
-            <ChevronDown className="size-3 shrink-0 text-ink-3" strokeWidth={1.6} />
-          ) : (
-            <ChevronRight className="size-3 shrink-0 text-ink-3" strokeWidth={1.6} />
-          )
-        ) : (
-          <span className="size-3 shrink-0" />
-        )}
+        <KindIcon className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.6} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[11px] text-ink-2">{item.title}</div>
           {!expanded && (item.detail || item.toolKind) && (
@@ -46,14 +60,19 @@ export default function ToolCard({ item }: { item: ToolItem }) {
               {[item.toolKind, item.detail].filter(Boolean).join(" · ")}
             </div>
           )}
-          {!hasDetail && item.toolKind && (
-            <div className="mt-0.5 truncate font-mono text-[10px] text-ink-3">{item.toolKind}</div>
-          )}
         </div>
         <StatusMark status={item.status} />
+        {collapsible && (
+          <ChevronRight
+            className={`size-3 shrink-0 text-ink-3 transition-transform duration-150 ${
+              expanded ? "rotate-90" : ""
+            }`}
+            strokeWidth={1.6}
+          />
+        )}
       </button>
       {expanded && hasDetail && (
-        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md bg-app/40 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-ink-3">
+        <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words border-t border-line bg-app/40 px-2.5 py-2 font-mono text-[10px] leading-relaxed text-ink-3">
           {item.detail}
         </pre>
       )}

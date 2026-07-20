@@ -27,7 +27,7 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
   if (item.kind === "user") {
     return (
       <div className="px-3 py-2">
-        <div className="border-l border-line-strong pl-2.5 text-[12.5px] leading-relaxed text-ink-2">
+        <div className="ml-7 rounded-xl rounded-tr-[4px] border border-accent/12 bg-accent-soft px-3 py-2 text-[12.5px] leading-relaxed text-ink">
           <div className="whitespace-pre-wrap">{item.text}</div>
         </div>
       </div>
@@ -36,7 +36,7 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
 
   if (item.kind === "assistant") {
     return (
-      <div className="px-3 py-2">
+      <div className="px-3.5 py-2">
         <div className="text-[12.5px] leading-relaxed text-ink">
           <Suspense fallback={<div className="whitespace-pre-wrap text-ink-2">{item.text}</div>}>
             <AssistantMarkdown text={item.text} />
@@ -47,7 +47,7 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
   }
 
   return (
-    <div className="px-3 py-1">
+    <div className="px-3.5 py-1">
       <div className="text-[11px] leading-relaxed text-ink-3">{item.text}</div>
     </div>
   );

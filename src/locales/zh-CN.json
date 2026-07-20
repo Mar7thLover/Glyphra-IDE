@@ -30,6 +30,8 @@
     "connectSsh": "SSH 连接",
     "openAgent": "打开 Agent",
     "openAgentHint": "右侧面板",
+    "agentsWindow": "Agents 窗口",
+    "agentsWindowHint": "独立驾驭窗口",
     "soon": "即将推出",
     "setup": "环境检测",
     "workspace": "工作区",
@@ -52,7 +54,14 @@
     "minimize": "最小化",
     "maximize": "最大化",
     "restore": "还原",
-    "close": "关闭"
+    "close": "关闭",
+    "palette": "搜索与命令"
+  },
+  "agentWindow": {
+    "title": "Glyphra Agents",
+    "newSession": "新建会话",
+    "projects": "项目",
+    "noProject": "先选择一个项目"
   },
   "status": {
     "ready": "就绪"
@@ -136,6 +145,11 @@
     "shortcutWindow": "Agent",
     "toggleShow": "打开 Agent 侧栏",
     "toggleHide": "折叠 Agent 侧栏",
+    "openWindow": "在独立窗口打开 Agents",
+    "emptyHello": "想做点什么？",
+    "promptIdle": "描述任务，Enter 直接开始会话…",
+    "modeSafeHint": "偏只读，改动前询问",
+    "modeStandardHint": "平衡审批（推荐）",
     "idleTitle": "Agent",
     "newAgent": "New Agent",
     "emptyTitle": "Agent",
@@ -217,10 +231,13 @@
     "placeholder": "输入命令…",
     "empty": "没有匹配的命令。",
     "groupNav": "导航",
+    "groupAppearance": "外观",
     "toggleAgent": "切换 Agent 面板",
+    "openAgentsWindow": "打开 Agents 独立窗口",
     "openSettings": "打开设置",
     "openSearch": "在文件中搜索",
     "toggleTerminal": "切换终端",
-    "openReview": "打开审阅"
+    "openReview": "打开审阅",
+    "toggleTheme": "切换明暗主题"
   }
 }
