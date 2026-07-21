@@ -1,0 +1,122 @@
+<div align="center">
+
+<img src="src-tauri/icons/icon.png" width="96" height="96" alt="Glyphra 图标" />
+
+# Glyphra
+
+**为「agent 写代码、人来驾驭」而生的编辑器。**
+
+[English](./README.md) · [简体中文](./README.zh-CN.md)
+
+[为什么选 Glyphra](#为什么选-glyphra) · [快速开始](#快速开始) · [架构](#架构一瞥) · [文档](#文档) · [路线图](#现状与路线图)
+
+<br />
+
+![status](https://img.shields.io/badge/status-pre--alpha-amber?style=flat-square)
+![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+![stack](https://img.shields.io/badge/Tauri_2-React_19-0f172a?style=flat-square)
+![platforms](https://img.shields.io/badge/Windows_·_macOS_·_Linux-CI-green?style=flat-square)
+
+</div>
+
+---
+
+大多数 IDE 是为「人逐行敲代码」设计的。Glyphra 面向现在真实发生的工作流：把任务交给 coding agent，实时看它规划与编辑，把注意力放在**审阅与驾驭**上，而不是打字。
+
+调试器、插件市场、任务系统是前 agent 时代的重型遗产 —— Glyphra 有意不做。留下的是一台极轻的 Tauri 应用：CodeMirror 6、ACP 归一化的 agent 时间线，以及以 git checkpoint 审阅为主交互。
+
+> **状态：pre-alpha。** API 与 UI 仍在快速变动，提交之间可能不兼容。M0–M2 已落地；下一步是打包与多窗口发布（M3）。
+
+## 为什么选 Glyphra
+
+| 支柱 | 你会得到什么 |
+| --- | --- |
+| **Agent 原生** | 自动探测 `PATH` 上的 Codex、Claude Code、Pi、OpenCode，走各自原生协议 —— 不是套一层最低公分母的 shim。自定义 ACP / JSONL / shell / HTTP harness 共用同一套 UI。 |
+| **审阅优先** | 每一轮 agent turn 都会打进 shadow git 快照。逐 hunk 展示、字节级可还原；接受或拒绝的体验接近审 PR。 |
+| **运行中可驾驭** | 模型、reasoning effort、Fast 模式、权限档（请求审批 / 自动批准 / 完全放行）可在会话中途切换，无需拆掉原生线程。 |
+| **用量可见** | 订阅与 API Key 用量 —— 上下文窗口、限流窗口、额度 —— 归一成一种快照，直接显示在 composer。 |
+| **真正轻量** | Tauri 2 + 系统 WebView，不是 Electron。冷启动约一秒、空闲内存低，Windows 11 支持 Mica/Acrylic，编辑器用 CodeMirror 6 而非捆绑 Monaco。 |
+
+## 里面有什么
+
+| 模块 | 说明 |
+| --- | --- |
+| **Harness 目录** | 启动时读取各 CLI 原生的模型列表、reasoning、上下文窗口与权限画像，composer 反映真实安装能力。 |
+| **ACP 归一化会话** | Codex JSON-RPC、Claude stream-json、Pi JSON、OpenCode ACP，以及自定义 stdio/JSONL/shell 与 OpenAI/Anthropic HTTP —— 全部桥成同一时间线（[契约](./docs/harness-api.md)）。 |
+| **Checkpoint 审阅** | 按 turn 的 shadow 快照；审阅面板含 turn 分组、工作区 diff、键盘裁决（`j/k`、`a/r`）与整轮还原。 |
+| **会话存档** | 本地 JSONL 存档（列表 / 加载 / 删除）；恢复优先原生 `session/resume` → `session/load`，再退回上下文续接。 |
+| **编辑器内核** | CodeMirror 6、语言自动探测、VS Code 风格键位、未保存保护、命令面板、ripgrep 搜索、PTY 终端。 |
+| **Onboarding** | 首启检测 git / Node / agent CLI，并提供 winget · irm · npm 安装引导。 |
+
+## 快速开始
+
+**前置：** [Rust](https://rustup.rs/)（stable ≥ ~1.85）、[Node.js](https://nodejs.org/) ≥ 20、[pnpm](https://pnpm.io/)、git。Agent CLI（Codex、Claude Code 等）**不捆绑** —— 自行安装常用工具，Glyphra 会在 `PATH` 上发现它们。
+
+```sh
+pnpm install
+pnpm tauri dev
+```
+
+常用脚本：
+
+```sh
+pnpm test              # vitest
+pnpm typecheck         # tsc --noEmit
+pnpm check:bindings    # 生成的 IPC 类型是否与 src-tauri 一致
+pnpm check:size        # 前端包体预算
+```
+
+后端自检（无需 GUI）：debug 构建后执行 `./src-tauri/target/debug/glyphra --smoke`，打印一行 JSON 状态后退出。
+
+仅前端 Vite 预览（无 Rust IPC）：`pnpm dev`，端口 `1420`。
+
+## 架构一瞥
+
+```
+┌─ Glyphra (Tauri 2) ─────────────────────────────────────────┐
+│  React 19 · Zustand · CodeMirror 6 · streamdown · xterm     │
+│    Agent 面板 · 审阅中心 · 编辑器 · 搜索 · 终端             │
+│    lib/acp AgentBus  ←── 类型化 IPC (ts-rs) ──→  Rust 核心  │
+│  agent/ · gitx/ · pty · search · vault · providers          │
+└─────────────────────────────────────────────────────────────┘
+        │ 原生 CLI / 自定义 harness（stdio · HTTP）
+        ▼
+  Codex · Claude Code · Pi · OpenCode · 你的适配器
+```
+
+- **前端**拥有 ACP 会话语义；**Rust**负责进程监管、framing、checkpoint、PTY、搜索与系统钥匙串。
+- 所有 harness 桥成同一种 ACP 形态事件流（`message.delta`、`plan`、`tool.*`、`done`、`error`）—— UI 只需理解这一种形状。
+- IPC 类型由 `ts-rs` 生成；`pnpm check:bindings` 在漂移时让 CI 失败。
+
+## 文档
+
+| 文档 | 用途 |
+| --- | --- |
+| [docs/README.md](./docs/README.md) | 文档索引 |
+| [docs/TODO.md](./docs/TODO.md) | 近期执行 backlog |
+| [docs/development-plan.md](./docs/development-plan.md) | 完整产品计划与里程碑 |
+| [docs/harness-api.md](./docs/harness-api.md) | 自定义 harness / Provider 契约 |
+| [docs/git-review-ux-plan.md](./docs/git-review-ux-plan.md) | 审阅中心 UX 蓝图 |
+| [docs/ime-checklist.md](./docs/ime-checklist.md) | 编辑器改动的中文 IME 手测门禁 |
+| [AGENTS.md](./AGENTS.md) | Cursor Cloud / agent 贡献者说明 |
+
+## 现状与路线图
+
+| 里程碑 | 焦点 | 状态 |
+| --- | --- | --- |
+| **M0** | 壳、编辑器、主题、CI、smoke | 已完成 |
+| **M1** | Agent 核心、Provider、onboarding、存档 | 已完成 |
+| **M2** | Checkpoint、审阅、终端、搜索、命令面板 | 已完成 |
+| **M2.5** | 熔断、字节级 ckpt、IME 门禁 | 已完成 |
+| **M3** | 多窗口、NSIS / portable、updater、Release | 下一步 |
+| **审阅 R2–R3** | 选区呼叫 agent、行内呈阅、提交辅助 | 计划中 |
+
+v1 之后：基础 LSP、VS Code 主题导入、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、git worktree 多 agent 看板、MCP 管理器 UI、SignPath 签名。
+
+有序的近期任务清单见 [docs/TODO.md](./docs/TODO.md)。
+
+## 许可
+
+[MIT](./LICENSE) —— Glyphra 及捆绑依赖均为 MIT 兼容。Agent CLI **不随应用分发**；Glyphra 探测并驱动你本机已安装的工具。
+
+自定义集成契约：[docs/harness-api.md](./docs/harness-api.md)。

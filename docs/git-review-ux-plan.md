@@ -1,8 +1,9 @@
-# Git 审阅体验 — UX 蓝图（TODO 计划，未实现）
+# Git 审阅体验 — UX 蓝图（TODO 计划）
 
-> 状态：**计划**。本文档只定义目标体验与拆分，不随本次前端重塑落地。
-> 前置：M2 已有 checkpoint 引擎（shadow repo）、ReviewPanel（逐 hunk 接/拒）、MergeEditor、gitStore 状态徽标。
-> 视觉语言：沿用本次重塑的 Aurora Glass 体系（`glass-float` 浮层、`Notice` 卡、`PillSelect`、`thinking-bar`）。
+> 状态：**R1 基本完成 · R2/R3 计划中**（执行清单见 [TODO.md](./TODO.md) P1）。  
+> 前置：M2 已有 checkpoint 引擎（shadow repo）、ReviewPanel（逐 hunk 接/拒）、MergeEditor、gitStore 状态徽标。  
+> 视觉语言：沿用 Aurora Glass 体系（`glass-float` 浮层、`Notice` 卡、`PillSelect`、`thinking-bar`）。  
+> 最近核对：2026-07-21。
 
 ## 目标
 
@@ -54,9 +55,9 @@
 
 ## 里程碑拆分
 
-- **R1 队列与键盘流**（1 周）：审阅中心重塑 + `+/-` 徽标 + 键盘裁决 + 手工变更组（只读 diff）。
-- **R2 选区呼叫 Agent**（1 周）：选区胶囊 + 引用芯片 + ReviewCommentCard（无「应用」）+ 跳转高亮。
-- **R3 行内呈阅与应用**（1-1.5 周）：gutter 色条 + 行内卡 + 建议 diff 一键应用 + 提交辅助。
+- **R1 队列与键盘流** ✅：审阅中心重塑 + `+/-` 徽标 + 键盘裁决 + 手工变更组（只读 diff）+ `git_diff_file` / `ckpt_hunks`。
+- **R2 选区呼叫 Agent** 🔶：上下文菜单「附加选区」与 composer 引用芯片已有雏形；缺浮动 `✦ Agent` / `Ctrl+L` 胶囊与 `ReviewCommentCard` 解析/跳转。
+- **R3 行内呈阅与应用** ⬜：gutter 色条 + 行内卡 + 建议 diff 一键应用 + 提交辅助 + `git_commit` + 分支 ahead/behind。
 
 ## 风险
 
