@@ -99,6 +99,7 @@ In-app updater (`tauri-plugin-updater` + minisign) is intentionally **not** wire
 
 | Symptom | Fix |
 | --- | --- |
+| Actions jobs fail immediately with billing / spending-limit message | Owner must fix **Billing & plans** (payment method or raise spending limit), then re-run `release.yml` or re-push the tag. Linux assets for `v0.1.0-beta.1` were uploaded manually when this hit. |
 | `Resource not accessible by integration` | Repo Settings → Actions → General → Workflow permissions → **Read and write**. |
 | Linux WebKit missing | Workflow installs `libwebkit2gtk-4.1-dev`; locally install the same. |
 | Version mismatch job fails | Run `pnpm check:version` and align the three manifests. |
