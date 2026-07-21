@@ -25,7 +25,7 @@
 
 调试器、插件市场、任务系统是前 agent 时代的重型遗产 —— Glyphra 有意不做。留下的是一台极轻的 Tauri 应用：CodeMirror 6、ACP 归一化的 agent 时间线，以及以 git checkpoint 审阅为主交互。
 
-> **状态：pre-alpha。** API 与 UI 仍在快速变动，提交之间可能不兼容。M0–M2 已落地；下一步是打包与多窗口发布（M3）。
+> **状态：pre-alpha / `0.1.0-beta.1`。** API 与 UI 仍在快速变动，提交之间可能不兼容。测试包见 [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · 发布说明见 [`docs/releasing.md`](./docs/releasing.md)。
 
 ## 为什么选 Glyphra
 

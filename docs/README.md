@@ -9,7 +9,7 @@ Index of product and engineering docs. Root READMEs: [English](../README.md) · 
 | [harness-api.md](./harness-api.md) | en | Integrators | Built-in harnesses + custom ACP / JSONL / shell / HTTP contract |
 | [git-review-ux-plan.md](./git-review-ux-plan.md) | zh | UX / eng | Review-center blueprint (R1–R3) |
 | [ime-checklist.md](./ime-checklist.md) | en | Eng | CJK IME hand-test gate for editor / decoration changes |
-| [../AGENTS.md](../AGENTS.md) | en | Cloud agents | How to run / build / test in Cursor Cloud |
+| [docs/releasing.md](./docs/releasing.md) | en | Release | Tagged packaging / installer matrix |
 
 ## Status snapshot (2026-07)
 
