@@ -153,7 +153,13 @@ export default function AppMenuBar() {
       {
         label: t("menu.commandPalette"),
         shortcut: "Ctrl+K",
-        action: () => usePaletteStore.getState().setOpen(true),
+        action: () => usePaletteStore.getState().openCommands(),
+      },
+      {
+        label: t("palette.goToFile"),
+        shortcut: "Ctrl+P",
+        disabled: !hasProject,
+        action: () => usePaletteStore.getState().openFiles(),
       },
     ],
     view: [
@@ -214,7 +220,13 @@ export default function AppMenuBar() {
       {
         label: t("menu.showCommands"),
         shortcut: "Ctrl+K",
-        action: () => usePaletteStore.getState().setOpen(true),
+        action: () => usePaletteStore.getState().openCommands(),
+      },
+      {
+        label: t("palette.goToFile"),
+        shortcut: "Ctrl+P",
+        disabled: !hasProject,
+        action: () => usePaletteStore.getState().openFiles(),
       },
       { separator: true, label: "" },
       { label: t("menu.about"), action: () => openSettings("about") },

@@ -44,6 +44,30 @@ export default function AboutSection() {
       <p className="text-[11px] leading-relaxed text-ink-3">{t("settings.aboutHint")}</p>
 
       <div className="rounded-lg border border-line px-2.5 py-2">
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.06em] text-ink-3">
+          {t("settings.shortcutsTitle")}
+        </div>
+        <ul className="space-y-1 text-[11px]">
+          {(
+            [
+              ["Ctrl+P", "settings.shortcutGoToFile"],
+              ["Ctrl+K", "settings.shortcutCommands"],
+              ["Ctrl+L", "settings.shortcutAskAgent"],
+              ["Ctrl+Shift+R", "settings.shortcutReview"],
+              ["Ctrl+Shift+F", "settings.shortcutSearch"],
+              ["Ctrl+`", "settings.shortcutTerminal"],
+              ["Ctrl+J", "settings.shortcutAgent"],
+            ] as const
+          ).map(([keys, label]) => (
+            <li key={keys} className="flex items-center justify-between gap-3">
+              <span className="text-ink-2">{t(label)}</span>
+              <kbd className="font-mono text-[10px] text-ink-3">{keys}</kbd>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="rounded-lg border border-line px-2.5 py-2">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-[10px] uppercase tracking-[0.06em] text-ink-3">
             {t("home.environment")}

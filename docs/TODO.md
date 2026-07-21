@@ -44,7 +44,7 @@ Ordered for dependency: packaging is blocked on multi-window only where process 
 
 ### P0.4 Release UX polish
 
-- [ ] Keybinding cheatsheet + minimal remapping surface
+- [x] Keybinding cheatsheet + minimal remapping surface
 - [ ] Settings page completeness pass (personal / models / editor / agent / about)
 - [ ] Motion polish with `prefers-reduced-motion` already respected
 - [ ] Tighten smoke budgets toward plan exit criteria (interactive TTI / RSS where measurable)
