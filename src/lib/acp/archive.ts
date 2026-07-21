@@ -13,6 +13,35 @@ export interface PersistSessionInput {
   items: AgentTimelineItem[];
 }
 
+/**
+ * Build the one-time context handoff used when an agent cannot natively reload
+ * a previous ACP session. The local timeline remains the UI source of truth;
+ * this text only gives the replacement agent enough conversational context to
+ * continue coherently.
+ */
+export function continuationContext(items: AgentTimelineItem[]): string {
+  const transcript = items
+    .flatMap((item) => {
+      if (item.kind === "user") return [`User: ${item.text}`];
+      if (item.kind === "assistant") return [`Assistant: ${item.text}`];
+      if (item.kind === "plan") {
+        const plan = item.entries.map((entry) => `- [${entry.status}] ${entry.content}`).join("\n");
+        return plan ? [`Assistant plan:\n${plan}`] : [];
+      }
+      return [];
+    })
+    .join("\n\n")
+    .trim();
+  if (!transcript) return "";
+  return [
+    "Continue the existing conversation below. Treat it as prior context and respond only to the new user message that follows.",
+    "",
+    "<previous_conversation>",
+    transcript,
+    "</previous_conversation>",
+  ].join("\n");
+}
+
 /** Derive a short title from the first user message. */
 export function titleFromItems(items: AgentTimelineItem[]): string {
   const user = items.find((item) => item.kind === "user");

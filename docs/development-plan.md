@@ -113,7 +113,7 @@ interface AgentSession {  // UI 唯一消费面,纯 ACP 语义
 ```
 
 - 客户端能力全开:`fs`(读写经 Glyphra → checkpoint 预像天然捕获)、`terminal`(转接 Rust pty)。
-- 崩溃处理:exit → session 标记 crashed → "重启并恢复"(有 session/load 用之,否则新会话+本地存档只读回填);30s 内 3 崩熔断并展示 stderr 尾部。
+- 崩溃处理:exit → session 标记 crashed → "重启并恢复"(优先 session/resume、其次 session/load，否则新会话注入本地对话上下文继续);30s 内 3 崩熔断并展示 stderr 尾部。
 - **fixture 录制/回放**:recorder.rs 落双向带时间戳 JSONL;replay-agent.mjs 按时序重放;vitest 以 Web Streams 直喂 SDK 断言 store —— **零 LLM 的确定性 UI 测试**,同一 fixture 供 Rust framing 单测复用。
 
 ## Provider / Auth(核心用户需求)
@@ -130,7 +130,7 @@ interface AgentSession {  // UI 唯一消费面,纯 ACP 语义
 → **退出**:冷启动 <1.2s;空闲 RSS <150MB;首屏 JS <300KB gz;CI 绿。
 → **演示**:秒开 → 打开本仓库 → 开 3 文件切标签 → 切暗色 Mica 生效 → 切中文界面。
 
-**M1 Agent 核心**:supervisor(spawn/env/framing/exit/win32job);TauriStream+sdk 接通;codex-acp 全链(initialize→authenticate→session/new→prompt);claude-agent-acp 同;`custom-agent` 兼容层(Pi/任意 CLI:命令模板、环境变量、stdio-jsonl/ACP 模式、record/replay);聊天 UI(virtuoso followOutput+streamdown 懒 chunk);工具卡状态机(pending/in_progress/completed/failed,diff/terminal 折叠);计划卡;审批弹窗(键盘 y/n/a);预设映射+setMode;recorder+真实 fixture 各一组;fixture 回放 vitest;Provider 注册表+vault+自定义 Provider 表单/测试连接/CODEX_CONFIG 物化;onboarding(agent_detect+winget/irm/自定义命令安装卡);会话存档 JSONL+列表(只读回填恢复)。
+**M1 Agent 核心**:supervisor(spawn/env/framing/exit/win32job);TauriStream+sdk 接通;codex-acp 全链(initialize→authenticate→session/new→prompt);claude-agent-acp 同;`custom-agent` 兼容层(Pi/任意 CLI:命令模板、环境变量、stdio-jsonl/ACP 模式、record/replay);聊天 UI(virtuoso followOutput+streamdown 懒 chunk);工具卡状态机(pending/in_progress/completed/failed,diff/terminal 折叠);计划卡;审批弹窗(键盘 y/n/a);预设映射+setMode;recorder+真实 fixture 各一组;fixture 回放 vitest;Provider 注册表+vault+自定义 Provider 表单/测试连接/CODEX_CONFIG 物化;onboarding(agent_detect+winget/irm/自定义命令安装卡);会话存档 JSONL+列表(原生恢复或上下文续接)。
 → **退出**:两家真流跑通;fixture 测试零 LLM 全绿;1k tokens/s 注入不掉帧;自定义 Provider 经 OpenRouter 真连成功且 `~/.codex/config.toml` 校验和不变。
 → **演示**:onboarding 检出 CLI → "标准"预设让 Claude 小重构 → 审批写文件 → 切 Codex+OpenRouter 自定义端点 → 重启后会话列表可见。
 

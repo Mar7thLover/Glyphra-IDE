@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { titleFromItems } from "./archive";
+import { continuationContext, titleFromItems } from "./archive";
 import type { AgentTimelineItem } from "./types";
 
 describe("titleFromItems", () => {
@@ -22,5 +22,28 @@ describe("titleFromItems", () => {
 
   it("falls back when empty", () => {
     expect(titleFromItems([])).toBe("Untitled session");
+  });
+});
+
+describe("continuationContext", () => {
+  it("keeps conversational content and omits local system/tool noise", () => {
+    const context = continuationContext([
+      { id: "s", kind: "system", text: "Connected", at: 1 },
+      { id: "u", kind: "user", text: "Fix the parser", at: 2 },
+      {
+        id: "t",
+        kind: "tool",
+        toolCallId: "tool-1",
+        title: "Read file",
+        status: "completed",
+        at: 3,
+      },
+      { id: "a", kind: "assistant", text: "I found the edge case.", at: 4 },
+    ]);
+
+    expect(context).toContain("User: Fix the parser");
+    expect(context).toContain("Assistant: I found the edge case.");
+    expect(context).not.toContain("Connected");
+    expect(context).not.toContain("Read file");
   });
 });

@@ -333,10 +333,13 @@ export default function AgentWindowApp() {
                     <span>{t("agent.sessionReadonly")}</span>
                     <button
                       type="button"
-                      onClick={clearArchiveView}
+                      disabled={!current || busy}
+                      onClick={() => {
+                        if (current) void openArchive(current.path, viewingArchiveId);
+                      }}
                       className="shrink-0 text-ink-2 hover:text-ink"
                     >
-                      {t("agent.sessionDismiss")}
+                      {t("agent.restart")}
                     </button>
                   </Notice>
                 )}

@@ -12,6 +12,7 @@ import type {
   AgentPermissionMode,
   AgentApprovalReviewer,
   AgentStartOptions,
+  AgentSessionRestore,
   AgentTimelineItem,
   PermissionPrompt,
   StartableBackend,
@@ -49,7 +50,7 @@ interface AgentState {
   stderrTail: string[];
   circuitOpen: boolean;
   archives: SessionSummary[];
-  /** When set, timeline is a read-only past archive (no live ACP session). */
+  /** Recovery fallback: saved timeline is visible, but no agent process is attached yet. */
   viewingArchiveId: string | null;
   detect: () => Promise<void>;
   setMode: (mode: AgentPermissionMode) => void;
@@ -64,7 +65,7 @@ interface AgentState {
   setBackend: (backend: StartableBackend) => void;
   clearError: () => void;
   clearCircuit: () => void;
-  start: (cwd?: string) => Promise<void>;
+  start: (cwd?: string, restore?: AgentSessionRestore) => Promise<void>;
   prompt: (text: string) => Promise<void>;
   cancel: () => Promise<void>;
   respondPermission: (optionId: string | "cancelled") => void;
@@ -290,7 +291,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set({ circuitOpen: false, error: null });
   },
 
-  start: async (cwd) => {
+  start: async (cwd, restore) => {
     ensureBusSubscription(set, get);
     if (get().backend === "auto" || get().backends.length === 0) {
       await get().detect();
@@ -338,6 +339,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         fastMode: get().fastMode,
         approvalReviewer: get().approvalReviewer,
         prewarmedSessionId: get().catalog?.prewarmedSessionId ?? null,
+        restore,
         harness: custom
           ? {
               protocol: custom.protocol,
@@ -500,20 +502,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   openArchive: async (projectPath, id) => {
     try {
+      if (get().session?.archiveId === id && get().session?.status === "running") return;
       if (agentBus.getSession()) {
         await get().stop();
       }
-      const { items } = await loadArchive(projectPath, id);
+      const { meta, items } = await loadArchive(projectPath, id);
+      const archivedBackend = meta.backend as StartableBackend;
       set({
+        backend: archivedBackend,
         viewingArchiveId: id,
         session: null,
         permission: null,
         items,
-        busy: false,
+        busy: true,
         error: null,
       });
+      await get().start(projectPath, {
+        archiveId: meta.id,
+        acpSessionId: meta.acpSessionId,
+        createdAt: meta.createdAt,
+        items,
+      });
+      const restored = get().session;
+      if (restored?.archiveId !== id || restored.status !== "running") {
+        set({
+          viewingArchiveId: id,
+          session: null,
+          permission: null,
+          items,
+          busy: false,
+        });
+      }
     } catch (error) {
       set({
+        viewingArchiveId: id,
+        session: null,
+        busy: false,
         error: error instanceof Error ? error.message : String(error),
       });
     }

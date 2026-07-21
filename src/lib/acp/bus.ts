@@ -2,7 +2,6 @@ import {
   PROTOCOL_VERSION,
   client,
   methods,
-  type ActiveSession,
   type ClientConnection,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
@@ -10,7 +9,7 @@ import {
 
 import { ipc } from "@/lib/ipc/ipc";
 
-import { newArchiveId } from "./archive";
+import { continuationContext, newArchiveId } from "./archive";
 import {
   circuitMessage,
   emptyCircuit,
@@ -69,7 +68,6 @@ export class AgentBus {
   private handle: AgentSessionHandle | null = null;
   private transport: AcpTransport | null = null;
   private connection: ClientConnection | null = null;
-  private active: ActiveSession | null = null;
   private listeners = new Set<Listener>();
   private permissionWaiters = new Map<
     string,
@@ -83,6 +81,8 @@ export class AgentBus {
   private configuredReasoningEffort: string | null = null;
   private configuredFastMode = false;
   private configuredMode: AgentPermissionMode = "standard";
+  private continuationContextPending: string | null = null;
+  private ignoreSessionUpdates = false;
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -157,14 +157,16 @@ export class AgentBus {
     this.configuredFastMode = options.fastMode ?? false;
     this.configuredMode = mode;
 
+    const restore = options.restore;
+    this.continuationContextPending = null;
     this.handle = {
       backend,
       projectPath: cwd,
-      archiveId: newArchiveId(),
-      createdAt: Date.now(),
+      archiveId: restore?.archiveId ?? newArchiveId(),
+      createdAt: restore?.createdAt ?? Date.now(),
       transportSessionId: 0,
-      acpSessionId: null,
-      items: [],
+      acpSessionId: restore?.acpSessionId ?? null,
+      items: restore ? [...restore.items] : [],
       permission: null,
       status: "starting",
       stderrTail: [],
@@ -219,7 +221,6 @@ export class AgentBus {
       } else {
         this.pushSystem(`Agent exited (${code})`);
       }
-      this.active = null;
       this.connection = null;
     });
 
@@ -236,15 +237,16 @@ export class AgentBus {
         return {};
       })
       .onNotification(methods.client.session.update, (ctx) => {
+        if (this.ignoreSessionUpdates) return;
         const update = ctx.params.update;
-        if (
-          update.sessionUpdate === "usage_update" &&
-          this.handle?.acpSessionId === ctx.params.sessionId
-        ) {
+        if (!this.handle || this.handle.acpSessionId !== ctx.params.sessionId) return;
+        if (update.sessionUpdate === "usage_update") {
           this.handle.contextUsed = update.used;
           this.handle.contextSize = update.size;
-          this.emit();
+        } else {
+          this.handle.items = applySessionUpdate(this.handle.items, update);
         }
+        this.emit();
       })
       .connect(transport.stream);
 
@@ -289,14 +291,67 @@ export class AgentBus {
         }
       }
 
-      const active = await connection.agent.buildSession(cwd).start();
-      this.active = active;
-      this.handle.acpSessionId = active.sessionId;
+      const restoreSessionId = restore?.acpSessionId;
+      if (restoreSessionId) {
+        const capabilities = init.agentCapabilities;
+        let restoredNatively = false;
+        if (capabilities?.sessionCapabilities?.resume) {
+          try {
+            await connection.agent.request(methods.agent.session.resume, {
+              sessionId: restoreSessionId,
+              cwd,
+              mcpServers: [],
+            });
+            this.handle.acpSessionId = restoreSessionId;
+            restoredNatively = true;
+            this.pushSystem("Previous session resumed");
+          } catch (error) {
+            this.pushSystem(
+              `Native session resume was unavailable (${error instanceof Error ? error.message : String(error)})`,
+            );
+          }
+        } else if (capabilities?.loadSession) {
+          // The local JSONL archive already owns the rendered timeline. Suppress
+          // history replay during session/load so messages are not duplicated.
+          this.ignoreSessionUpdates = true;
+          try {
+            await connection.agent.request(methods.agent.session.load, {
+              sessionId: restoreSessionId,
+              cwd,
+              mcpServers: [],
+            });
+            this.handle.acpSessionId = restoreSessionId;
+            restoredNatively = true;
+            this.pushSystem("Previous session loaded");
+          } catch (error) {
+            this.pushSystem(
+              `Native session load was unavailable (${error instanceof Error ? error.message : String(error)})`,
+            );
+          } finally {
+            this.ignoreSessionUpdates = false;
+          }
+        }
+        if (!restoredNatively) {
+          const active = await connection.agent.buildSession(cwd).start();
+          this.handle.acpSessionId = active.sessionId;
+          active.dispose();
+          this.continuationContextPending = continuationContext(restore.items);
+          this.pushSystem("Continued in a new agent process with the previous conversation context");
+        }
+      } else {
+        const active = await connection.agent.buildSession(cwd).start();
+        this.handle.acpSessionId = active.sessionId;
+        active.dispose();
+        if (restore) {
+          this.continuationContextPending = continuationContext(restore.items);
+          this.pushSystem("Continued in a new agent process with the previous conversation context");
+        }
+      }
 
       const modeId = modeIdFor(mode);
       try {
         await connection.agent.request(methods.agent.session.setMode, {
-          sessionId: active.sessionId,
+          sessionId: this.handle.acpSessionId,
           modeId,
         });
         this.pushSystem(`Mode: ${mode} (${modeId})`);
@@ -396,7 +451,8 @@ export class AgentBus {
   async prompt(text: string) {
     if (
       !this.handle ||
-      !this.active ||
+      !this.connection ||
+      !this.handle.acpSessionId ||
       this.handle.status === "exited" ||
       this.handle.status === "crashed"
     ) {
@@ -413,39 +469,30 @@ export class AgentBus {
     this.handle.status = "busy";
     this.emit();
 
-    const active = this.active;
-    const promptPromise = active.prompt(text);
-
+    const handoff = this.continuationContextPending;
+    this.continuationContextPending = null;
     try {
-      for (;;) {
-        const message = await active.nextUpdate();
-        if (message.kind === "stop") {
-          const context = message.response._meta?.glyphraContext as
-            | { used?: unknown; size?: unknown }
-            | undefined;
-          if (
-            this.handle &&
-            typeof context?.used === "number" &&
-            typeof context?.size === "number" &&
-            context.size > 0
-          ) {
-            this.handle.contextUsed = context.used;
-            this.handle.contextSize = context.size;
-          }
-          this.handle.status = "running";
-          this.pushSystem(`Turn complete (${message.stopReason})`);
-          await promptPromise;
-          return;
-        }
-        if (message.update.sessionUpdate === "usage_update") {
-          this.handle.contextUsed = message.update.used;
-          this.handle.contextSize = message.update.size;
-        } else {
-          this.handle.items = applySessionUpdate(this.handle.items, message.update);
-        }
-        this.emit();
+      const promptText = handoff ? `${handoff}\n\n<new_user_message>\n${text}\n</new_user_message>` : text;
+      const response = await this.connection.agent.request(methods.agent.session.prompt, {
+        sessionId: this.handle.acpSessionId,
+        prompt: [{ type: "text", text: promptText }],
+      });
+      const context = response._meta?.glyphraContext as
+        | { used?: unknown; size?: unknown }
+        | undefined;
+      if (
+        typeof context?.used === "number" &&
+        typeof context?.size === "number" &&
+        context.size > 0
+      ) {
+        this.handle.contextUsed = context.used;
+        this.handle.contextSize = context.size;
       }
+      this.handle.status = "running";
+      this.pushSystem(`Turn complete (${response.stopReason})`);
     } catch (error) {
+      // Preserve the context handoff for a retry if the first continued prompt failed.
+      if (handoff && this.continuationContextPending === null) this.continuationContextPending = handoff;
       // onExit may have already flipped status to crashed/exited.
       if (this.handle?.status === "busy" || this.handle?.status === "running") {
         this.handle.status = "error";
@@ -526,13 +573,6 @@ export class AgentBus {
     this.permissionWaiters.clear();
 
     try {
-      this.active?.dispose();
-    } catch {
-      // ignore
-    }
-    this.active = null;
-
-    try {
       this.connection?.close();
     } catch {
       // ignore
@@ -555,6 +595,8 @@ export class AgentBus {
     this.configuredModel = null;
     this.configuredReasoningEffort = null;
     this.configuredFastMode = false;
+    this.continuationContextPending = null;
+    this.ignoreSessionUpdates = false;
 
     if (this.handle) {
       this.handle = {

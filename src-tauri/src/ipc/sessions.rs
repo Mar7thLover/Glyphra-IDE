@@ -4,8 +4,9 @@
 //!   `{app_data}/sessions/{projectKey}/index.json`
 //!   `{app_data}/sessions/{projectKey}/{id}.jsonl`
 //!
-//! Line 0 is meta; subsequent lines are timeline items. Used for read-only
-//! refill after restart — not ACP `session/load`.
+//! Line 0 is meta; subsequent lines are timeline items. The frontend uses the
+//! saved ACP session id for native reload when supported, and the timeline as
+//! a continuation-context fallback for other agents.
 
 use std::{
     collections::hash_map::DefaultHasher,

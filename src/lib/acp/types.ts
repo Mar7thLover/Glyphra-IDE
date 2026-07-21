@@ -20,6 +20,15 @@ export interface AgentStartOptions {
   fastMode?: boolean;
   approvalReviewer?: AgentApprovalReviewer;
   prewarmedSessionId?: string | null;
+  /** Reattach a persisted conversation instead of creating an empty one. */
+  restore?: AgentSessionRestore;
+}
+
+export interface AgentSessionRestore {
+  archiveId: string;
+  acpSessionId: string | null;
+  createdAt: number;
+  items: AgentTimelineItem[];
 }
 
 export type AgentApprovalReviewer = "user" | "auto_review";

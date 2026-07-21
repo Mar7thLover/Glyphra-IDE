@@ -349,6 +349,35 @@ async function codexNewSession(cwd) {
   return result.thread.id;
 }
 
+async function codexResumeSession(sessionId, cwd) {
+  const peer = await ensureCodex();
+  const permission = permissionConfig();
+  if (process.platform === "win32" && permission.sandbox !== "danger-full-access") {
+    await ensureWindowsSandbox(peer, cwd);
+  }
+  const result = await peer.request("thread/resume", {
+    threadId: sessionId,
+    cwd,
+    model: initialModel || null,
+    serviceTier: initialFastMode ? "fast" : null,
+    approvalPolicy: permission.approvalPolicy,
+    approvalsReviewer: permission.approvalsReviewer,
+    sandbox: permission.sandbox,
+    config: {
+      ...(initialReasoningEffort
+        ? { model_reasoning_effort: initialReasoningEffort }
+        : {}),
+      ...(contextWindow
+        ? {
+            model_context_window: contextWindow,
+            model_auto_compact_token_limit: Math.floor(contextWindow * 0.9),
+          }
+        : {}),
+    },
+  });
+  return result.thread?.id ?? sessionId;
+}
+
 function permissionConfig() {
   const full = ["full-access", "agent-full-access", "unleashed"].includes(mode);
   const request = ["request-approval", "read-only", "safe"].includes(mode);
@@ -665,6 +694,24 @@ async function newSession(params) {
   return { sessionId, configOptions: sessionConfigOptions(session) };
 }
 
+async function resumeSession(params) {
+  if (protocol !== "codex-app-server") {
+    throw new Error(`session/resume is not implemented by bridge protocol ${protocol}`);
+  }
+  const sessionId = await codexResumeSession(params.sessionId, params.cwd);
+  const session = {
+    active: null,
+    nativeSessionId: sessionId,
+    history: [],
+    model: initialModel || null,
+    reasoningEffort: initialReasoningEffort || null,
+    fastMode: initialFastMode,
+    contextUsage: null,
+  };
+  sessions.set(sessionId, session);
+  return { configOptions: sessionConfigOptions(session) };
+}
+
 function sessionConfigOptions(session) {
   const configOptions = [];
   if (session.model) {
@@ -962,11 +1009,15 @@ if (option("usage") === "1") {
   acp.agent({ name: `glyphra-${protocol}-bridge` })
   .onRequest(acp.methods.agent.initialize, async () => ({
     protocolVersion: acp.PROTOCOL_VERSION,
-    agentCapabilities: { loadSession: false },
+    agentCapabilities: {
+      loadSession: false,
+      sessionCapabilities: protocol === "codex-app-server" ? { resume: {} } : {},
+    },
     agentInfo: { name: `glyphra-${protocol}-bridge`, title, version: "0.1.0" },
     authMethods: [],
   }))
   .onRequest(acp.methods.agent.session.new, (ctx) => newSession(ctx.params))
+  .onRequest(acp.methods.agent.session.resume, (ctx) => resumeSession(ctx.params))
   .onRequest(acp.methods.agent.authenticate, async () => ({}))
   .onRequest(acp.methods.agent.session.setMode, (ctx) => setMode(ctx.params))
   .onRequest(acp.methods.agent.session.setConfigOption, (ctx) => setConfigOption(ctx.params))
