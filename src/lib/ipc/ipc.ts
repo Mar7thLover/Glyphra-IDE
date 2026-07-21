@@ -140,6 +140,38 @@ export const ipc = {
   ptyResize: (ptyId: number, cols: number, rows: number) =>
     invoke<void>("pty_resize", { ptyId, cols, rows }),
   ptyClose: (ptyId: number) => invoke<void>("pty_close", { ptyId }),
+  agentTermCreate: (request: {
+    command: string;
+    args?: string[];
+    cwd?: string | null;
+    env?: Array<{ name: string; value: string }>;
+    outputByteLimit?: number | null;
+  }) =>
+    invoke<string>("agent_term_create", {
+      request: {
+        command: request.command,
+        args: request.args ?? [],
+        cwd: request.cwd ?? null,
+        env: request.env ?? [],
+        outputByteLimit: request.outputByteLimit ?? null,
+      },
+    }),
+  agentTermOutput: (terminalId: string) =>
+    invoke<{
+      output: string;
+      truncated: boolean;
+      exitCode: number | null;
+      signal: string | null;
+    }>("agent_term_output", { terminalId }),
+  agentTermWait: (terminalId: string) =>
+    invoke<{
+      output: string;
+      truncated: boolean;
+      exitCode: number | null;
+      signal: string | null;
+    }>("agent_term_wait", { terminalId }),
+  agentTermKill: (terminalId: string) => invoke<void>("agent_term_kill", { terminalId }),
+  agentTermRelease: (terminalId: string) => invoke<void>("agent_term_release", { terminalId }),
   sessionList: (projectPath: string) =>
     invoke<SessionSummary[]>("session_list", { projectPath }),
   sessionSave: (archive: SessionArchive) =>

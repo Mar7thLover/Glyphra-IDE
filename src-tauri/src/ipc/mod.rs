@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_term;
 pub mod app;
 pub mod ckpt;
 pub mod git;
@@ -28,6 +29,7 @@ mod export_bindings {
         runtime::{RuntimeDetectInfo, ToolStatus},
         supervisor::{AgentIoEvent, AgentSpawnRequest},
     };
+    use crate::agent_terminal::{AgentTermCreateRequest, AgentTermEnvVar, AgentTermOutput};
     use crate::gitx::{
         checkpoints::{CkptFileContents, CkptFileDiff, CkptHunkSummary, CkptTurnMeta},
         cli::{DiffSummary, GitFileDiff, GitFileStatus},
@@ -75,6 +77,9 @@ mod export_bindings {
         SearchHit::export_all().expect("export SearchHit");
         SearchBatch::export_all().expect("export SearchBatch");
         PtyEvent::export_all().expect("export PtyEvent");
+        AgentTermCreateRequest::export_all().expect("export AgentTermCreateRequest");
+        AgentTermEnvVar::export_all().expect("export AgentTermEnvVar");
+        AgentTermOutput::export_all().expect("export AgentTermOutput");
         SessionSummary::export_all().expect("export SessionSummary");
         SessionArchive::export_all().expect("export SessionArchive");
     }

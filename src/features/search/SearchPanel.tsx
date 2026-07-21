@@ -58,7 +58,7 @@ export default function SearchPanel() {
           itemContent={(_, hit) => (
             <button
               type="button"
-              onClick={() => void openFile(hit.path)}
+              onClick={() => void openFile(hit.path, { line: hit.line })}
               className="w-full border-b border-line/60 px-3 py-1.5 text-left hover:bg-hover"
             >
               <div className="truncate font-mono text-[10px] text-ink-3">

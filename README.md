@@ -10,6 +10,7 @@
 
 [Features](#why-glyphra) · [Quick start](#quick-start) · [Architecture](#architecture) · [Docs](#documentation) · [Roadmap](#status--roadmap)
 
+<<<<<<< HEAD
 <br />
 
 ![status](https://img.shields.io/badge/status-pre--alpha-amber?style=flat-square)
@@ -26,6 +27,9 @@ Most IDEs were designed for a human typing every line. Glyphra is designed for t
 Debuggers, extension marketplaces, and task runners are legacy weight from the pre-agent era — Glyphra leaves them out on purpose. What remains is a feather-light Tauri app: CodeMirror 6, an ACP-normalized agent timeline, and git-checkpointed review as the primary interaction.
 
 > **Status: pre-alpha.** APIs and UI move fast — expect breaking changes between commits. M0–M2 are in; packaging and multi-window release work (M3) are next.
+=======
+> **Status: pre-alpha / `0.1.0-beta.1`.** APIs and UI are still moving fast — expect breaking changes between commits. Packaged test builds: [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · release guide: [`docs/releasing.md`](./docs/releasing.md).
+>>>>>>> origin/main
 
 ## Why Glyphra
 
@@ -62,11 +66,25 @@ Useful scripts:
 ```sh
 pnpm test              # vitest
 pnpm typecheck         # tsc --noEmit
+<<<<<<< HEAD
 pnpm check:bindings    # generated IPC types vs src-tauri
 pnpm check:size        # frontend bundle budget
 ```
 
 Backend self-check (no GUI): after a debug build, `./src-tauri/target/debug/glyphra --smoke` prints a JSON status line and exits.
+=======
+pnpm check:bindings    # verify generated IPC types match src-tauri
+pnpm check:size        # bundle size budget
+pnpm check:version     # package / tauri / cargo version sync
+pnpm tauri build       # platform installers (see docs/releasing.md)
+```
+
+## Releases
+
+Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). Details: [docs/releasing.md](./docs/releasing.md).
+
+## Architecture at a glance
+>>>>>>> origin/main
 
 Frontend-only Vite preview (no Rust IPC): `pnpm dev` on port `1420`.
 

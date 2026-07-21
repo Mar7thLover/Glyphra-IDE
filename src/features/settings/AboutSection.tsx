@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { getVersion } from "@tauri-apps/api/app";
 
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 
@@ -10,19 +11,61 @@ export default function AboutSection() {
   const runtime = useOnboardingStore((s) => s.runtime);
   const agents = useOnboardingStore((s) => s.agents);
   const loading = useOnboardingStore((s) => s.loading);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getVersion()
+      .then((version) => {
+        if (!cancelled) setAppVersion(version);
+      })
+      .catch(() => {
+        if (!cancelled) setAppVersion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="space-y-4">
       <div>
         <div className="text-[13px] font-medium text-ink">{t("app.name")}</div>
-        <div className="mt-0.5 text-[11px] text-ink-3">{t("app.prealpha")}</div>
+        <div className="mt-0.5 text-[11px] text-ink-3">
+          {appVersion ? `v${appVersion}` : t("app.prealpha")}
+          {appVersion ? ` · ${t("app.prealpha")}` : null}
+        </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-ink-3">{t("settings.aboutHint")}</p>
+
+      <div className="rounded-lg border border-line px-2.5 py-2">
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.06em] text-ink-3">
+          {t("settings.shortcutsTitle")}
+        </div>
+        <ul className="space-y-1 text-[11px]">
+          {(
+            [
+              ["Ctrl+P", "settings.shortcutGoToFile"],
+              ["Ctrl+K", "settings.shortcutCommands"],
+              ["Ctrl+L", "settings.shortcutAskAgent"],
+              ["Ctrl+Shift+R", "settings.shortcutReview"],
+              ["Ctrl+Shift+F", "settings.shortcutSearch"],
+              ["Ctrl+`", "settings.shortcutTerminal"],
+              ["Ctrl+J", "settings.shortcutAgent"],
+            ] as const
+          ).map(([keys, label]) => (
+            <li key={keys} className="flex items-center justify-between gap-3">
+              <span className="text-ink-2">{t(label)}</span>
+              <kbd className="font-mono text-[10px] text-ink-3">{keys}</kbd>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <div className="rounded-lg border border-line px-2.5 py-2">
         <div className="mb-1.5 flex items-center justify-between">

@@ -18,6 +18,7 @@ describe("editorStore", () => {
       activePath: null,
       loading: false,
       error: null,
+      reveal: null,
     });
     vi.mocked(ipc.fsRead).mockReset();
     vi.mocked(ipc.fsWrite).mockReset();
@@ -40,6 +41,75 @@ describe("editorStore", () => {
     expect(state.tabs).toHaveLength(1);
     expect(state.tabs[0]?.longLines).toBe(true);
     expect(state.tabs[0]?.readOnly).toBe(true);
+  });
+
+  it("queues a reveal target when opening with a line", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/a.ts",
+      content: "a\nb\nc\n",
+      hash: "h1",
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+    });
+
+    await useEditorStore.getState().openFile("/tmp/a.ts", { line: 2, column: 1 });
+    expect(useEditorStore.getState().reveal).toEqual({
+      path: "/tmp/a.ts",
+      line: 2,
+      column: 1,
+      token: expect.any(Number),
+    });
+  });
+
+  it("reloads clean tabs from disk on syncFromDisk", async () => {
+    useEditorStore.setState({
+      tabs: [
+        {
+          path: "/tmp/a.ts",
+          name: "a.ts",
+          content: "old",
+          savedContent: "old",
+          hash: "h1",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        },
+        {
+          path: "/tmp/dirty.ts",
+          name: "dirty.ts",
+          content: "local",
+          savedContent: "disk",
+          hash: "d1",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        },
+      ],
+      activePath: "/tmp/a.ts",
+    });
+
+    vi.mocked(ipc.fsRead).mockImplementation(async (path: string) => {
+      if (path === "/tmp/a.ts") {
+        return {
+          path,
+          content: "new",
+          hash: "h2",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        };
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+
+    await useEditorStore.getState().syncFromDisk(["/tmp/a.ts", "/tmp/dirty.ts"]);
+    const state = useEditorStore.getState();
+    expect(state.tabs.find((tab) => tab.path === "/tmp/a.ts")?.content).toBe("new");
+    expect(state.tabs.find((tab) => tab.path === "/tmp/a.ts")?.hash).toBe("h2");
+    expect(state.tabs.find((tab) => tab.path === "/tmp/dirty.ts")?.content).toBe("local");
+    expect(ipc.fsRead).toHaveBeenCalledWith("/tmp/a.ts");
+    expect(ipc.fsRead).not.toHaveBeenCalledWith("/tmp/dirty.ts");
   });
 
   it("tracks dirty state and saves with optimistic hash", async () => {

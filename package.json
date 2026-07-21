@@ -1,7 +1,7 @@
 {
   "name": "glyphra",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "type": "module",
   "description": "Agent-first, feather-light code studio",
   "license": "MIT",
@@ -14,7 +14,9 @@
     "test": "vitest run",
     "check:size": "node scripts/check-bundle-size.mjs",
     "check:bindings": "node scripts/check-bindings-drift.mjs",
-    "fixture:agent": "node fixtures/replay-agent.mjs --tape=fixtures/tapes/demo-edit-turn.jsonl"
+    "check:version": "node scripts/check-version-sync.mjs",
+    "fixture:agent": "node fixtures/replay-agent.mjs --tape=fixtures/tapes/demo-edit-turn.jsonl",
+    "release:build": "pnpm tauri build"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",

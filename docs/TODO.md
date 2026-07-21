@@ -44,7 +44,7 @@ Ordered for dependency: packaging is blocked on multi-window only where process 
 
 ### P0.4 Release UX polish
 
-- [ ] Keybinding cheatsheet + minimal remapping surface
+- [x] Keybinding cheatsheet + minimal remapping surface
 - [ ] Settings page completeness pass (personal / models / editor / agent / about)
 - [ ] Motion polish with `prefers-reduced-motion` already respected
 - [ ] Tighten smoke budgets toward plan exit criteria (interactive TTI / RSS where measurable)
@@ -57,17 +57,17 @@ Tracks [git-review-ux-plan.md](./git-review-ux-plan.md). R1 is largely done.
 
 ### P1.1 Selection → Agent (R2)
 
-- [ ] Floating `✦ Agent` capsule on editor selection + `Ctrl+L`
-- [ ] Actions: review / explain / rewrite / add tests
-- [ ] Composer reference chips (`@file:12-40`) mapped to ACP resource blocks
-- [ ] `ReviewCommentCard` parser (severity markdown) with jump-to-line highlight
+- [x] Floating `✦ Agent` capsule on editor selection + `Ctrl+L`
+- [x] Actions: review / explain / rewrite / add tests
+- [x] Composer reference chips (`@file:12-40`) mapped to ACP resource blocks
+- [x] `ReviewCommentCard` parser (severity markdown) with jump-to-line highlight
 
 ### P1.2 Inline review & commit assist (R3)
 
 - [ ] Gutter side-bar for undecided hunks (agent vs manual colors)
 - [ ] Inline glass card: mini diff + accept/reject + “ask Agent”
 - [ ] Apply suggested diff from ReviewCommentCard → `ckpt_write_file` + review queue
-- [ ] Status-bar branch + ahead/behind
+- [x] Status-bar branch + ahead/behind
 - [ ] Controlled `git_commit` IPC + “generate commit message” after queue cleared
 
 ---
@@ -78,6 +78,10 @@ Tracks [git-review-ux-plan.md](./git-review-ux-plan.md). R1 is largely done.
 - [ ] Keep [ime-checklist.md](./ime-checklist.md) as merge gate on editor / decoration PRs
 - [ ] Expand fixture coverage for review keyboard flows and session restore edges
 - [ ] macOS / Linux native feel pass (beyond CI green)
+- [x] Editor disk sync for clean open tabs after FS / agent writes
+- [x] Search hit jump-to-line
+- [x] Ctrl+P fuzzy go-to-file (git ls-files index)
+- [x] ACP `terminal` client capability over pipe-backed command runner
 
 ---
 
