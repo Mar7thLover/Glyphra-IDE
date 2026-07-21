@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { ipc } from "@/lib/ipc/ipc";
+import { requestUnsavedDecision } from "@/lib/unsavedChanges";
 
 export interface EditorTab {
   path: string;
@@ -19,8 +20,11 @@ interface EditorState {
   loading: boolean;
   error: string | null;
   openFile: (path: string) => Promise<void>;
-  closeTab: (path: string) => void;
+  confirmLeaveActive: () => Promise<boolean>;
+  activateTab: (path: string) => Promise<void>;
+  closeTab: (path: string) => Promise<void>;
   setContent: (path: string, content: string) => void;
+  saveTab: (path: string) => Promise<boolean>;
   saveActive: () => Promise<void>;
 }
 
@@ -32,6 +36,22 @@ function asMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+async function prepareToLeave(path: string): Promise<boolean> {
+  const tab = useEditorStore.getState().tabs.find((item) => item.path === path);
+  if (!tab || tab.content === tab.savedContent) return true;
+
+  const decision = await requestUnsavedDecision(tab.name);
+  if (decision === "cancel") return false;
+  if (decision === "save") return useEditorStore.getState().saveTab(path);
+
+  useEditorStore.setState((state) => ({
+    tabs: state.tabs.map((item) =>
+      item.path === path ? { ...item, content: item.savedContent } : item,
+    ),
+  }));
+  return true;
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   tabs: [],
   activePath: null,
@@ -41,9 +61,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   openFile: async (path) => {
     const existing = get().tabs.find((tab) => tab.path === path);
     if (existing) {
-      set({ activePath: path, error: null });
+      await get().activateTab(path);
       return;
     }
+
+    const activePath = get().activePath;
+    if (activePath && !(await prepareToLeave(activePath))) return;
 
     set({ loading: true, error: null });
     try {
@@ -65,7 +88,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  closeTab: (path) => {
+  activateTab: async (path) => {
+    const activePath = get().activePath;
+    if (activePath === path) return;
+    if (activePath && !(await prepareToLeave(activePath))) return;
+    if (get().tabs.some((tab) => tab.path === path)) set({ activePath: path, error: null });
+  },
+
+  confirmLeaveActive: async () => {
+    const activePath = get().activePath;
+    return activePath ? prepareToLeave(activePath) : true;
+  },
+
+  closeTab: async (path) => {
+    if (!(await prepareToLeave(path))) return;
     set((state) => {
       const tabs = state.tabs.filter((tab) => tab.path !== path);
       const activePath = state.activePath === path ? tabs.at(-1)?.path ?? null : state.activePath;
@@ -79,9 +115,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }));
   },
 
-  saveActive: async () => {
-    const active = get().tabs.find((tab) => tab.path === get().activePath);
-    if (!active || active.readOnly || active.content === active.savedContent) return;
+  saveTab: async (path) => {
+    const active = get().tabs.find((tab) => tab.path === path);
+    if (!active || active.readOnly || active.content === active.savedContent) return true;
 
     set({ loading: true, error: null });
     try {
@@ -94,8 +130,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             : tab,
         ),
       }));
+      return true;
     } catch (error) {
       set({ loading: false, error: asMessage(error) });
+      return false;
     }
+  },
+
+  saveActive: async () => {
+    const activePath = get().activePath;
+    if (activePath) await get().saveTab(activePath);
   },
 }));

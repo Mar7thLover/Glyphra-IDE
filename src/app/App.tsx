@@ -1,9 +1,12 @@
 import { Suspense, lazy, useEffect, useRef } from "react";
 
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
+import UnsavedChangesDialog from "@/features/editor/UnsavedChangesDialog";
 import SettingsPage from "@/features/settings/SettingsPage";
 import { ipc } from "@/lib/ipc/ipc";
 import { useGitStore } from "@/lib/stores/gitStore";
+import { useEditorStore } from "@/lib/stores/editorStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
@@ -11,6 +14,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
+import { pickProject } from "@/lib/workspaceActions";
 
 import ActivityRail from "./ActivityRail";
 import EditorArea from "./EditorArea";
@@ -21,6 +25,7 @@ import TitleBar from "./TitleBar";
 
 const AgentWorkspace = lazy(() => import("@/features/agent/AgentWorkspace"));
 const CommandPalette = lazy(() => import("@/features/palette/CommandPalette"));
+const mainWindow = getCurrentWindow();
 
 function applyBootSettings(theme: string, language: string) {
   if (theme === "light" || theme === "dark") {
@@ -47,11 +52,13 @@ function AgentSlot() {
 
 export default function App() {
   const setMica = useUiStore((s) => s.setMica);
+  const setHostOs = useUiStore((s) => s.setHostOs);
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const hasProject = useProjectStore((s) => !!s.current);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const booted = useRef(false);
+  const closing = useRef(false);
   const lastProjectPath = useRef<string | null>(null);
 
   useEffect(() => {
@@ -66,13 +73,42 @@ export default function App() {
       }
       const env = await ipc.appReady();
       setMica(env.mica);
+      setHostOs(env.os);
       requestAnimationFrame(() => void ipc.perfMark("tti"));
       maybeAutoOpen();
     })();
-  }, [maybeAutoOpen, setMica]);
+  }, [maybeAutoOpen, setHostOs, setMica]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void mainWindow
+      .onCloseRequested(async (event) => {
+        event.preventDefault();
+        if (closing.current) return;
+        const dirty = useEditorStore
+          .getState()
+          .tabs.some((tab) => tab.content !== tab.savedContent);
+        if (dirty && !window.confirm(i18n.t("menu.unsavedExit"))) return;
+        closing.current = true;
+        await ipc.appExit();
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        void pickProject(i18n.t("empty.openFolder"), i18n.t("menu.unsavedProject"));
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
         const ui = useUiStore.getState();
@@ -93,7 +129,7 @@ export default function App() {
       }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "r") {
         e.preventDefault();
-        useReviewStore.getState().openReview();
+        useReviewStore.getState().openReview(useProjectStore.getState().current?.path);
       }
       if (e.key === "Escape") {
         if (usePaletteStore.getState().open) {
@@ -141,6 +177,7 @@ export default function App() {
       )}
       <StatusBar />
       <OnboardingOverlay />
+      <UnsavedChangesDialog />
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>

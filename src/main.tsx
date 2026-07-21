@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import App from "./app/App";
 import "./app/i18n";
+import AppContextMenu from "./components/AppContextMenu";
 import "./styles/global.css";
 
 // Multi-window routing: the standalone Agents window shares this bundle and
@@ -14,12 +15,7 @@ const isAgentWindow = getCurrentWindow().label === "agent";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {isAgentWindow ? (
-      <Suspense fallback={null}>
-        <AgentWindowApp />
-      </Suspense>
-    ) : (
-      <App />
-    )}
+    <AppContextMenu />
+    {isAgentWindow ? <Suspense fallback={null}><AgentWindowApp /></Suspense> : <App />}
   </React.StrictMode>,
 );

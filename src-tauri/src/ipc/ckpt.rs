@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
-use crate::gitx::checkpoints::{CheckpointEngine, CkptFileContents, CkptTurnMeta};
+use crate::gitx::checkpoints::{CheckpointEngine, CkptFileContents, CkptHunkSummary, CkptTurnMeta};
 
 #[tauri::command]
 pub fn ckpt_begin_turn(
@@ -35,23 +35,45 @@ pub fn ckpt_commit_turn(
 }
 
 #[tauri::command]
-pub fn ckpt_list_turns(
+pub async fn ckpt_list_turns(
     app: AppHandle,
     engine: State<'_, Arc<CheckpointEngine>>,
     project_path: String,
 ) -> Result<Vec<CkptTurnMeta>, String> {
-    engine.list_turns(&app, &project_path)
+    let engine = Arc::clone(engine.inner());
+    tauri::async_runtime::spawn_blocking(move || engine.list_turns(&app, &project_path))
+        .await
+        .map_err(|err| format!("checkpoint listing task failed: {err}"))?
 }
 
 #[tauri::command]
-pub fn ckpt_file_contents(
+pub async fn ckpt_file_contents(
     app: AppHandle,
     engine: State<'_, Arc<CheckpointEngine>>,
     project_path: String,
     turn_id: String,
     path: String,
 ) -> Result<CkptFileContents, String> {
-    engine.file_contents(&app, &project_path, &turn_id, &path)
+    let engine = Arc::clone(engine.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        engine.file_contents(&app, &project_path, &turn_id, &path)
+    })
+    .await
+    .map_err(|err| format!("checkpoint read task failed: {err}"))?
+}
+
+#[tauri::command]
+pub async fn ckpt_hunks(
+    app: AppHandle,
+    engine: State<'_, Arc<CheckpointEngine>>,
+    project_path: String,
+    turn_id: String,
+    path: String,
+) -> Result<CkptHunkSummary, String> {
+    let engine = Arc::clone(engine.inner());
+    tauri::async_runtime::spawn_blocking(move || engine.hunks(&app, &project_path, &turn_id, &path))
+        .await
+        .map_err(|err| format!("checkpoint diff task failed: {err}"))?
 }
 
 #[tauri::command]

@@ -1,6 +1,9 @@
 import { create } from "zustand";
 
 import { ipc, type DirEntryInfo, type FsEvent, type ProjectInfo, type RecentProject } from "@/lib/ipc/ipc";
+import { useGitStore } from "@/lib/stores/gitStore";
+import { useEditorStore } from "@/lib/stores/editorStore";
+import { useReviewStore } from "@/lib/stores/reviewStore";
 
 const WATCH_DEBOUNCE_MS = 300;
 
@@ -16,6 +19,7 @@ interface ProjectState {
   error: string | null;
   loadRecents: () => Promise<void>;
   openProject: (path: string) => Promise<void>;
+  closeProject: () => Promise<void>;
   listCurrentRoot: () => Promise<void>;
   toggleDirectory: (entry: DirEntryInfo) => Promise<void>;
   stopWatcher: () => Promise<void>;
@@ -51,6 +55,51 @@ function dirsToRefresh(projectRoot: string, event: FsEvent, expanded: string[]) 
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingEvent: FsEvent | null = null;
+let refreshInFlight: Promise<void> | null = null;
+let queuedEvent: FsEvent | null = null;
+
+const IGNORED_WATCH_SEGMENTS = new Set([".git", "node_modules", "target", "dist", ".vite"]);
+
+function relevantEvent(event: FsEvent, projectRoot: string): FsEvent | null {
+  const root = projectRoot.replace(/\\/g, "/").replace(/\/$/, "");
+  const paths = event.paths.filter((path) => {
+    const normalized = path.replace(/\\/g, "/");
+    const relative = normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : normalized;
+    return !relative.split("/").some((segment) => IGNORED_WATCH_SEGMENTS.has(segment));
+  });
+  return paths.length > 0 ? { ...event, paths } : null;
+}
+
+function enqueueRefresh(event: FsEvent) {
+  if (refreshInFlight) {
+    queuedEvent = event;
+    return;
+  }
+  refreshInFlight = refreshFromEvent(event).finally(() => {
+    refreshInFlight = null;
+    const next = queuedEvent;
+    queuedEvent = null;
+    if (next) enqueueRefresh(next);
+  });
+}
+
+function clearProjectScopedStores() {
+  useEditorStore.setState({ tabs: [], activePath: null, loading: false, error: null });
+  useGitStore.setState({ statuses: {} });
+  useReviewStore.setState({
+    projectPath: null,
+    turns: [],
+    workingTree: [],
+    summaries: {},
+    decisions: {},
+    activeTurnId: null,
+    activeFile: null,
+    contents: null,
+    open: false,
+    loading: false,
+    error: null,
+  });
+}
 
 async function refreshFromEvent(event: FsEvent) {
   const { current, expanded } = useProjectStore.getState();
@@ -89,6 +138,8 @@ async function refreshFromEvent(event: FsEvent) {
     expanded: nextExpanded,
     error: null,
   });
+  void useGitStore.getState().refresh(current.path);
+  void useReviewStore.getState().refreshWorkingTree(current.path);
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -112,25 +163,50 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   openProject: async (path) => {
     set({ loading: true, error: null, children: {}, expanded: [] });
     try {
+      const previousPath = get().current?.path;
       await get().stopWatcher();
       const current = await ipc.projectOpen(path);
+      if (previousPath && previousPath !== current.path) clearProjectScopedStores();
       set({ current, loading: false });
       await Promise.all([get().listCurrentRoot(), get().loadRecents()]);
 
       const watcherId = await ipc.fsWatchStart(current.path, (event) => {
-        pendingEvent = event;
+        const relevant = relevantEvent(event, current.path);
+        if (!relevant) return;
+        pendingEvent = relevant;
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           const latest = pendingEvent;
           pendingEvent = null;
           debounceTimer = null;
           if (!latest) return;
-          void refreshFromEvent(latest);
+          enqueueRefresh(latest);
         }, WATCH_DEBOUNCE_MS);
       });
       set({ watcherId });
     } catch (error) {
       set({ loading: false, error: asMessage(error) });
+    }
+  },
+
+  closeProject: async () => {
+    try {
+      await get().stopWatcher();
+    } finally {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = null;
+      pendingEvent = null;
+      queuedEvent = null;
+      set({
+        current: null,
+        entries: [],
+        children: {},
+        expanded: [],
+        watcherId: null,
+        loading: false,
+        error: null,
+      });
+      clearProjectScopedStores();
     }
   },
 

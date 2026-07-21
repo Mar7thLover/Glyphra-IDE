@@ -1,4 +1,4 @@
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Gauge, Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -13,12 +13,15 @@ export default function ProvidersSection() {
   const providers = useProviderStore((s) => s.providers);
   const loading = useProviderStore((s) => s.loading);
   const testingId = useProviderStore((s) => s.testingId);
+  const usageLoadingId = useProviderStore((s) => s.usageLoadingId);
   const testResults = useProviderStore((s) => s.testResults);
+  const usageResults = useProviderStore((s) => s.usageResults);
   const error = useProviderStore((s) => s.error);
   const refresh = useProviderStore((s) => s.refresh);
   const upsert = useProviderStore((s) => s.upsert);
   const remove = useProviderStore((s) => s.remove);
   const test = useProviderStore((s) => s.test);
+  const queryUsage = useProviderStore((s) => s.queryUsage);
   const openRouterPreset = useProviderStore((s) => s.openRouterPreset);
 
   const [name, setName] = useState("Custom OpenAI");
@@ -135,12 +138,19 @@ export default function ProvidersSection() {
         <div className="flex flex-col gap-1.5">
           {providers.map((provider) => {
             const result = testResults[provider.id];
+            const usage = usageResults[provider.id];
+            const subscription =
+              provider.kind === "codex-login" || provider.kind === "claude-subscription";
             return (
               <div key={provider.id} className="rounded-lg border border-line px-2.5 py-2 text-[11px]">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium text-ink-2">{provider.name}</span>
                   <span className="shrink-0 text-[10px] text-ink-3">
-                    {provider.hasSecret ? t("settings.secretStored") : t("settings.secretMissing")}
+                    {subscription
+                      ? t("settings.cliSubscription")
+                      : provider.hasSecret
+                        ? t("settings.secretStored")
+                        : t("settings.secretMissing")}
                   </span>
                 </div>
                 <div className="mt-0.5 truncate text-[10px] text-ink-3">
@@ -156,6 +166,55 @@ export default function ProvidersSection() {
                     {result.detail}
                   </p>
                 )}
+                {usage && (
+                  <div className="mt-2 space-y-1.5 rounded-md bg-raised/70 p-2">
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-ink-3">
+                      <span>{usage.plan ? `${usage.source} · ${usage.plan}` : usage.source}</span>
+                      {usage.creditsUnlimited ? (
+                        <span>{t("settings.usageUnlimited")}</span>
+                      ) : usage.creditsBalance ? (
+                        <span>{t("settings.usageCredits", { value: usage.creditsBalance })}</span>
+                      ) : null}
+                    </div>
+                    {usage.windows.map((window, index) => {
+                      const remaining = window.remainingPercent;
+                      return (
+                        <div key={`${window.label}-${index}`}>
+                          <div className="flex items-center justify-between gap-2 text-[10px]">
+                            <span className="truncate text-ink-2">{window.label}</span>
+                            <span className="shrink-0 tabular-nums text-ink-3">
+                              {remaining == null
+                                ? window.remaining && window.limit
+                                  ? `${window.remaining} / ${window.limit}`
+                                  : t("settings.usageAvailable")
+                                : t("settings.usageRemaining", {
+                                    value: Math.round(remaining * 10) / 10,
+                                  })}
+                            </span>
+                          </div>
+                          {remaining != null && (
+                            <div className="mt-1 h-1 overflow-hidden rounded-full bg-line">
+                              <div
+                                className="h-full rounded-full bg-accent transition-[width]"
+                                style={{ width: `${Math.max(0, Math.min(100, remaining))}%` }}
+                              />
+                            </div>
+                          )}
+                          {(window.resetsAt || window.resetAfter) && (
+                            <div className="mt-0.5 text-[9px] text-ink-3">
+                              {t("settings.usageResets", {
+                                value: window.resetsAt
+                                  ? new Date(window.resetsAt * 1000).toLocaleString()
+                                  : window.resetAfter,
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <p className="text-[9px] leading-relaxed text-ink-3">{usage.detail}</p>
+                  </div>
+                )}
                 <div className="mt-1.5 flex gap-1.5">
                   <button
                     type="button"
@@ -166,6 +225,20 @@ export default function ProvidersSection() {
                       <Loader2 className="size-3 animate-spin" />
                     ) : (
                       t("settings.providerTest")
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void queryUsage(provider.id)}
+                    className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-ink-2 hover:bg-hover"
+                  >
+                    {usageLoadingId === provider.id ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <>
+                        <Gauge className="size-3" />
+                        {t("settings.providerUsage")}
+                      </>
                     )}
                   </button>
                   <button

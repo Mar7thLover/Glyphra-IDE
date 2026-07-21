@@ -11,6 +11,7 @@ vi.mock("@/lib/ipc/ipc", () => ({
 }));
 
 import { ipc } from "@/lib/ipc/ipc";
+import { useEditorStore } from "./editorStore";
 import { useProjectStore } from "./projectStore";
 
 describe("projectStore", () => {
@@ -49,6 +50,38 @@ describe("projectStore", () => {
     expect(state.entries).toHaveLength(2);
     expect(state.watcherId).toBe(7);
     expect(state.recents[0]?.name).toBe("repo");
+  });
+
+  it("closes the project, watcher, and project-scoped editor state", async () => {
+    useProjectStore.setState({
+      current: { path: "/repo", name: "repo" },
+      watcherId: 7,
+      entries: [{ path: "/repo/a.ts", name: "a.ts", kind: "file" }],
+      expanded: ["/repo/src"],
+    });
+    useEditorStore.setState({
+      tabs: [
+        {
+          path: "/repo/a.ts",
+          name: "a.ts",
+          content: "a",
+          savedContent: "a",
+          hash: "h",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        },
+      ],
+      activePath: "/repo/a.ts",
+    });
+    vi.mocked(ipc.fsWatchStop).mockResolvedValue();
+
+    await useProjectStore.getState().closeProject();
+
+    expect(ipc.fsWatchStop).toHaveBeenCalledWith(7);
+    expect(useProjectStore.getState().current).toBeNull();
+    expect(useProjectStore.getState().entries).toEqual([]);
+    expect(useEditorStore.getState().tabs).toEqual([]);
   });
 
   it("expands directories and caches children", async () => {

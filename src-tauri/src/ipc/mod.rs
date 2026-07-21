@@ -20,13 +20,17 @@ mod export_bindings {
         settings::AppSettings,
     };
     use crate::agent::{
+        catalog::{
+            AgentCatalogRequest, AgentHarnessCatalog, AgentMcpServerInfo, AgentModelInfo,
+            AgentPermissionProfile, AgentReasoningEffort, AgentSkillInfo,
+        },
         detect::AgentDetectInfo,
         runtime::{RuntimeDetectInfo, ToolStatus},
         supervisor::{AgentIoEvent, AgentSpawnRequest},
     };
     use crate::gitx::{
-        checkpoints::{CkptFileContents, CkptFileDiff, CkptTurnMeta},
-        cli::GitFileStatus,
+        checkpoints::{CkptFileContents, CkptFileDiff, CkptHunkSummary, CkptTurnMeta},
+        cli::{DiffSummary, GitFileDiff, GitFileStatus},
     };
     use crate::providers::{ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert};
     use crate::pty::PtyEvent;
@@ -46,6 +50,13 @@ mod export_bindings {
         AppSettings::export_all().expect("export AppSettings");
         RecentProject::export_all().expect("export RecentProject");
         AgentDetectInfo::export_all().expect("export AgentDetectInfo");
+        AgentCatalogRequest::export_all().expect("export AgentCatalogRequest");
+        AgentHarnessCatalog::export_all().expect("export AgentHarnessCatalog");
+        AgentModelInfo::export_all().expect("export AgentModelInfo");
+        AgentReasoningEffort::export_all().expect("export AgentReasoningEffort");
+        AgentPermissionProfile::export_all().expect("export AgentPermissionProfile");
+        AgentSkillInfo::export_all().expect("export AgentSkillInfo");
+        AgentMcpServerInfo::export_all().expect("export AgentMcpServerInfo");
         AgentSpawnRequest::export_all().expect("export AgentSpawnRequest");
         AgentIoEvent::export_all().expect("export AgentIoEvent");
         RuntimeDetectInfo::export_all().expect("export RuntimeDetectInfo");
@@ -55,9 +66,12 @@ mod export_bindings {
         ProviderUpsert::export_all().expect("export ProviderUpsert");
         ProviderTestResult::export_all().expect("export ProviderTestResult");
         GitFileStatus::export_all().expect("export GitFileStatus");
+        GitFileDiff::export_all().expect("export GitFileDiff");
+        DiffSummary::export_all().expect("export DiffSummary");
         CkptTurnMeta::export_all().expect("export CkptTurnMeta");
         CkptFileDiff::export_all().expect("export CkptFileDiff");
         CkptFileContents::export_all().expect("export CkptFileContents");
+        CkptHunkSummary::export_all().expect("export CkptHunkSummary");
         SearchHit::export_all().expect("export SearchHit");
         SearchBatch::export_all().expect("export SearchBatch");
         PtyEvent::export_all().expect("export PtyEvent");

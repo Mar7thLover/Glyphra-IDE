@@ -46,6 +46,9 @@ export interface AgentSessionHandle {
   stderrTail: string[];
   /** True when the crash circuit breaker has tripped. */
   circuitOpen: boolean;
+  /** Current conversation context usage reported by the harness. */
+  contextUsed: number | null;
+  contextSize: number | null;
 }
 
 type Listener = (session: AgentSessionHandle) => void;
@@ -53,10 +56,9 @@ type Listener = (session: AgentSessionHandle) => void;
 const STDERR_TAIL = 12;
 
 function modeIdFor(mode: AgentPermissionMode): string {
-  // Align with supervisor INITIAL_AGENT_MODE / Codex-style ids.
-  if (mode === "safe") return "read-only";
-  if (mode === "unleashed") return "agent-full-access";
-  return "agent";
+  if (mode === "safe") return "request-approval";
+  if (mode === "unleashed") return "full-access";
+  return "auto-approval";
 }
 
 /**
@@ -77,6 +79,10 @@ export class AgentBus {
   private unsubExit: (() => void) | null = null;
   private stderrTail: string[] = [];
   private circuit: CircuitState = emptyCircuit();
+  private configuredModel: string | null = null;
+  private configuredReasoningEffort: string | null = null;
+  private configuredFastMode = false;
+  private configuredMode: AgentPermissionMode = "standard";
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -144,7 +150,12 @@ export class AgentBus {
     await this.stop();
 
     const mode: AgentPermissionMode = options.mode ?? "standard";
+    const configuredModel = options.model ?? options.harness?.model ?? null;
     this.stderrTail = [];
+    this.configuredModel = configuredModel;
+    this.configuredReasoningEffort = options.reasoningEffort ?? null;
+    this.configuredFastMode = options.fastMode ?? false;
+    this.configuredMode = mode;
 
     this.handle = {
       backend,
@@ -158,15 +169,25 @@ export class AgentBus {
       status: "starting",
       stderrTail: [],
       circuitOpen: false,
+      contextUsed: null,
+      contextSize: options.contextWindow ?? null,
     };
     this.emit();
 
     const transport = await openAgentTransport({
       backend,
       cwd,
-      command: null,
-      args: [],
-      env: {},
+      protocol: options.harness?.protocol ?? null,
+      command: options.harness?.command ?? null,
+      args: options.harness?.args ?? [],
+      env: options.harness?.env ?? {},
+      endpoint: options.harness?.endpoint ?? null,
+      model: configuredModel,
+      reasoningEffort: options.reasoningEffort ?? null,
+      contextWindow: options.contextWindow ?? null,
+      fastMode: options.fastMode ?? false,
+      approvalReviewer: options.approvalReviewer ?? "user",
+      prewarmedSessionId: options.prewarmedSessionId ?? null,
       providerId: options.providerId ?? null,
       mode,
     });
@@ -214,6 +235,17 @@ export class AgentBus {
         await ipc.fsWrite(ctx.params.path, ctx.params.content);
         return {};
       })
+      .onNotification(methods.client.session.update, (ctx) => {
+        const update = ctx.params.update;
+        if (
+          update.sessionUpdate === "usage_update" &&
+          this.handle?.acpSessionId === ctx.params.sessionId
+        ) {
+          this.handle.contextUsed = update.used;
+          this.handle.contextSize = update.size;
+          this.emit();
+        }
+      })
       .connect(transport.stream);
 
     this.connection = connection;
@@ -223,6 +255,7 @@ export class AgentBus {
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: { readTextFile: true, writeTextFile: true },
+          session: { configOptions: {} },
         },
         clientInfo: {
           name: "glyphra",
@@ -233,7 +266,7 @@ export class AgentBus {
 
       this.handle.agentName = init.agentInfo?.title ?? init.agentInfo?.name;
       this.pushSystem(
-        `Connected${this.handle.agentName ? ` to ${this.handle.agentName}` : ""} · ${backend}`,
+        `Connected${this.handle.agentName ? ` to ${this.handle.agentName}` : ""} · ${options.harness?.protocol ?? "ACP"}`,
       );
 
       const authMethods = init.authMethods ?? [];
@@ -267,14 +300,22 @@ export class AgentBus {
           modeId,
         });
         this.pushSystem(`Mode: ${mode} (${modeId})`);
-      } catch {
+      } catch (error) {
+        if (options.harness?.protocol === "codex-app-server") throw error;
         this.pushSystem(`Mode preset: ${mode} (agent set_mode unavailable)`);
       }
 
       if (options.providerId) {
         this.pushSystem(`Provider: ${options.providerId.slice(0, 8)}… (env injected at spawn)`);
-      } else if (backend !== "fixture") {
-        this.pushSystem("Provider: CLI login / defaults (no Glyphra key selected)");
+      }
+      if (options.model) {
+        const details = [
+          options.model,
+          options.reasoningEffort ? `effort ${options.reasoningEffort}` : null,
+          options.contextWindow ? `context ${Math.round(options.contextWindow / 1024)}K` : null,
+          options.approvalReviewer === "auto_review" ? "auto-review" : null,
+        ].filter(Boolean);
+        this.pushSystem(`Model: ${details.join(" · ")}`);
       }
 
       this.handle.status = "running";
@@ -289,6 +330,67 @@ export class AgentBus {
       await this.stop();
       throw new Error(message);
     }
+  }
+
+  async configure(config: {
+    model: string | null;
+    reasoningEffort: string | null;
+    fastMode?: boolean;
+    mode?: AgentPermissionMode;
+  }) {
+    if (!this.connection || !this.handle?.acpSessionId) {
+      throw new Error("No running agent session");
+    }
+    if (this.handle.status === "busy") {
+      throw new Error("Finish or cancel the current turn before changing model settings");
+    }
+
+    const sessionId = this.handle.acpSessionId;
+    const changed: string[] = [];
+    if (config.mode && config.mode !== this.configuredMode) {
+      await this.connection.agent.request(methods.agent.session.setMode, {
+        sessionId,
+        modeId: modeIdFor(config.mode),
+      });
+      this.configuredMode = config.mode;
+      changed.push(`permissions ${modeIdFor(config.mode)}`);
+    }
+    if (config.model !== this.configuredModel) {
+      await this.connection.agent.request(methods.agent.session.setConfigOption, {
+        sessionId,
+        configId: "model",
+        value: config.model ?? "",
+      });
+      this.configuredModel = config.model;
+      changed.push(config.model ? `model ${config.model}` : "default model");
+    }
+    if (config.reasoningEffort !== this.configuredReasoningEffort) {
+      await this.connection.agent.request(methods.agent.session.setConfigOption, {
+        sessionId,
+        configId: "reasoning_effort",
+        value: config.reasoningEffort ?? "",
+      });
+      this.configuredReasoningEffort = config.reasoningEffort;
+      changed.push(
+        config.reasoningEffort
+          ? `effort ${config.reasoningEffort}`
+          : "default reasoning effort",
+      );
+    }
+    if (
+      typeof config.fastMode === "boolean" &&
+      config.fastMode !== this.configuredFastMode
+    ) {
+      await this.connection.agent.request(methods.agent.session.setConfigOption, {
+        sessionId,
+        configId: "fast_mode",
+        type: "boolean",
+        value: config.fastMode,
+      });
+      this.configuredFastMode = config.fastMode;
+      changed.push(config.fastMode ? "fast mode" : "standard speed");
+    }
+    if (changed.length > 0) this.pushSystem(`Next turn: ${changed.join(" · ")}`);
   }
 
   async prompt(text: string) {
@@ -318,12 +420,29 @@ export class AgentBus {
       for (;;) {
         const message = await active.nextUpdate();
         if (message.kind === "stop") {
+          const context = message.response._meta?.glyphraContext as
+            | { used?: unknown; size?: unknown }
+            | undefined;
+          if (
+            this.handle &&
+            typeof context?.used === "number" &&
+            typeof context?.size === "number" &&
+            context.size > 0
+          ) {
+            this.handle.contextUsed = context.used;
+            this.handle.contextSize = context.size;
+          }
           this.handle.status = "running";
           this.pushSystem(`Turn complete (${message.stopReason})`);
           await promptPromise;
           return;
         }
-        this.handle.items = applySessionUpdate(this.handle.items, message.update);
+        if (message.update.sessionUpdate === "usage_update") {
+          this.handle.contextUsed = message.update.used;
+          this.handle.contextSize = message.update.size;
+        } else {
+          this.handle.items = applySessionUpdate(this.handle.items, message.update);
+        }
         this.emit();
       }
     } catch (error) {
@@ -433,6 +552,9 @@ export class AgentBus {
       }
     }
     this.transport = null;
+    this.configuredModel = null;
+    this.configuredReasoningEffort = null;
+    this.configuredFastMode = false;
 
     if (this.handle) {
       this.handle = {

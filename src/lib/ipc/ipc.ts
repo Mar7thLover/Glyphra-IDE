@@ -1,22 +1,28 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type { AgentDetectInfo } from "./gen/AgentDetectInfo";
+export type { AgentCatalogRequest } from "./gen/AgentCatalogRequest";
+export type { AgentHarnessCatalog } from "./gen/AgentHarnessCatalog";
 export type { AgentIoEvent } from "./gen/AgentIoEvent";
 export type { AgentSpawnRequest } from "./gen/AgentSpawnRequest";
 export type { AppSettings } from "./gen/AppSettings";
 export type { CkptFileContents } from "./gen/CkptFileContents";
 export type { CkptFileDiff } from "./gen/CkptFileDiff";
+export type { CkptHunkSummary } from "./gen/CkptHunkSummary";
 export type { CkptTurnMeta } from "./gen/CkptTurnMeta";
+export type { DiffSummary } from "./gen/DiffSummary";
 export type { DirEntryInfo } from "./gen/DirEntryInfo";
 export type { EnvInfo } from "./gen/EnvInfo";
 export type { FileReadResult } from "./gen/FileReadResult";
 export type { FileWriteResult } from "./gen/FileWriteResult";
 export type { FsEvent } from "./gen/FsEvent";
 export type { GitFileStatus } from "./gen/GitFileStatus";
+export type { GitFileDiff } from "./gen/GitFileDiff";
 export type { ProjectInfo } from "./gen/ProjectInfo";
 export type { ProviderKind } from "./gen/ProviderKind";
 export type { ProviderRecord } from "./gen/ProviderRecord";
 export type { ProviderTestResult } from "./gen/ProviderTestResult";
+export type { ProviderUsageSnapshot } from "./gen/ProviderUsageSnapshot";
 export type { ProviderUpsert } from "./gen/ProviderUpsert";
 export type { PtyEvent } from "./gen/PtyEvent";
 export type { RecentProject } from "./gen/RecentProject";
@@ -28,10 +34,13 @@ export type { SessionSummary } from "./gen/SessionSummary";
 export type { ToolStatus } from "./gen/ToolStatus";
 
 import type { AgentDetectInfo } from "./gen/AgentDetectInfo";
+import type { AgentCatalogRequest } from "./gen/AgentCatalogRequest";
+import type { AgentHarnessCatalog } from "./gen/AgentHarnessCatalog";
 import type { AgentIoEvent } from "./gen/AgentIoEvent";
 import type { AgentSpawnRequest } from "./gen/AgentSpawnRequest";
 import type { AppSettings } from "./gen/AppSettings";
 import type { CkptFileContents } from "./gen/CkptFileContents";
+import type { CkptHunkSummary } from "./gen/CkptHunkSummary";
 import type { CkptTurnMeta } from "./gen/CkptTurnMeta";
 import type { DirEntryInfo } from "./gen/DirEntryInfo";
 import type { EnvInfo } from "./gen/EnvInfo";
@@ -39,9 +48,11 @@ import type { FileReadResult } from "./gen/FileReadResult";
 import type { FileWriteResult } from "./gen/FileWriteResult";
 import type { FsEvent } from "./gen/FsEvent";
 import type { GitFileStatus } from "./gen/GitFileStatus";
+import type { GitFileDiff } from "./gen/GitFileDiff";
 import type { ProjectInfo } from "./gen/ProjectInfo";
 import type { ProviderRecord } from "./gen/ProviderRecord";
 import type { ProviderTestResult } from "./gen/ProviderTestResult";
+import type { ProviderUsageSnapshot } from "./gen/ProviderUsageSnapshot";
 import type { ProviderUpsert } from "./gen/ProviderUpsert";
 import type { PtyEvent } from "./gen/PtyEvent";
 import type { RecentProject } from "./gen/RecentProject";
@@ -55,6 +66,7 @@ export const ipc = {
   perfMark: (name: string) => invoke<void>("perf_mark", { name }),
   windowOpenAgent: () => invoke<void>("window_open_agent"),
   windowFocusMain: () => invoke<void>("window_focus_main"),
+  appExit: () => invoke<void>("app_exit"),
   projectOpen: (path: string) => invoke<ProjectInfo>("project_open", { path }),
   projectRecent: () => invoke<RecentProject[]>("project_recent"),
   fsList: (path: string) => invoke<DirEntryInfo[]>("fs_list", { path }),
@@ -69,6 +81,8 @@ export const ipc = {
   settingsGet: () => invoke<AppSettings>("settings_get"),
   settingsSet: (settings: AppSettings) => invoke<void>("settings_set", { settings }),
   agentDetect: () => invoke<AgentDetectInfo[]>("agent_detect"),
+  agentCatalog: (request: AgentCatalogRequest) =>
+    invoke<AgentHarnessCatalog>("agent_catalog", { request }),
   runtimeDetect: () => invoke<RuntimeDetectInfo>("runtime_detect"),
   agentSpawn: (request: AgentSpawnRequest, onEvent: (event: AgentIoEvent) => void) => {
     const channel = new Channel<AgentIoEvent>(onEvent);
@@ -84,9 +98,12 @@ export const ipc = {
   vaultProbe: (id: string) => invoke<boolean>("vault_probe", { id }),
   vaultClear: (id: string) => invoke<void>("vault_clear", { id }),
   providerTest: (id: string) => invoke<ProviderTestResult>("provider_test", { id }),
+  providerUsage: (id: string) => invoke<ProviderUsageSnapshot>("provider_usage", { id }),
   gitStatus: (projectPath: string) => invoke<GitFileStatus[]>("git_status", { projectPath }),
   gitExecReadonly: (projectPath: string, args: string[]) =>
     invoke<string>("git_exec_readonly", { projectPath, args }),
+  gitDiffFile: (projectPath: string, path: string, base = "HEAD") =>
+    invoke<GitFileDiff>("git_diff_file", { projectPath, path, base }),
   ckptBeginTurn: (projectPath: string, label?: string) =>
     invoke<CkptTurnMeta>("ckpt_begin_turn", { projectPath, label }),
   ckptPreimage: (projectPath: string, path: string) =>
@@ -97,6 +114,8 @@ export const ipc = {
     invoke<CkptTurnMeta[]>("ckpt_list_turns", { projectPath }),
   ckptFileContents: (projectPath: string, turnId: string, path: string) =>
     invoke<CkptFileContents>("ckpt_file_contents", { projectPath, turnId, path }),
+  ckptHunks: (projectPath: string, turnId: string, path: string) =>
+    invoke<CkptHunkSummary>("ckpt_hunks", { projectPath, turnId, path }),
   ckptRestoreTurn: (projectPath: string, turnId: string) =>
     invoke<CkptTurnMeta>("ckpt_restore_turn", { projectPath, turnId }),
   ckptRestoreFile: (projectPath: string, turnId: string, path: string) =>

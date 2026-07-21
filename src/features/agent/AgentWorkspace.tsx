@@ -1,24 +1,27 @@
 import {
   AppWindow,
   Loader2,
+  MessageSquarePlus,
   PanelRightClose,
   Plus,
   RefreshCw,
   X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import GlyphMark from "@/app/GlyphMark";
 import { openAgentsWindow } from "@/lib/agentWindow";
 import { useAgentStore } from "@/lib/stores/agentStore";
+import { useComposerDraft } from "@/lib/stores/composerStore";
+import { useHarnessStore } from "@/lib/stores/harnessStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProviderStore } from "@/lib/stores/providerStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
-import AgentComposer, { useComposerDraft } from "./AgentComposer";
+import AgentComposer from "./AgentComposer";
 import MessageList from "./MessageList";
 import Notice from "./Notice";
 import PermissionModal from "./PermissionModal";
@@ -88,15 +91,20 @@ export default function AgentWorkspace() {
   const clearCircuit = useAgentStore((s) => s.clearCircuit);
   const start = useAgentStore((s) => s.start);
   const respondPermission = useAgentStore((s) => s.respondPermission);
-  const stop = useAgentStore((s) => s.stop);
+  const newConversation = useAgentStore((s) => s.newConversation);
   const restart = useAgentStore((s) => s.restart);
   const refreshArchives = useAgentStore((s) => s.refreshArchives);
   const openArchive = useAgentStore((s) => s.openArchive);
   const clearArchiveView = useAgentStore((s) => s.clearArchiveView);
   const removeArchive = useAgentStore((s) => s.removeArchive);
   const refreshProviders = useProviderStore((s) => s.refresh);
+  const customHarnesses = useHarnessStore((s) => s.harnesses);
+  const resetComposer = useComposerDraft((s) => s.reset);
+  const initialized = useRef(false);
 
   useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
     void detect();
     void refreshProviders();
     const prefs = usePrefsStore.getState();
@@ -109,12 +117,21 @@ export default function AgentWorkspace() {
   }, [current?.path, refreshArchives]);
 
   const backendInfo = backends.find((b) => b.backend === backend);
-  const backendReady = backend === "fixture" || Boolean(backendInfo?.installed);
+  const backendReady =
+    backend === "fixture" ||
+    Boolean(backendInfo?.installed) ||
+    (backend.startsWith("custom:") &&
+      customHarnesses.some((item) => `custom:${item.id}` === backend));
 
   const running = session?.status === "running" || session?.status === "busy";
   const crashed = session?.status === "crashed";
   const isFixture = backend === "fixture";
   const readOnly = Boolean(viewingArchiveId);
+  const hasConversation = Boolean(
+    session ||
+      viewingArchiveId ||
+      items.some((item) => item.kind === "user" || item.kind === "assistant"),
+  );
 
   const statusTone = running ? "live" : crashed ? "crashed" : "idle";
   const statusLabel = detecting
@@ -200,13 +217,17 @@ export default function AgentWorkspace() {
             >
               {t("agent.restart")}
             </button>
-          ) : running ? (
+          ) : hasConversation ? (
             <button
               type="button"
-              onClick={() => void stop()}
-              className="rounded-md px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors hover:bg-hover hover:text-ink-2"
+              disabled={busy}
+              onClick={() => {
+                void newConversation().then(() => resetComposer());
+              }}
+              title={busy ? t("agent.newConversationBusy") : t("agent.newConversationHint")}
+              className={iconBtn}
             >
-              {t("agent.stop")}
+              <MessageSquarePlus className="size-3.5" strokeWidth={1.6} />
             </button>
           ) : (
             <button
@@ -263,7 +284,7 @@ export default function AgentWorkspace() {
             <span className="min-w-0">{backendInfo.detail}</span>
             <button
               type="button"
-              onClick={openSettings}
+              onClick={() => openSettings()}
               className="shrink-0 font-medium underline underline-offset-2 hover:opacity-80"
             >
               {t("agent.openSetup")}

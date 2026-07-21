@@ -104,7 +104,7 @@ export default function WelcomeHome() {
     { name: "Git", ok: !!runtime?.git.installed },
     ...agents
       .filter((a) => a.backend !== "custom-agent" && a.backend !== "fixture")
-      .slice(0, 3)
+      .slice(0, 4)
       .map((a) => ({
         name:
           a.backend === "codex-acp"
@@ -113,6 +113,8 @@ export default function WelcomeHome() {
               ? "Claude"
               : a.backend === "pi-agent"
                 ? "Pi"
+                : a.backend === "opencode-acp"
+                  ? "OpenCode"
                 : a.backend,
         ok: a.installed,
       })),

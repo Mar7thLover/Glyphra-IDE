@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    ffi::OsString,
     io::{Read, Write},
     sync::{
         atomic::{AtomicU32, Ordering},
@@ -10,6 +11,9 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+#[cfg(windows)]
+use std::path::PathBuf;
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
@@ -54,8 +58,14 @@ impl PtyManager {
             })
             .map_err(|err| format!("openpty: {err}"))?;
 
-        let mut cmd = CommandBuilder::new(default_shell());
-        cmd.cwd(cwd);
+        let shell = default_shell();
+        let mut cmd = CommandBuilder::new(&shell.program);
+        cmd.args(&shell.args);
+        cmd.cwd(shell_cwd(cwd));
+        // Give interactive programs a consistent capability hint on every host.
+        // ConPTY understands VT sequences and both PowerShell editions respect TERM.
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
 
         let _child = pair
             .slave
@@ -173,10 +183,133 @@ fn flush_bytes(pty_id: u32, channel: &Channel<PtyEvent>, pending: &mut Vec<u8>) 
     });
 }
 
-fn default_shell() -> String {
-    if cfg!(windows) {
-        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())
-    } else {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
+#[derive(Debug, PartialEq)]
+struct ShellCommand {
+    program: OsString,
+    args: Vec<OsString>,
+}
+
+fn shell_cwd(cwd: String) -> String {
+    #[cfg(windows)]
+    {
+        // std::fs::canonicalize returns verbatim paths on Windows. They are
+        // useful internally, but PowerShell exposes them as provider-qualified
+        // locations such as Microsoft.PowerShell.Core\FileSystem::\\?\D:\...
+        if let Some(path) = cwd.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{path}");
+        }
+
+        if let Some(path) = cwd.strip_prefix(r"\\?\") {
+            let bytes = path.as_bytes();
+            let is_drive_path = bytes.len() >= 3
+                && bytes[0].is_ascii_alphabetic()
+                && bytes[1] == b':'
+                && matches!(bytes[2], b'\\' | b'/');
+            if is_drive_path {
+                return path.to_owned();
+            }
+        }
+    }
+
+    cwd
+}
+
+#[cfg(windows)]
+fn default_shell() -> ShellCommand {
+    // Prefer modern, cross-platform PowerShell when it is installed. Windows
+    // PowerShell remains present on supported Windows versions and is the
+    // deterministic fallback; COMSPEC intentionally is not used here.
+    let program = find_on_path("pwsh.exe")
+        .or_else(|| {
+            std::env::var_os("ProgramFiles")
+                .map(PathBuf::from)
+                .map(|path| path.join("PowerShell").join("7").join("pwsh.exe"))
+                .filter(|path| path.is_file())
+        })
+        .or_else(|| {
+            std::env::var_os("SystemRoot")
+                .map(PathBuf::from)
+                .map(|path| {
+                    path.join("System32")
+                        .join("WindowsPowerShell")
+                        .join("v1.0")
+                        .join("powershell.exe")
+                })
+                .filter(|path| path.is_file())
+        })
+        .map(OsString::from)
+        .unwrap_or_else(|| OsString::from("powershell.exe"));
+
+    ShellCommand {
+        program,
+        args: vec![OsString::from("-NoLogo")],
+    }
+}
+
+#[cfg(windows)]
+fn find_on_path(executable: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|directory| directory.join(executable))
+        .find(|candidate| candidate.is_file())
+}
+
+#[cfg(not(windows))]
+fn default_shell() -> ShellCommand {
+    let configured = std::env::var_os("SHELL").filter(|shell| !shell.is_empty());
+
+    #[cfg(target_os = "macos")]
+    let fallback = "/bin/zsh";
+    #[cfg(not(target_os = "macos"))]
+    let fallback = "/bin/sh";
+
+    ShellCommand {
+        program: configured.unwrap_or_else(|| OsString::from(fallback)),
+        args: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_terminal_uses_powershell_without_a_logo() {
+        let shell = default_shell();
+        let executable = PathBuf::from(&shell.program)
+            .file_name()
+            .expect("PowerShell executable should have a file name")
+            .to_string_lossy()
+            .to_ascii_lowercase();
+
+        assert!(matches!(executable.as_str(), "pwsh.exe" | "powershell.exe"));
+        assert_eq!(shell.args, vec![OsString::from("-NoLogo")]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_cwd_removes_verbatim_path_prefixes() {
+        assert_eq!(
+            shell_cwd(r"\\?\D:\Projects\Glyphra-IDE".into()),
+            r"D:\Projects\Glyphra-IDE"
+        );
+        assert_eq!(
+            shell_cwd(r"\\?\UNC\server\share\project".into()),
+            r"\\server\share\project"
+        );
+        assert_eq!(
+            shell_cwd(r"D:\Projects\Glyphra-IDE".into()),
+            r"D:\Projects\Glyphra-IDE"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_terminal_uses_an_interactive_user_shell() {
+        let shell = default_shell();
+
+        assert!(!shell.program.is_empty());
+        assert!(shell.args.is_empty());
     }
 }

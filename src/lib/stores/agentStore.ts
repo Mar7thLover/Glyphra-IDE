@@ -10,12 +10,19 @@ import {
 import { agentBus, type AgentSessionHandle } from "@/lib/acp/bus";
 import type {
   AgentPermissionMode,
+  AgentApprovalReviewer,
   AgentStartOptions,
   AgentTimelineItem,
   PermissionPrompt,
   StartableBackend,
+  CustomAgentProtocol,
 } from "@/lib/acp/types";
-import { ipc, type AgentDetectInfo } from "@/lib/ipc/ipc";
+import {
+  ipc,
+  type AgentDetectInfo,
+  type AgentHarnessCatalog,
+} from "@/lib/ipc/ipc";
+import { useHarnessStore } from "@/lib/stores/harnessStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
@@ -30,6 +37,14 @@ interface AgentState {
   error: string | null;
   mode: AgentPermissionMode;
   providerId: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  contextWindow: number | null;
+  fastMode: boolean;
+  approvalReviewer: AgentApprovalReviewer;
+  catalog: AgentHarnessCatalog | null;
+  catalogLoading: boolean;
+  catalogError: string | null;
   backend: StartableBackend;
   stderrTail: string[];
   circuitOpen: boolean;
@@ -39,6 +54,13 @@ interface AgentState {
   detect: () => Promise<void>;
   setMode: (mode: AgentPermissionMode) => void;
   setProviderId: (id: string | null) => void;
+  setModel: (model: string | null) => void;
+  setReasoningEffort: (effort: string | null) => void;
+  setContextWindow: (tokens: number | null) => void;
+  setFastMode: (enabled: boolean) => void;
+  setApprovalReviewer: (reviewer: AgentApprovalReviewer) => void;
+  configureSession: () => Promise<void>;
+  refreshCatalog: (cwd?: string) => Promise<void>;
   setBackend: (backend: StartableBackend) => void;
   clearError: () => void;
   clearCircuit: () => void;
@@ -47,6 +69,7 @@ interface AgentState {
   cancel: () => Promise<void>;
   respondPermission: (optionId: string | "cancelled") => void;
   stop: () => Promise<void>;
+  newConversation: () => Promise<void>;
   restart: () => Promise<void>;
   refreshArchives: (projectPath: string) => Promise<void>;
   openArchive: (projectPath: string, id: string) => Promise<void>;
@@ -56,6 +79,7 @@ interface AgentState {
 
 let subscribed = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let catalogRequestId = 0;
 
 function schedulePersist(session: AgentSessionHandle | null) {
   if (!session || session.items.length === 0) return;
@@ -98,9 +122,12 @@ function ensureBusSubscription(set: (partial: Partial<AgentState>) => void, get:
 }
 
 function pickReadyBackend(backends: AgentDetectInfo[], preferred: StartableBackend): StartableBackend {
+  if (preferred.startsWith("custom:") && useHarnessStore.getState().harnesses.some((item) => `custom:${item.id}` === preferred)) {
+    return preferred;
+  }
   const preferredInfo = backends.find((b) => b.backend === preferred);
   if (preferredInfo?.installed) return preferred;
-  const order: StartableBackend[] = ["codex-acp", "claude-acp", "pi-agent", "fixture"];
+  const order: StartableBackend[] = ["codex-acp", "claude-acp", "opencode-acp", "pi-agent", "fixture"];
   for (const id of order) {
     if (backends.some((b) => b.backend === id && b.installed)) return id;
   }
@@ -117,6 +144,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   error: null,
   mode: usePrefsStore.getState().defaultMode,
   providerId: usePrefsStore.getState().defaultProviderId,
+  model: usePrefsStore.getState().defaultAgentModel,
+  reasoningEffort: usePrefsStore.getState().defaultReasoningEffort,
+  contextWindow: usePrefsStore.getState().defaultContextWindow,
+  fastMode: usePrefsStore.getState().defaultFastMode,
+  approvalReviewer: usePrefsStore.getState().defaultApprovalReviewer,
+  catalog: null,
+  catalogLoading: false,
+  catalogError: null,
   backend: usePrefsStore.getState().defaultBackend,
   stderrTail: [],
   circuitOpen: false,
@@ -128,9 +163,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const backends = await ipc.agentDetect();
       const current = get().backend;
-      const stillOk = backends.some((b) => b.backend === current && b.installed);
+      const stillOk = current.startsWith("custom:")
+        ? useHarnessStore.getState().harnesses.some((item) => `custom:${item.id}` === current)
+        : backends.some((b) => b.backend === current && b.installed);
       const backend = stillOk ? current : pickReadyBackend(backends, current);
-      set({ backends, detecting: false, backend });
+      set({ backends, detecting: false, backend, error: null });
       usePrefsStore.getState().setPref("defaultBackend", backend);
     } catch (error) {
       set({
@@ -146,12 +183,103 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   setProviderId: (providerId) => {
-    set({ providerId });
+    const changed = get().providerId !== providerId;
+    set(changed ? { providerId, catalog: null, catalogError: null } : { providerId });
     usePrefsStore.getState().setPref("defaultProviderId", providerId);
   },
 
+  setModel: (model) => {
+    const catalogModel = get().catalog?.models.find((entry) => entry.id === model);
+    const effort = catalogModel?.defaultReasoningEffort ?? get().reasoningEffort;
+    const fastMode = catalogModel?.supportsFastMode ? get().fastMode : false;
+    set({ model, reasoningEffort: effort, fastMode });
+    usePrefsStore.getState().setPref("defaultAgentModel", model);
+    usePrefsStore.getState().setPref("defaultReasoningEffort", effort);
+    usePrefsStore.getState().setPref("defaultFastMode", fastMode);
+  },
+
+  setReasoningEffort: (reasoningEffort) => {
+    set({ reasoningEffort });
+    usePrefsStore.getState().setPref("defaultReasoningEffort", reasoningEffort);
+  },
+
+  setContextWindow: (contextWindow) => {
+    set({ contextWindow });
+    usePrefsStore.getState().setPref("defaultContextWindow", contextWindow);
+  },
+
+  setFastMode: (fastMode) => {
+    set({ fastMode });
+    usePrefsStore.getState().setPref("defaultFastMode", fastMode);
+  },
+
+  setApprovalReviewer: (approvalReviewer) => {
+    set({ approvalReviewer });
+    usePrefsStore.getState().setPref("defaultApprovalReviewer", approvalReviewer);
+  },
+
+  configureSession: async () => {
+    try {
+      await agentBus.configure({
+        model: get().model,
+        reasoningEffort: get().reasoningEffort,
+        fastMode: get().fastMode,
+        mode: get().mode,
+      });
+      set({ error: null });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  refreshCatalog: async (cwd) => {
+    const requestId = ++catalogRequestId;
+    const projectPath = cwd ?? useProjectStore.getState().current?.path;
+    const info = get().backends.find((entry) => entry.backend === get().backend);
+    if (!projectPath || !info?.installed || !info.command || info.protocol === "acp") {
+      set({ catalog: null, catalogLoading: false, catalogError: null });
+      return;
+    }
+    set({ catalogLoading: true, catalogError: null });
+    try {
+      const catalog = await ipc.agentCatalog({
+        protocol: info.protocol,
+        command: info.command,
+        args: info.args,
+        cwd: projectPath,
+        providerId: get().providerId,
+        model: get().model,
+        reasoningEffort: get().reasoningEffort,
+        contextWindow: get().contextWindow,
+        fastMode: get().fastMode,
+        mode: get().mode,
+      });
+      if (requestId !== catalogRequestId) return;
+      const selected = catalog.models.find((entry) => entry.id === get().model);
+      const defaultModel = catalog.models.find((entry) => entry.id === catalog.defaultModel);
+      const model = selected?.id ?? defaultModel?.id ?? catalog.models[0]?.id ?? null;
+      const modelInfo = catalog.models.find((entry) => entry.id === model);
+      const validEffort = modelInfo?.reasoningEfforts.some(
+        (entry) => entry.id === get().reasoningEffort,
+      );
+      const reasoningEffort = validEffort
+        ? get().reasoningEffort
+        : (modelInfo?.defaultReasoningEffort ?? modelInfo?.reasoningEfforts[0]?.id ?? null);
+      const fastMode = modelInfo?.supportsFastMode ? get().fastMode : false;
+      set({ catalog, model, reasoningEffort, fastMode, catalogLoading: false });
+    } catch (error) {
+      if (requestId !== catalogRequestId) return;
+      set({
+        catalog: null,
+        catalogLoading: false,
+        catalogError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
   setBackend: (backend) => {
-    set({ backend });
+    const changed = get().backend !== backend;
+    set(changed ? { backend, catalog: null, catalogError: null } : { backend });
     usePrefsStore.getState().setPref("defaultBackend", backend);
   },
 
@@ -164,6 +292,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   start: async (cwd) => {
     ensureBusSubscription(set, get);
+    if (get().backend === "auto" || get().backends.length === 0) {
+      await get().detect();
+    }
     if (agentBus.isCircuitOpen()) {
       set({
         circuitOpen: true,
@@ -177,16 +308,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ error: "Open a project folder before starting an agent." });
       return;
     }
-    const info = get().backends.find((b) => b.backend === get().backend);
-    if (info && !info.installed && get().backend !== "fixture") {
+    const selectedBackend = get().backend;
+    const custom = selectedBackend.startsWith("custom:")
+      ? useHarnessStore.getState().harnesses.find((item) => `custom:${item.id}` === selectedBackend)
+      : null;
+    const info = get().backends.find((b) => b.backend === selectedBackend);
+    if ((!custom && !info) || (info && !info.installed && selectedBackend !== "fixture")) {
       set({
-        error: `${get().backend} is not installed. ${info.detail}`,
+        error: info
+          ? `${selectedBackend} is not installed. ${info.detail}`
+          : `Harness configuration for ${selectedBackend} was not found.`,
       });
       return;
     }
     if (get().mode === "unleashed") {
       const ok = window.confirm(
-        "Unleashed mode bypasses edit approvals for this session. Continue?",
+        "Full access skips approvals and sandbox restrictions for this session. Continue?",
       );
       if (!ok) return;
     }
@@ -195,6 +332,28 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const options: AgentStartOptions = {
         mode: get().mode,
         providerId: get().providerId,
+        model: get().model,
+        reasoningEffort: get().reasoningEffort,
+        contextWindow: get().contextWindow,
+        fastMode: get().fastMode,
+        approvalReviewer: get().approvalReviewer,
+        prewarmedSessionId: get().catalog?.prewarmedSessionId ?? null,
+        harness: custom
+          ? {
+              protocol: custom.protocol,
+              command: custom.command || null,
+              args: custom.args,
+              env: custom.env,
+              endpoint: custom.endpoint ?? null,
+              model: custom.model ?? null,
+            }
+          : info && info.backend !== "fixture"
+            ? {
+                protocol: info.protocol as CustomAgentProtocol,
+                command: info.command,
+                args: info.args,
+              }
+            : undefined,
       };
       const session = await agentBus.start(get().backend, projectPath, options);
       set({
@@ -296,6 +455,21 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  },
+
+  newConversation: async () => {
+    if (agentBus.getSession() || get().session) {
+      await get().stop();
+    }
+    set({
+      session: null,
+      items: [],
+      permission: null,
+      busy: false,
+      error: null,
+      viewingArchiveId: null,
+      stderrTail: [],
+    });
   },
 
   restart: async () => {

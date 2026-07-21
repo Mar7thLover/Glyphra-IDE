@@ -1,8 +1,14 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Manager};
+use tokio::process::Command;
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -193,6 +199,317 @@ pub struct ProviderTestResult {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/ipc/gen/ProviderUsageWindow.ts")]
+pub struct ProviderUsageWindow {
+    pub label: String,
+    pub used_percent: Option<f64>,
+    pub remaining_percent: Option<f64>,
+    pub limit: Option<String>,
+    pub remaining: Option<String>,
+    /// Unix seconds fit in u32 for the supported desktop horizon; this keeps
+    /// the generated TypeScript type as `number` instead of `bigint`.
+    pub resets_at: Option<u32>,
+    pub reset_after: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/ipc/gen/ProviderUsageSnapshot.ts")]
+pub struct ProviderUsageSnapshot {
+    #[serde(default)]
+    pub provider_id: String,
+    pub source: String,
+    pub plan: Option<String>,
+    pub windows: Vec<ProviderUsageWindow>,
+    pub credits_balance: Option<String>,
+    pub credits_unlimited: bool,
+    pub detail: String,
+    pub fetched_at: u32,
+}
+
+fn now_epoch() -> u32 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .try_into()
+        .unwrap_or(u32::MAX)
+}
+
+pub async fn usage(app: &AppHandle, provider_id: &str) -> Result<ProviderUsageSnapshot, String> {
+    if provider_id == "__codex_cli__" {
+        let mut snapshot = usage_codex_cli().await?;
+        snapshot.provider_id = provider_id.into();
+        return Ok(snapshot);
+    }
+    if provider_id == "__claude_cli__" {
+        let mut snapshot = usage_claude_cli().await?;
+        snapshot.provider_id = provider_id.into();
+        return Ok(snapshot);
+    }
+    let file = load_file(app)?;
+    let provider = file
+        .providers
+        .iter()
+        .find(|provider| provider.id == provider_id)
+        .ok_or_else(|| format!("unknown provider {provider_id}"))?
+        .clone();
+
+    let mut snapshot = match provider.kind {
+        ProviderKind::CodexLogin => usage_codex_cli().await?,
+        ProviderKind::ClaudeSubscription => usage_claude_cli().await?,
+        ProviderKind::OpenaiKey | ProviderKind::CustomOpenai | ProviderKind::AnthropicKey => {
+            usage_api(app, &provider).await?
+        }
+    };
+    snapshot.provider_id = provider.id;
+    Ok(snapshot)
+}
+
+async fn usage_codex_cli() -> Result<ProviderUsageSnapshot, String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let bridge = root.join("scripts/harness-bridge.mjs");
+    let output = tokio::time::timeout(
+        Duration::from_secs(45),
+        Command::new("node")
+            .arg(bridge)
+            .arg("--usage=1")
+            .arg("--protocol=codex-app-server")
+            .arg("--command=codex")
+            .arg("--args=[]")
+            .current_dir(&root)
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| "Codex usage query timed out".to_string())?
+    .map_err(|err| format!("start Codex usage query: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Codex usage query failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|err| format!("parse Codex usage response: {err}"))
+}
+
+async fn usage_claude_cli() -> Result<ProviderUsageSnapshot, String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(45),
+        Command::new("claude")
+            .args(["-p", "/usage", "--output-format", "json"])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| "Claude usage query timed out".to_string())?
+    .map_err(|err| format!("start Claude usage query: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Claude usage query failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|err| format!("parse Claude usage response: {err}"))?;
+    let result = payload
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    let windows = result
+        .lines()
+        .filter_map(parse_claude_usage_line)
+        .collect::<Vec<_>>();
+    Ok(ProviderUsageSnapshot {
+        provider_id: String::new(),
+        source: "claude-cli".into(),
+        plan: None,
+        windows,
+        credits_balance: None,
+        credits_unlimited: false,
+        detail: "Read from Claude Code /usage using the active CLI subscription.".into(),
+        fetched_at: now_epoch(),
+    })
+}
+
+fn parse_claude_usage_line(line: &str) -> Option<ProviderUsageWindow> {
+    let (label, value) = line.trim().split_once(':')?;
+    let (used, tail) = value.split_once("% used")?;
+    let used_percent = used.split_whitespace().last()?.trim().parse::<f64>().ok()?;
+    let reset_after = tail
+        .split_once("resets")
+        .map(|(_, reset)| reset.trim().trim_start_matches('·').trim().to_string())
+        .filter(|value| !value.is_empty());
+    Some(ProviderUsageWindow {
+        label: label.trim().to_string(),
+        used_percent: Some(used_percent),
+        remaining_percent: Some((100.0 - used_percent).max(0.0)),
+        limit: None,
+        remaining: None,
+        resets_at: None,
+        reset_after,
+    })
+}
+
+async fn usage_api(
+    app: &AppHandle,
+    provider: &ProviderRecord,
+) -> Result<ProviderUsageSnapshot, String> {
+    let secret = vault::read_secret(app, &provider.id)?
+        .ok_or_else(|| "provider secret missing".to_string())?;
+    let base = provider
+        .base_url
+        .as_deref()
+        .unwrap_or(match provider.kind {
+            ProviderKind::AnthropicKey => "https://api.anthropic.com/v1",
+            _ => "https://api.openai.com/v1",
+        })
+        .trim_end_matches('/');
+    let client = reqwest::Client::new();
+    let mut request = client.get(format!("{base}/models"));
+    request = match provider.kind {
+        ProviderKind::AnthropicKey => request
+            .header("x-api-key", &secret)
+            .header("anthropic-version", "2023-06-01"),
+        _ => request.bearer_auth(&secret),
+    };
+    let response = request
+        .send()
+        .await
+        .map_err(|err| format!("usage probe failed: {err}"))?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "usage probe HTTP {}: {}",
+            status.as_u16(),
+            body.chars().take(240).collect::<String>()
+        ));
+    }
+
+    let mut windows = Vec::new();
+    match provider.kind {
+        ProviderKind::AnthropicKey => {
+            push_header_window(
+                &mut windows,
+                &headers,
+                "Requests",
+                "anthropic-ratelimit-requests",
+            );
+            push_header_window(
+                &mut windows,
+                &headers,
+                "Tokens",
+                "anthropic-ratelimit-tokens",
+            );
+            push_header_window(
+                &mut windows,
+                &headers,
+                "Input tokens",
+                "anthropic-ratelimit-input-tokens",
+            );
+            push_header_window(
+                &mut windows,
+                &headers,
+                "Output tokens",
+                "anthropic-ratelimit-output-tokens",
+            );
+        }
+        _ => {
+            push_header_window(&mut windows, &headers, "Requests", "x-ratelimit");
+            push_openai_window(&mut windows, &headers, "Requests", "requests");
+            push_openai_window(&mut windows, &headers, "Tokens", "tokens");
+        }
+    }
+    windows.dedup_by(|left, right| left.label == right.label);
+    let detail = if windows.is_empty() {
+        "The API endpoint accepted the key but did not expose remaining quota headers on GET /models. Billing balance is not part of the standard model API.".into()
+    } else {
+        "Rate-limit remaining values returned by the API endpoint. Billing balance may be managed separately by the provider.".into()
+    };
+    Ok(ProviderUsageSnapshot {
+        provider_id: String::new(),
+        source: "api-rate-limit-headers".into(),
+        plan: None,
+        windows,
+        credits_balance: None,
+        credits_unlimited: false,
+        detail,
+        fetched_at: now_epoch(),
+    })
+}
+
+fn header(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+}
+
+fn make_header_window(
+    label: &str,
+    limit: Option<String>,
+    remaining: Option<String>,
+    reset_after: Option<String>,
+) -> Option<ProviderUsageWindow> {
+    if limit.is_none() && remaining.is_none() && reset_after.is_none() {
+        return None;
+    }
+    let limit_number = limit.as_deref().and_then(|value| value.parse::<f64>().ok());
+    let remaining_number = remaining
+        .as_deref()
+        .and_then(|value| value.parse::<f64>().ok());
+    let remaining_percent = limit_number
+        .zip(remaining_number)
+        .filter(|(total, _)| *total > 0.0)
+        .map(|(total, left)| (left / total * 100.0).clamp(0.0, 100.0));
+    Some(ProviderUsageWindow {
+        label: label.into(),
+        used_percent: remaining_percent.map(|value| 100.0 - value),
+        remaining_percent,
+        limit,
+        remaining,
+        resets_at: None,
+        reset_after,
+    })
+}
+
+fn push_openai_window(
+    windows: &mut Vec<ProviderUsageWindow>,
+    headers: &reqwest::header::HeaderMap,
+    label: &str,
+    unit: &str,
+) {
+    if let Some(window) = make_header_window(
+        label,
+        header(headers, &format!("x-ratelimit-limit-{unit}")),
+        header(headers, &format!("x-ratelimit-remaining-{unit}")),
+        header(headers, &format!("x-ratelimit-reset-{unit}")),
+    ) {
+        windows.push(window);
+    }
+}
+
+fn push_header_window(
+    windows: &mut Vec<ProviderUsageWindow>,
+    headers: &reqwest::header::HeaderMap,
+    label: &str,
+    prefix: &str,
+) {
+    if let Some(window) = make_header_window(
+        label,
+        header(headers, &format!("{prefix}-limit")),
+        header(headers, &format!("{prefix}-remaining")),
+        header(headers, &format!("{prefix}-reset")),
+    ) {
+        windows.push(window);
+    }
+}
+
 /// Kind-aware connectivity check.
 /// - openai / custom-openai → POST `{base}/responses` (Responses API)
 /// - anthropic-key → POST `{base}/messages` (Anthropic Messages)
@@ -335,4 +652,38 @@ async fn test_anthropic(
             detail
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_claude_subscription_windows() {
+        let window = parse_claude_usage_line(
+            "Current week (all models): 13% used · resets Jul 25, 11pm (America/Los_Angeles)",
+        )
+        .expect("usage row");
+        assert_eq!(window.label, "Current week (all models)");
+        assert_eq!(window.used_percent, Some(13.0));
+        assert_eq!(window.remaining_percent, Some(87.0));
+        assert_eq!(
+            window.reset_after.as_deref(),
+            Some("Jul 25, 11pm (America/Los_Angeles)")
+        );
+    }
+
+    #[test]
+    fn calculates_api_header_remaining_percentage() {
+        let window = make_header_window(
+            "Tokens",
+            Some("1000".into()),
+            Some("625".into()),
+            Some("2s".into()),
+        )
+        .expect("header row");
+        assert_eq!(window.remaining_percent, Some(62.5));
+        assert_eq!(window.used_percent, Some(37.5));
+        assert_eq!(window.reset_after.as_deref(), Some("2s"));
+    }
 }

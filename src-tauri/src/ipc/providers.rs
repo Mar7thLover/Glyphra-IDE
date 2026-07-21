@@ -1,6 +1,8 @@
 use tauri::AppHandle;
 
-use crate::providers::{self, ProviderRecord, ProviderTestResult, ProviderUpsert};
+use crate::providers::{
+    self, ProviderRecord, ProviderTestResult, ProviderUpsert, ProviderUsageSnapshot,
+};
 use crate::vault;
 
 #[tauri::command]
@@ -34,4 +36,9 @@ pub fn vault_clear(app: AppHandle, id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn provider_test(app: AppHandle, id: String) -> Result<ProviderTestResult, String> {
     providers::test_connection(&app, &id).await
+}
+
+#[tauri::command]
+pub async fn provider_usage(app: AppHandle, id: String) -> Result<ProviderUsageSnapshot, String> {
+    providers::usage(&app, &id).await
 }

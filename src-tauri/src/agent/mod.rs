@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod detect;
 pub mod framing;
 pub mod job;

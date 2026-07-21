@@ -18,13 +18,15 @@ import { useTranslation } from "react-i18next";
 import GlyphMark from "@/app/GlyphMark";
 import { WindowControls } from "@/app/TitleBar";
 import i18n from "@/app/i18n";
-import AgentComposer, { useComposerDraft } from "@/features/agent/AgentComposer";
+import AgentComposer from "@/features/agent/AgentComposer";
 import MessageList from "@/features/agent/MessageList";
 import Notice from "@/features/agent/Notice";
 import PermissionModal from "@/features/agent/PermissionModal";
 import { AGENT_WINDOW_PROJECT_KEY } from "@/lib/agentWindow";
 import { ipc, type RecentProject } from "@/lib/ipc/ipc";
 import { useAgentStore } from "@/lib/stores/agentStore";
+import { useComposerDraft } from "@/lib/stores/composerStore";
+import { useHarnessStore } from "@/lib/stores/harnessStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProviderStore } from "@/lib/stores/providerStore";
 import { useUiStore } from "@/lib/stores/uiStore";
@@ -75,21 +77,29 @@ export default function AgentWindowApp() {
   const clearCircuit = useAgentStore((s) => s.clearCircuit);
   const respondPermission = useAgentStore((s) => s.respondPermission);
   const stop = useAgentStore((s) => s.stop);
+  const newConversation = useAgentStore((s) => s.newConversation);
   const restart = useAgentStore((s) => s.restart);
   const refreshArchives = useAgentStore((s) => s.refreshArchives);
   const openArchive = useAgentStore((s) => s.openArchive);
   const clearArchiveView = useAgentStore((s) => s.clearArchiveView);
   const removeArchive = useAgentStore((s) => s.removeArchive);
   const setDraft = useComposerDraft((s) => s.setDraft);
+  const resetComposer = useComposerDraft((s) => s.reset);
 
   const [recents, setRecents] = useState<RecentProject[]>([]);
   const [switching, setSwitching] = useState(false);
+  const customHarnesses = useHarnessStore((s) => s.harnesses);
   const booted = useRef(false);
+  const closing = useRef(false);
 
   const running = session?.status === "running" || session?.status === "busy";
   const crashed = session?.status === "crashed";
   const backendInfo = backends.find((b) => b.backend === backend);
-  const backendReady = backend === "fixture" || Boolean(backendInfo?.installed);
+  const backendReady =
+    backend === "fixture" ||
+    Boolean(backendInfo?.installed) ||
+    (backend.startsWith("custom:") &&
+      customHarnesses.some((item) => `custom:${item.id}` === backend));
   const inChat = items.length > 0 || running || crashed;
 
   const selectProject = async (path: string) => {
@@ -128,6 +138,7 @@ export default function AgentWindowApp() {
       }
       const env = await ipc.appReady();
       setMica(env.mica);
+      useUiStore.getState().setHostOs(env.os);
       void useAgentStore.getState().detect();
       void useProviderStore.getState().refresh();
 
@@ -143,16 +154,31 @@ export default function AgentWindowApp() {
   // A live agent must not outlive its window: stop (and archive) on close.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     void win
-      .onCloseRequested(async () => {
-        if (useAgentStore.getState().session) {
-          await useAgentStore.getState().stop().catch(() => undefined);
+      .onCloseRequested(async (event) => {
+        event.preventDefault();
+        if (closing.current) return;
+        closing.current = true;
+        try {
+          if (useAgentStore.getState().session) {
+            await Promise.race([
+              useAgentStore.getState().stop().catch(() => undefined),
+              new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+            ]);
+          }
+        } finally {
+          await win.destroy();
         }
       })
       .then((fn) => {
-        unlisten = fn;
+        if (disposed) fn();
+        else unlisten = fn;
       });
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   const pickFolder = async () => {
@@ -160,10 +186,9 @@ export default function AgentWindowApp() {
     if (typeof dir === "string") await selectProject(dir);
   };
 
-  const newSession = () => {
-    clearArchiveView();
-    if (useAgentStore.getState().session) void stop();
-    setDraft("");
+  const newSession = async () => {
+    await newConversation();
+    resetComposer();
   };
 
   const tips = [t("home.tipReview"), t("home.tipExplain"), t("home.tipTest")];
@@ -200,7 +225,7 @@ export default function AgentWindowApp() {
           <div className="px-2 pt-2">
             <button
               type="button"
-              onClick={newSession}
+              onClick={() => void newSession()}
               className="flex h-8 w-full items-center gap-2 rounded-lg border border-line bg-raised/60 px-2.5 text-[12px] font-medium text-ink transition-colors hover:border-line-strong hover:bg-raised"
             >
               <Plus className="size-3.5 text-ink-2" strokeWidth={1.8} />

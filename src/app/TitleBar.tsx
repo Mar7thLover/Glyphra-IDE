@@ -10,6 +10,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 import GlyphMark from "./GlyphMark";
+import AppMenuBar from "./AppMenuBar";
 
 const win = getCurrentWindow();
 
@@ -41,19 +42,28 @@ export function WinButton({
 export function WindowControls() {
   const { t } = useTranslation();
   const [maximized, setMaximized] = useState(false);
+  const hostOs = useUiStore((s) => s.hostOs);
 
   useEffect(() => {
+    if (hostOs !== "windows") return;
     let unlisten: (() => void) | undefined;
+    let disposed = false;
     void win.isMaximized().then(setMaximized);
     void win
       .onResized(() => {
         void win.isMaximized().then(setMaximized);
       })
       .then((fn) => {
-        unlisten = fn;
+        if (disposed) fn();
+        else unlisten = fn;
       });
-    return () => unlisten?.();
-  }, []);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [hostOs]);
+
+  if (hostOs !== "windows") return null;
 
   return (
     <div className="flex items-stretch">
@@ -110,10 +120,12 @@ export default function TitleBar() {
         </span>
       </div>
 
+      <AppMenuBar />
+
       <div data-tauri-drag-region className="flex-1" />
 
       {/* Centered command entry — one calm affordance for search & commands. */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+      <div className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 min-[1050px]:block">
         <button
           type="button"
           onClick={() => openPalette(true)}

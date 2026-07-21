@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import { ipc, type ProviderKind, type ProviderRecord } from "@/lib/ipc/ipc";
+import {
+  ipc,
+  type ProviderKind,
+  type ProviderRecord,
+  type ProviderUsageSnapshot,
+} from "@/lib/ipc/ipc";
 
 export const OPENROUTER_PRESET = {
   name: "OpenRouter",
@@ -13,8 +18,10 @@ interface ProviderState {
   providers: ProviderRecord[];
   loading: boolean;
   testingId: string | null;
+  usageLoadingId: string | null;
   /** Per-provider last test message. */
   testResults: Record<string, { ok: boolean; detail: string }>;
+  usageResults: Record<string, ProviderUsageSnapshot>;
   error: string | null;
   refresh: () => Promise<void>;
   upsert: (input: {
@@ -27,6 +34,7 @@ interface ProviderState {
   }) => Promise<ProviderRecord | null>;
   remove: (id: string) => Promise<void>;
   test: (id: string) => Promise<void>;
+  queryUsage: (id: string) => Promise<void>;
   /** Prepare OpenRouter form values — does not save without a key. */
   openRouterPreset: () => {
     kind: ProviderKind;
@@ -40,7 +48,9 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   providers: [],
   loading: false,
   testingId: null,
+  usageLoadingId: null,
   testResults: {},
+  usageResults: {},
   error: null,
 
   refresh: async () => {
@@ -102,6 +112,22 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
     } catch (error) {
       set({
         testingId: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  },
+
+  queryUsage: async (id) => {
+    set({ usageLoadingId: id, error: null });
+    try {
+      const usage = await ipc.providerUsage(id);
+      set((state) => ({
+        usageLoadingId: null,
+        usageResults: { ...state.usageResults, [id]: usage },
+      }));
+    } catch (error) {
+      set({
+        usageLoadingId: null,
         error: error instanceof Error ? error.message : String(error),
       });
     }

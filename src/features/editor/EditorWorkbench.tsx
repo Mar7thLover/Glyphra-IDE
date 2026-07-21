@@ -1,32 +1,54 @@
-import { Loader2, Save, X } from "lucide-react";
-import { useCallback, useEffect } from "react";
+import { Copy, FileText, Loader2, Save, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import GlyphMark from "@/app/GlyphMark";
+import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
+import { copyText } from "@/lib/clipboard";
 import { useEditorStore } from "@/lib/stores/editorStore";
+import { useProjectStore } from "@/lib/stores/projectStore";
 
 import CodeEditor from "./CodeEditor";
 
 export default function EditorWorkbench() {
   const { t } = useTranslation();
+  const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const tabs = useEditorStore((s) => s.tabs);
   const activePath = useEditorStore((s) => s.activePath);
   const loading = useEditorStore((s) => s.loading);
   const error = useEditorStore((s) => s.error);
   const closeTab = useEditorStore((s) => s.closeTab);
+  const activateTab = useEditorStore((s) => s.activateTab);
   const setContent = useEditorStore((s) => s.setContent);
   const saveActive = useEditorStore((s) => s.saveActive);
+  const projectPath = useProjectStore((s) => s.current?.path ?? null);
 
   const active = tabs.find((tab) => tab.path === activePath) ?? null;
   const setActivePath = useCallback((path: string) => {
-    useEditorStore.setState({ activePath: path, error: null });
-  }, []);
+    void activateTab(path);
+  }, [activateTab]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void saveActive();
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "w") {
+        const path = useEditorStore.getState().activePath;
+        if (path) {
+          event.preventDefault();
+          void useEditorStore.getState().closeTab(path);
+        }
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === "Tab") {
+        const state = useEditorStore.getState();
+        if (state.tabs.length < 2 || !state.activePath) return;
+        event.preventDefault();
+        const currentIndex = state.tabs.findIndex((tab) => tab.path === state.activePath);
+        const direction = event.shiftKey ? -1 : 1;
+        const nextIndex = (currentIndex + direction + state.tabs.length) % state.tabs.length;
+        void state.activateTab(state.tabs[nextIndex].path);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -53,6 +75,62 @@ export default function EditorWorkbench() {
       ? t("editor.longLinesBanner")
       : null;
 
+  const menuTab = tabMenu ? tabs.find((tab) => tab.path === tabMenu.path) ?? null : null;
+  const relativePath = menuTab && projectPath
+    ? menuTab.path.replace(/\\/g, "/").startsWith(`${projectPath.replace(/\\/g, "/").replace(/\/$/, "")}/`)
+      ? menuTab.path.replace(/\\/g, "/").slice(projectPath.replace(/\\/g, "/").replace(/\/$/, "").length + 1)
+      : menuTab.name
+    : menuTab?.name ?? "";
+  const tabMenuItems: ContextMenuItem[] = menuTab
+    ? [
+        {
+          id: "copy-path",
+          label: t("editor.copyPath"),
+          icon: <Copy className="size-3.5" />,
+          action: () => copyText(menuTab.path),
+        },
+        {
+          id: "copy-relative-path",
+          label: t("editor.copyRelativePath"),
+          icon: <FileText className="size-3.5" />,
+          action: () => copyText(relativePath),
+        },
+        { id: "tab-separator", separator: true },
+        {
+          id: "close-tab",
+          label: t("editor.closeTab"),
+          shortcut: "Ctrl+W",
+          icon: <X className="size-3.5" />,
+          action: () => closeTab(menuTab.path),
+        },
+        {
+          id: "close-other-tabs",
+          label: t("editor.closeOtherTabs"),
+          disabled: tabs.length < 2,
+          action: async () => {
+            for (const tab of useEditorStore.getState().tabs) {
+              if (tab.path === menuTab.path) continue;
+              await useEditorStore.getState().closeTab(tab.path);
+              if (useEditorStore.getState().tabs.some((item) => item.path === tab.path)) return;
+            }
+          },
+        },
+        {
+          id: "close-tabs-right",
+          label: t("editor.closeTabsToRight"),
+          disabled: tabs.findIndex((tab) => tab.path === menuTab.path) === tabs.length - 1,
+          action: async () => {
+            const state = useEditorStore.getState();
+            const index = state.tabs.findIndex((tab) => tab.path === menuTab.path);
+            for (const tab of state.tabs.slice(index + 1)) {
+              await useEditorStore.getState().closeTab(tab.path);
+              if (useEditorStore.getState().tabs.some((item) => item.path === tab.path)) return;
+            }
+          },
+        },
+      ]
+    : [];
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-editor">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-1.5">
@@ -64,6 +142,11 @@ export default function EditorWorkbench() {
               <button
                 key={tab.path}
                 onClick={() => setActivePath(tab.path)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setTabMenu({ path: tab.path, x: event.clientX, y: event.clientY });
+                }}
                 className={`group flex h-7 max-w-56 shrink-0 items-center gap-1.5 rounded-lg pl-2.5 pr-1.5 text-xs transition-colors duration-100 ${
                   selected
                     ? "bg-raised text-ink shadow-[var(--shadow-soft)]"
@@ -75,7 +158,7 @@ export default function EditorWorkbench() {
                 <span
                   onClick={(event) => {
                     event.stopPropagation();
-                    closeTab(tab.path);
+                    void closeTab(tab.path);
                   }}
                   className="relative grid size-4 shrink-0 place-items-center rounded-md transition-colors hover:bg-hover"
                 >
@@ -106,6 +189,14 @@ export default function EditorWorkbench() {
         onChange={(content) => setContent(active.path, content)}
         onSave={() => void saveActive()}
       />
+      {tabMenu && menuTab && (
+        <ContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          items={tabMenuItems}
+          onClose={() => setTabMenu(null)}
+        />
+      )}
     </div>
   );
 }

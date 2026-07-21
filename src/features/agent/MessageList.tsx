@@ -1,7 +1,12 @@
-import { lazy, Suspense } from "react";
+import { CheckCheck, Copy, Languages, MessageSquareQuote, Quote } from "lucide-react";
+import { lazy, Suspense, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
 
+import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
+import { copyText } from "@/lib/clipboard";
 import type { AgentTimelineItem } from "@/lib/acp/types";
+import { focusAgentComposer, useComposerDraft } from "@/lib/stores/composerStore";
 
 import PlanCard from "./PlanCard";
 import ToolCard from "./ToolCard";
@@ -54,12 +59,97 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
 }
 
 export default function MessageList({ items }: { items: AgentTimelineItem[] }) {
+  const { t } = useTranslation();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [selectionMenu, setSelectionMenu] = useState<{
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const attachSelection = (text: string) => {
+    const compact = text.replace(/\s+/g, " ").trim();
+    useComposerDraft.getState().addReference({
+      kind: "selection",
+      label: compact.length > 36 ? `${compact.slice(0, 36)}…` : compact,
+      content: text,
+    });
+    focusAgentComposer();
+  };
+
+  const queueAction = (text: string, instruction: string) => {
+    attachSelection(text);
+    const state = useComposerDraft.getState();
+    state.setDraft(state.draft.trim() ? `${state.draft.trim()}\n${instruction}` : instruction);
+    focusAgentComposer();
+  };
+
+  const menuItems: ContextMenuItem[] = selectionMenu
+    ? [
+        {
+          id: "copy",
+          label: t("agent.copySelection"),
+          shortcut: "Ctrl+C",
+          icon: <Copy className="size-3.5" />,
+          action: () => copyText(selectionMenu.text),
+        },
+        {
+          id: "attach",
+          label: t("agent.attachSelection"),
+          icon: <Quote className="size-3.5" />,
+          action: () => attachSelection(selectionMenu.text),
+        },
+        { id: "selection-separator", separator: true },
+        {
+          id: "explain",
+          label: t("agent.explainSelection"),
+          icon: <MessageSquareQuote className="size-3.5" />,
+          action: () => queueAction(selectionMenu.text, t("agent.explainSelectionPrompt")),
+        },
+        {
+          id: "review",
+          label: t("agent.reviewSelection"),
+          icon: <CheckCheck className="size-3.5" />,
+          action: () => queueAction(selectionMenu.text, t("agent.reviewSelectionPrompt")),
+        },
+        {
+          id: "translate",
+          label: t("agent.translateSelection"),
+          icon: <Languages className="size-3.5" />,
+          action: () => queueAction(selectionMenu.text, t("agent.translateSelectionPrompt")),
+        },
+      ]
+    : [];
+
   return (
-    <Virtuoso
-      className="h-full"
-      data={items}
-      followOutput="smooth"
-      itemContent={(_, item) => <TimelineRow item={item} />}
-    />
+    <div
+      ref={rootRef}
+      className="agent-selectable h-full min-h-0"
+      onContextMenu={(event) => {
+        const selection = window.getSelection();
+        const ancestor = selection?.rangeCount ? selection.getRangeAt(0).commonAncestorContainer : null;
+        if (!selection || selection.isCollapsed || !ancestor || !rootRef.current?.contains(ancestor)) return;
+        const text = selection.toString().trim();
+        if (!text) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectionMenu({ text, x: event.clientX, y: event.clientY });
+      }}
+    >
+      <Virtuoso
+        className="h-full"
+        data={items}
+        followOutput="smooth"
+        itemContent={(_, item) => <TimelineRow item={item} />}
+      />
+      {selectionMenu && (
+        <ContextMenu
+          x={selectionMenu.x}
+          y={selectionMenu.y}
+          items={menuItems}
+          onClose={() => setSelectionMenu(null)}
+        />
+      )}
+    </div>
   );
 }

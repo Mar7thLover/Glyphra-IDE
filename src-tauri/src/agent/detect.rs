@@ -1,4 +1,4 @@
-use std::process::Command;
+use std::{path::Path, process::Command};
 
 use serde::Serialize;
 use ts_rs::TS;
@@ -8,91 +8,138 @@ use ts_rs::TS;
 #[ts(export, export_to = "../../src/lib/ipc/gen/AgentDetectInfo.ts")]
 pub struct AgentDetectInfo {
     pub backend: String,
-    /// True only when the primary CLI (or fixture Node) is present.
+    pub label: String,
+    /// True only when the harness itself (or fixture runtime) is present.
     pub installed: bool,
     pub detail: String,
+    /// Wire protocol Glyphra should use for this harness.
+    pub protocol: String,
+    /// Resolved executable path. The frontend passes this back when starting.
+    pub command: Option<String>,
+    pub args: Vec<String>,
 }
 
 pub fn detect_agents() -> Vec<AgentDetectInfo> {
-    let npx = which("npx").is_some();
     vec![
-        probe_primary(
+        probe_harness(
             "codex-acp",
             "Codex CLI",
             "codex",
             &["--version"],
-            npx,
-            "Needs `codex` on PATH (ACP adapter via npx).",
+            "codex-app-server",
+            vec![],
+            "Install Codex CLI; Glyphra talks to its native app-server directly.",
         ),
-        probe_primary(
+        probe_harness(
             "claude-acp",
             "Claude Code",
             "claude",
             &["--version"],
-            npx,
-            "Needs `claude` on PATH (ACP adapter via npx).",
+            "claude-stream-json",
+            vec![],
+            "Install Claude Code; Glyphra uses its native stream-json interface.",
         ),
-        probe_primary(
+        probe_harness(
             "pi-agent",
             "Pi Coding Agent",
             "pi",
             &["--version"],
-            npx,
-            "Needs `pi` on PATH (or install Pi coding agent).",
+            "pi-json",
+            vec![],
+            "Install Pi Coding Agent; Glyphra uses its native JSON mode.",
+        ),
+        probe_harness(
+            "opencode-acp",
+            "OpenCode",
+            "opencode",
+            &["--version"],
+            "acp",
+            vec!["acp".into()],
+            "Install OpenCode; its built-in ACP server needs no adapter.",
         ),
         AgentDetectInfo {
             backend: "custom-agent".into(),
+            label: "Custom harness".into(),
             installed: false,
-            detail: "Custom harness requires an explicit command (not configured in UI yet)."
-                .into(),
+            detail: "Add an ACP, JSONL, shell, or HTTP harness in Agent settings.".into(),
+            protocol: "acp".into(),
+            command: None,
+            args: vec![],
         },
         AgentDetectInfo {
             backend: "fixture".into(),
+            label: "Offline fixture".into(),
             installed: which("node").is_some(),
             detail: if which("node").is_some() {
                 "Offline fixture agent (Node). Good for UI/workflow tests.".into()
             } else {
-                "Node.js ≥ 20 required for fixture replay.".into()
+                "Node.js 20 or newer is required for fixture replay.".into()
             },
+            protocol: "acp".into(),
+            command: None,
+            args: vec![],
         },
     ]
 }
 
-fn probe_primary(
+fn probe_harness(
     backend: &str,
     label: &str,
     bin: &str,
-    args: &[&str],
-    npx_present: bool,
+    version_args: &[&str],
+    protocol: &str,
+    launch_args: Vec<String>,
     missing_hint: &str,
 ) -> AgentDetectInfo {
-    if let Some(version) = run_version(bin, args) {
-        let npx_note = if npx_present {
-            " · npx ready"
-        } else {
-            " · npx missing (adapter spawn may fail)"
-        };
+    if let Some(path) = which(bin) {
+        let version = run_version(&path, version_args).unwrap_or_else(|| "version unknown".into());
+        if !supports_protocol(&path, protocol) {
+            return AgentDetectInfo {
+                backend: backend.into(),
+                label: label.into(),
+                installed: false,
+                detail: format!("{label}: {version}, but this build does not expose {protocol}."),
+                protocol: protocol.into(),
+                command: None,
+                args: launch_args,
+            };
+        }
         return AgentDetectInfo {
             backend: backend.into(),
+            label: label.into(),
             installed: true,
-            detail: format!("{label}: {bin} {version}{npx_note}"),
+            detail: format!("{label}: {version} · direct {protocol}"),
+            protocol: protocol.into(),
+            command: Some(path.to_string_lossy().to_string()),
+            args: launch_args,
         };
     }
+
     AgentDetectInfo {
         backend: backend.into(),
+        label: label.into(),
         installed: false,
-        detail: format!(
-            "{label}: not found. {missing_hint}{}",
-            if npx_present {
-                ""
-            } else {
-                " Also install Node/npx."
-            }
-        ),
+        detail: format!("{label}: not found. {missing_hint}"),
+        protocol: protocol.into(),
+        command: None,
+        args: launch_args,
     }
 }
 
-fn run_version(bin: &str, args: &[&str]) -> Option<String> {
+fn supports_protocol(bin: &Path, protocol: &str) -> bool {
+    let args: &[&str] = match protocol {
+        "codex-app-server" => &["app-server", "--help"],
+        "acp" => &["acp", "--help"],
+        _ => &["--help"],
+    };
+    Command::new(bin)
+        .args(args)
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn run_version(bin: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new(bin).args(args).output().ok()?;
     if !output.status.success() && output.stdout.is_empty() && output.stderr.is_empty() {
         return None;
@@ -118,14 +165,10 @@ pub fn which(bin: &str) -> Option<std::path::PathBuf> {
             return Some(candidate);
         }
         #[cfg(windows)]
-        {
-            let exe = dir.join(format!("{bin}.exe"));
-            if exe.is_file() {
-                return Some(exe);
-            }
-            let cmd = dir.join(format!("{bin}.cmd"));
-            if cmd.is_file() {
-                return Some(cmd);
+        for extension in ["exe", "cmd", "bat"] {
+            let candidate = dir.join(format!("{bin}.{extension}"));
+            if candidate.is_file() {
+                return Some(candidate);
             }
         }
     }
@@ -141,6 +184,7 @@ mod tests {
         let infos = detect_agents();
         let backends: Vec<_> = infos.iter().map(|i| i.backend.as_str()).collect();
         assert!(backends.contains(&"codex-acp"));
+        assert!(backends.contains(&"opencode-acp"));
         assert!(backends.contains(&"custom-agent"));
         assert!(backends.contains(&"fixture"));
         let custom = infos.iter().find(|i| i.backend == "custom-agent").unwrap();
@@ -148,10 +192,15 @@ mod tests {
     }
 
     #[test]
-    fn npx_alone_does_not_mark_codex_installed() {
-        // Structural: installed flag only true when primary CLI found.
-        // We can't control PATH here; just ensure fixture/custom rules hold.
+    fn installed_harnesses_have_commands_and_protocols() {
         let infos = detect_agents();
+        for info in infos
+            .iter()
+            .filter(|info| info.installed && info.backend != "fixture")
+        {
+            assert!(info.command.is_some());
+            assert!(!info.protocol.is_empty());
+        }
         let fixture = infos.iter().find(|i| i.backend == "fixture").unwrap();
         assert_eq!(fixture.installed, which("node").is_some());
     }

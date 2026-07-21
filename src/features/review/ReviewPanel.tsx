@@ -1,20 +1,87 @@
-import { Check, PanelRightClose, RotateCcw, Undo2 } from "lucide-react";
-import { useRef } from "react";
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  FileDiff,
+  PanelRightClose,
+  RotateCcw,
+  Undo2,
+} from "lucide-react";
+import { motion } from "motion/react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useProjectStore } from "@/lib/stores/projectStore";
-import { useReviewStore } from "@/lib/stores/reviewStore";
+import { useUiStore } from "@/lib/stores/uiStore";
+import {
+  reviewFileKey,
+  sumDiffs,
+  useReviewStore,
+  WORKTREE_GROUP_ID,
+} from "@/lib/stores/reviewStore";
 
-import MergeEditor from "./MergeEditor";
+import MergeEditor, { type MergeEditorHandle } from "./MergeEditor";
 
-export const REVIEW_WIDTH = 420;
+export const REVIEW_WIDTH = 500;
 
-export default function ReviewPanel() {
-  const { t } = useTranslation();
+function PathLabel({ path }: { path: string }) {
+  const normalized = path.replace(/\\/g, "/");
+  const split = normalized.lastIndexOf("/");
+  const directory = split >= 0 ? normalized.slice(0, split + 1) : "";
+  const name = split >= 0 ? normalized.slice(split + 1) : normalized;
+  return (
+    <span className="flex min-w-0 flex-1 font-mono text-[10.5px]">
+      {directory && (
+        <span className="min-w-0 truncate text-ink-3" style={{ direction: "rtl" }}>
+          {directory}
+        </span>
+      )}
+      <span className="shrink-0 text-ink-2">{name}</span>
+    </span>
+  );
+}
+
+function StatusDot({ status }: { status: string }) {
+  const added = status === "added";
+  const deleted = status === "deleted";
+  return (
+    <span
+      className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+      style={{ background: added ? "#2e9b62" : deleted ? "#d14b45" : "#c58a22" }}
+    >
+      {added ? "A" : deleted ? "D" : "M"}
+    </span>
+  );
+}
+
+function DiffBadge({ additions, deletions }: { additions: number; deletions: number }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-hover px-1.5 py-0.5 font-mono text-[9.5px]">
+      <span style={{ color: "#2e9b62" }}>+{additions}</span>
+      <span style={{ color: "#d14b45" }}>−{deletions}</span>
+    </span>
+  );
+}
+
+export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sidebar" | "page" }) {
+  const { t, i18n } = useTranslation();
   const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const pendingWrite = useRef<{
+    projectPath: string;
+    turnId: string;
+    path: string;
+    content: string;
+  } | null>(null);
+  const mergeRef = useRef<MergeEditorHandle | null>(null);
   const current = useProjectStore((s) => s.current);
   const open = useReviewStore((s) => s.open);
   const turns = useReviewStore((s) => s.turns);
+  const workingTree = useReviewStore((s) => s.workingTree);
+  const summaries = useReviewStore((s) => s.summaries);
+  const decisions = useReviewStore((s) => s.decisions);
   const activeTurnId = useReviewStore((s) => s.activeTurnId);
   const activeFile = useReviewStore((s) => s.activeFile);
   const contents = useReviewStore((s) => s.contents);
@@ -26,143 +93,430 @@ export default function ReviewPanel() {
   const restoreTurn = useReviewStore((s) => s.restoreTurn);
   const restoreFile = useReviewStore((s) => s.restoreFile);
   const acceptFile = useReviewStore((s) => s.acceptFile);
+  const resolveFile = useReviewStore((s) => s.resolveFile);
   const writeMerged = useReviewStore((s) => s.writeMerged);
+  const [expandedCompleted, setExpandedCompleted] = useState<Set<string>>(new Set());
+  const [keyboardMode, setKeyboardMode] = useState(false);
+  const [hunkProgress, setHunkProgress] = useState({ remaining: 0, total: 0 });
+  const page = variant === "page";
+  const visible = page || open;
 
-  if (!open || !current) return null;
+  const flushPendingWrite = () => {
+    if (writeTimer.current) clearTimeout(writeTimer.current);
+    writeTimer.current = null;
+    const pending = pendingWrite.current;
+    pendingWrite.current = null;
+    if (pending) {
+      void writeMerged(pending.projectPath, pending.turnId, pending.path, pending.content);
+    }
+  };
 
-  const turn = turns.find((item) => item.id === activeTurnId) ?? turns[0] ?? null;
+  useEffect(() => {
+    setHunkProgress({ remaining: 0, total: 0 });
+    if (keyboardMode) requestAnimationFrame(() => panelRef.current?.focus());
+    return flushPendingWrite;
+    // Flush the previous file before the selection changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFile, activeTurnId]);
+
+  useEffect(() => {
+    if (visible) requestAnimationFrame(() => panelRef.current?.focus());
+  }, [visible]);
+
+  const groups = useMemo(
+    () => [
+      ...turns.map((turn) => ({
+        id: turn.id,
+        label: turn.label,
+        createdAt: turn.committedAt ?? turn.createdAt,
+        files: turn.files,
+        readOnly: false,
+      })),
+      ...(workingTree.length > 0
+        ? [
+            {
+              id: WORKTREE_GROUP_ID,
+              label: t("review.workingTree"),
+              createdAt: Date.now(),
+              files: workingTree,
+              readOnly: true,
+            },
+          ]
+        : []),
+    ],
+    [turns, workingTree, t],
+  );
+  const flatFiles = useMemo(
+    () => groups.flatMap((group) => group.files.map((file) => ({ groupId: group.id, file }))),
+    [groups],
+  );
+  const activeGroup = groups.find((group) => group.id === activeTurnId) ?? null;
+  const activeSummary =
+    activeTurnId && activeFile
+      ? (summaries[reviewFileKey(activeTurnId, activeFile)] ?? null)
+      : null;
+  const activeCheckpointFile =
+    activeGroup && !activeGroup.readOnly
+      ? activeGroup.files.find((file) => file.path === activeFile)
+      : null;
+
+  const moveFile = (direction: 1 | -1) => {
+    if (!current || flatFiles.length === 0) return;
+    const index = flatFiles.findIndex(
+      (entry) => entry.groupId === activeTurnId && entry.file.path === activeFile,
+    );
+    const next = flatFiles[(Math.max(0, index) + direction + flatFiles.length) % flatFiles.length];
+    if (next) void selectFile(current.path, next.groupId, next.file.path);
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (!current || event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement;
+    const isEditor = target.closest(".cm-editor") !== null;
+    if (isEditor && !keyboardMode) return;
+    if (event.key === "Escape" && keyboardMode) {
+      event.preventDefault();
+      setKeyboardMode(false);
+      return;
+    }
+    if (event.key === "j" || event.key === "k") {
+      event.preventDefault();
+      moveFile(event.key === "j" ? 1 : -1);
+      return;
+    }
+    if (event.key === "Enter" && contents) {
+      event.preventDefault();
+      setKeyboardMode(true);
+      mergeRef.current?.focusFirstHunk();
+      return;
+    }
+    if (!activeTurnId || activeTurnId === WORKTREE_GROUP_ID || !activeFile) return;
+    if (event.shiftKey && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      flushPendingWrite();
+      void acceptFile(current.path, activeTurnId, activeFile);
+      return;
+    }
+    if (!event.shiftKey && (event.key === "a" || event.key === "r")) {
+      event.preventDefault();
+      setKeyboardMode(true);
+      mergeRef.current?.decide(event.key === "a" ? "accept" : "reject");
+    }
+  };
+
+  if (!current) return null;
 
   return (
-    <aside
-      className="flex h-full shrink-0 flex-col border-l border-line bg-panel"
-      style={{ width: REVIEW_WIDTH }}
+    <motion.aside
+      ref={panelRef}
+      initial={false}
+      animate={{ width: visible ? (page ? "100%" : REVIEW_WIDTH) : 0 }}
+      transition={{ type: "spring", stiffness: 480, damping: 44 }}
+      onKeyDown={onKeyDown}
+      onPointerDownCapture={(event) => {
+        if ((event.target as HTMLElement).closest(".cm-editor")) setKeyboardMode(false);
+      }}
+      tabIndex={-1}
+      className={`${page ? "relative min-w-0 flex-1 overflow-hidden bg-editor" : "glass-panel relative shrink-0 overflow-hidden border-l border-line"}`}
+      aria-label={page ? t("review.gitTitle") : t("review.title")}
     >
-      <header className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-2">
-        <span className="px-1 text-[11px] font-medium text-ink">{t("review.title")}</span>
-        <div className="flex-1" />
-        {turn && (
+      <div className="flex h-full flex-col" style={{ width: page ? "100%" : REVIEW_WIDTH }}>
+        <header className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
+          <FileDiff className="size-3.5 text-ink-2" strokeWidth={1.7} />
+          <span className="text-[12px] font-medium text-ink">
+            {page ? t("review.gitTitle") : t("review.title")}
+          </span>
+          <span className="rounded-full bg-hover px-1.5 py-0.5 text-[9.5px] text-ink-3">
+            {flatFiles.length}
+          </span>
+          <div className="flex-1" />
+          <span className="hidden text-[9.5px] text-ink-3 min-[1180px]:inline">
+            {t("review.keyboardHint")}
+          </span>
           <button
             type="button"
-            title={t("review.restoreTurn")}
-            onClick={() => void restoreTurn(current.path, turn.id)}
-            className="rounded p-1 text-ink-3 hover:bg-hover hover:text-ink"
+            onClick={() => {
+              setKeyboardMode(false);
+              if (page) useUiStore.getState().showWorkspace("editor");
+              else closeReview();
+            }}
+            title={t("review.close")}
+            className="rounded-md p-1 text-ink-3 hover:bg-hover hover:text-ink"
           >
-            <RotateCcw className="size-3.5" strokeWidth={1.6} />
+            <PanelRightClose className="size-3.5" strokeWidth={1.6} />
           </button>
-        )}
-        <button
-          type="button"
-          onClick={closeReview}
-          className="rounded p-1 text-ink-3 hover:bg-hover hover:text-ink"
-        >
-          <PanelRightClose className="size-3.5" strokeWidth={1.6} />
-        </button>
-      </header>
+        </header>
 
-      {error && <div className="px-3 py-1.5 text-[11px] text-danger">{error}</div>}
+        {error && <div className="border-b border-danger/20 px-3 py-1.5 text-[11px] text-danger">{error}</div>}
 
-      <div className="flex min-h-0 flex-1">
-        <div className="flex w-36 shrink-0 flex-col border-r border-line">
-          <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
-            {t("review.turns")}
-          </div>
-          <ul className="min-h-0 flex-1 overflow-y-auto">
-            {turns.length === 0 ? (
-              <li className="px-2 py-2 text-[11px] text-ink-3">{t("review.empty")}</li>
-            ) : (
-              turns.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => void selectTurn(current.path, item.id)}
-                    className={`w-full px-2 py-1.5 text-left text-[11px] ${
-                      item.id === activeTurnId ? "bg-hover text-ink" : "text-ink-2 hover:bg-hover"
-                    }`}
-                  >
-                    <div className="truncate">{item.label}</div>
-                    <div className="text-[10px] text-ink-3">
-                      {item.files.length} {t("review.files")}
+        <div className="max-h-[44%] min-h-28 shrink-0 overflow-y-auto border-b border-line p-2">
+          {groups.length === 0 ? (
+            <div className="grid min-h-24 place-items-center text-[11px] text-ink-3">
+              {t("review.empty")}
+            </div>
+          ) : (
+            groups.map((group) => {
+              const groupSummaries = group.files.map(
+                (file) => summaries[reviewFileKey(group.id, file.path)] ?? EMPTY_SUMMARY,
+              );
+              const totals = sumDiffs(groupSummaries);
+              const pending = group.readOnly
+                ? group.files.length
+                : group.files.filter((file) => !decisions[reviewFileKey(group.id, file.path)]).length;
+              const complete = !group.readOnly && pending === 0;
+              const expanded = !complete || expandedCompleted.has(group.id);
+              return (
+                <section
+                  key={group.id}
+                  className={`mb-2 overflow-hidden rounded-xl border border-line bg-raised/45 transition-opacity ${complete ? "opacity-65" : ""}`}
+                >
+                  <div className="flex items-start gap-2 px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (complete) {
+                          setExpandedCompleted((current) => {
+                            const next = new Set(current);
+                            if (next.has(group.id)) next.delete(group.id);
+                            else next.add(group.id);
+                            return next;
+                          });
+                        } else {
+                          void selectTurn(current.path, group.id);
+                        }
+                      }}
+                      className="mt-0.5 text-ink-3 hover:text-ink"
+                    >
+                      {complete ? (
+                        expanded ? <ChevronDown className="size-3.5" /> : <CheckCircle2 className="size-3.5 text-ok" />
+                      ) : expanded ? (
+                        <ChevronDown className="size-3.5" />
+                      ) : (
+                        <ChevronRight className="size-3.5" />
+                      )}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-ink">
+                          {group.label.slice(0, 48)}
+                        </span>
+                        {group.readOnly && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-hover px-1.5 py-0.5 text-[9px] text-ink-3">
+                            <Eye className="size-2.5" /> {t("review.readOnly")}
+                          </span>
+                        )}
+                        <DiffBadge additions={totals.additions} deletions={totals.deletions} />
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 text-[9.5px] text-ink-3">
+                        <span>
+                          {new Intl.DateTimeFormat(i18n.language, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }).format(group.createdAt)}
+                        </span>
+                        <span>·</span>
+                        <span>{group.files.length} {t("review.files")}</span>
+                        {!group.readOnly && pending > 0 && <span>· {pending} {t("review.pending")}</span>}
+                      </div>
                     </div>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
+                    {!group.readOnly && (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={() => {
+                          flushPendingWrite();
+                          void restoreTurn(current.path, group.id);
+                        }}
+                        title={t("review.restoreTurn")}
+                        className="rounded-md p-1 text-ink-3 hover:bg-hover hover:text-danger disabled:opacity-40"
+                      >
+                        <RotateCcw className="size-3.5" strokeWidth={1.6} />
+                      </button>
+                    )}
+                  </div>
+
+                  {expanded && (
+                    <ul className="border-t border-line/70 py-1">
+                      {group.files.map((file) => {
+                        const summary = summaries[reviewFileKey(group.id, file.path)] ?? EMPTY_SUMMARY;
+                        const decision = decisions[reviewFileKey(group.id, file.path)];
+                        const active = group.id === activeTurnId && file.path === activeFile;
+                        return (
+                          <li key={file.path} className={decision ? "opacity-50" : ""}>
+                            <div
+                              className={`group/file flex items-center gap-1.5 px-2 py-1 ${active ? "bg-active" : "hover:bg-hover"}`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => void selectFile(current.path, group.id, file.path)}
+                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                              >
+                                {decision ? (
+                                  decision === "accepted" ? <Check className="size-4 shrink-0 text-ok" /> : <Undo2 className="size-4 shrink-0 text-danger" />
+                                ) : (
+                                  <StatusDot status={file.status} />
+                                )}
+                                <PathLabel path={file.path} />
+                                {summary.available ? (
+                                  <>
+                                    <span className="shrink-0 text-[9.5px] text-ink-3">
+                                      {summary.hunks}h
+                                    </span>
+                                    <DiffBadge additions={summary.additions} deletions={summary.deletions} />
+                                  </>
+                                ) : (
+                                  <span className="shrink-0 text-[9px] text-ink-3">{t("review.noBaseline")}</span>
+                                )}
+                              </button>
+                              {!group.readOnly && !decision && (
+                                <div className="flex shrink-0 opacity-0 transition-opacity group-hover/file:opacity-100 focus-within:opacity-100">
+                                  <button
+                                    type="button"
+                                    disabled={loading}
+                                    onClick={() => {
+                                      flushPendingWrite();
+                                      void acceptFile(current.path, group.id, file.path);
+                                    }}
+                                    title={t("review.acceptFile")}
+                                    className="rounded p-1 text-ink-3 hover:bg-raised hover:text-ok"
+                                  >
+                                    <Check className="size-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={loading || !("preimageAvailable" in file && file.preimageAvailable)}
+                                    onClick={() => {
+                                      flushPendingWrite();
+                                      void restoreFile(current.path, group.id, file.path);
+                                    }}
+                                    title={t("review.rejectFile")}
+                                    className="rounded p-1 text-ink-3 hover:bg-raised hover:text-danger disabled:opacity-30"
+                                  >
+                                    <Undo2 className="size-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              );
+            })
+          )}
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {turn && (
-            <ul className="flex max-h-28 shrink-0 flex-col overflow-y-auto border-b border-line">
-              {turn.files.map((file) => (
-                <li key={file.path}>
+        <div className="flex min-h-0 flex-1 flex-col bg-editor">
+          {activeFile && activeGroup && (
+            <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
+              <PathLabel path={activeFile} />
+              {activeSummary?.available && (
+                <DiffBadge additions={activeSummary.additions} deletions={activeSummary.deletions} />
+              )}
+              {hunkProgress.total > 0 && (
+                <span className="shrink-0 text-[9.5px] text-ink-3">
+                  {Math.min(hunkProgress.total, hunkProgress.total - hunkProgress.remaining + 1)}/{hunkProgress.total}
+                </span>
+              )}
+              {activeGroup.readOnly ? (
+                <span className="rounded-full bg-hover px-1.5 py-0.5 text-[9px] text-ink-3">HEAD</span>
+              ) : (
+                <>
                   <button
                     type="button"
-                    onClick={() => void selectFile(current.path, turn.id, file.path)}
-                    className={`flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] ${
-                      file.path === activeFile ? "bg-hover text-ink" : "text-ink-2 hover:bg-hover"
-                    }`}
+                    disabled={loading}
+                    onClick={() => {
+                      flushPendingWrite();
+                      void acceptFile(current.path, activeGroup.id, activeFile);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-2 hover:bg-hover hover:text-ink"
                   >
-                    <span
-                      className={`font-mono text-[10px] ${
-                        file.status === "added"
-                          ? "text-accent"
-                          : file.status === "deleted"
-                            ? "text-danger"
-                            : "text-ink-3"
-                      }`}
-                    >
-                      {file.status === "added" ? "+" : file.status === "deleted" ? "−" : "±"}
-                    </span>
-                    <span className="truncate">{file.path}</span>
+                    <Check className="size-3" /> {t("review.acceptFile")}
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {activeFile && turn && (
-            <div className="flex h-8 shrink-0 items-center gap-1 border-b border-line px-2">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => void acceptFile(current.path, turn.id, activeFile)}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-2 hover:bg-hover hover:text-ink"
-              >
-                <Check className="size-3" />
-                {t("review.acceptFile")}
-              </button>
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => void restoreFile(current.path, turn.id, activeFile)}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-2 hover:bg-hover hover:text-ink"
-              >
-                <Undo2 className="size-3" />
-                {t("review.rejectFile")}
-              </button>
+                  <button
+                    type="button"
+                    disabled={
+                      loading ||
+                      !activeCheckpointFile ||
+                      !("preimageAvailable" in activeCheckpointFile) ||
+                      !activeCheckpointFile.preimageAvailable
+                    }
+                    onClick={() => {
+                      flushPendingWrite();
+                      void restoreFile(current.path, activeGroup.id, activeFile);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-2 hover:border-danger/30 hover:bg-danger/5 hover:text-danger disabled:opacity-30"
+                  >
+                    <Undo2 className="size-3" /> {t("review.rejectFile")}
+                  </button>
+                </>
+              )}
             </div>
           )}
 
-          <div className="min-h-0 flex-1">
-            {contents ? (
+          {keyboardMode && (
+            <div className="shrink-0 border-b border-line bg-accent-soft px-3 py-1 text-[9.5px] text-ink-2">
+              {t("review.keyboardMode")}
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1">
+            {contents && activeSummary?.available && !activeSummary.binary ? (
               <MergeEditor
+                ref={mergeRef}
                 before={contents.before}
                 after={contents.after}
+                readOnly={activeTurnId === WORKTREE_GROUP_ID}
+                acceptLabel={t("review.acceptHunk")}
+                rejectLabel={t("review.rejectHunk")}
+                onHunkProgress={(remaining, total) => setHunkProgress({ remaining, total })}
+                onResolved={() => {
+                  if (activeTurnId && activeFile && activeTurnId !== WORKTREE_GROUP_ID) {
+                    void resolveFile(current.path, activeTurnId, activeFile);
+                  }
+                }}
                 onMerged={(content) => {
+                  if (activeTurnId === WORKTREE_GROUP_ID) return;
                   if (writeTimer.current) clearTimeout(writeTimer.current);
+                  if (activeTurnId) {
+                    pendingWrite.current = {
+                      projectPath: current.path,
+                      turnId: activeTurnId,
+                      path: contents.path,
+                      content,
+                    };
+                  }
                   writeTimer.current = setTimeout(() => {
-                    void writeMerged(current.path, contents.path, content);
+                    flushPendingWrite();
                   }, 250);
                 }}
               />
+            ) : contents && activeSummary?.binary ? (
+              <div className="m-4 grid flex-1 place-items-center rounded-xl border border-line bg-raised/45 px-6 text-center text-[11px] text-ink-3">
+                {t("review.binary")}
+              </div>
+            ) : contents && activeSummary && !activeSummary.available ? (
+              <div className="m-4 grid flex-1 place-items-center rounded-xl border border-line bg-raised/45 px-6 text-center text-[11px] text-ink-3">
+                {t("review.noBaselineDetail")}
+              </div>
             ) : (
-              <div className="grid h-full place-items-center px-4 text-center text-[11px] text-ink-3">
-                {t("review.pickFile")}
+              <div className="grid flex-1 place-items-center px-4 text-center text-[11px] text-ink-3">
+                {loading ? t("review.loading") : t("review.pickFile")}
               </div>
             )}
           </div>
         </div>
       </div>
-    </aside>
+    </motion.aside>
   );
 }
+
+const EMPTY_SUMMARY = {
+  additions: 0,
+  deletions: 0,
+  hunks: 0,
+  binary: false,
+  available: false,
+};

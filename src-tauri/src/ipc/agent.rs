@@ -3,10 +3,19 @@ use std::sync::Arc;
 use tauri::{ipc::Channel, AppHandle, State};
 
 use crate::agent::{
+    catalog::{self, AgentCatalogRequest, AgentHarnessCatalog},
     detect::{detect_agents, AgentDetectInfo},
     runtime::{detect_runtime, RuntimeDetectInfo},
     supervisor::{AgentIoEvent, AgentSpawnRequest, AgentSupervisor},
 };
+
+#[tauri::command]
+pub async fn agent_catalog(
+    app: AppHandle,
+    request: AgentCatalogRequest,
+) -> Result<AgentHarnessCatalog, String> {
+    catalog::load(&app, request).await
+}
 
 #[tauri::command]
 pub fn agent_detect() -> Vec<AgentDetectInfo> {

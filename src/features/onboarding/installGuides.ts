@@ -16,7 +16,7 @@ export function runtimeGuides(os: HostOs): InstallGuide[] {
     {
       id: "node",
       title: "Node.js ≥ 20",
-      summary: "Required to launch ACP adapters (npx) and the offline fixture agent.",
+      summary: "Runs native-protocol bridges and the offline fixture agent; no npx adapter download is needed.",
       required: true,
       commands: windows
         ? [
@@ -53,21 +53,7 @@ export function agentGuides(os: HostOs): InstallGuide[] {
       title: "Codex CLI",
       summary: "OpenAI Codex harness. Best path for custom OpenAI-compatible providers.",
       required: false,
-      commands: windows
-        ? [
-            { label: "npm", command: "npm install -g @openai/codex" },
-            {
-              label: "ACP adapter (on demand)",
-              command: "npx -y @agentclientprotocol/codex-acp",
-            },
-          ]
-        : [
-            { label: "npm", command: "npm install -g @openai/codex" },
-            {
-              label: "ACP adapter (on demand)",
-              command: "npx -y @agentclientprotocol/codex-acp",
-            },
-          ],
+      commands: [{ label: "npm", command: "npm install -g @openai/codex" }],
       docsUrl: "https://developers.openai.com/codex",
     },
     {
@@ -81,22 +67,22 @@ export function agentGuides(os: HostOs): InstallGuide[] {
               label: "PowerShell (official)",
               command: "irm https://claude.ai/install.ps1 | iex",
             },
-            {
-              label: "ACP adapter (on demand)",
-              command: "npx -y @agentclientprotocol/claude-agent-acp",
-            },
           ]
         : [
             {
               label: "curl (official)",
               command: "curl -fsSL https://claude.ai/install.sh | bash",
             },
-            {
-              label: "ACP adapter (on demand)",
-              command: "npx -y @agentclientprotocol/claude-agent-acp",
-            },
           ],
       docsUrl: "https://code.claude.com/docs",
+    },
+    {
+      id: "opencode-acp",
+      title: "OpenCode",
+      summary: "Native ACP harness; Glyphra launches `opencode acp` directly.",
+      required: false,
+      commands: [{ label: "npm", command: "npm install -g opencode-ai" }],
+      docsUrl: "https://opencode.ai/docs/",
     },
     {
       id: "pi-agent",

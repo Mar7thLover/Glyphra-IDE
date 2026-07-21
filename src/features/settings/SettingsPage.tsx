@@ -1,8 +1,8 @@
 import { ArrowLeft, Bot, Code2, Info, KeyRound, Palette } from "lucide-react";
-import { useState, type ComponentType } from "react";
+import { type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
-import { useUiStore } from "@/lib/stores/uiStore";
+import { useUiStore, type SettingsSection } from "@/lib/stores/uiStore";
 
 import AboutSection from "./AboutSection";
 import AgentSection from "./AgentSection";
@@ -10,10 +10,8 @@ import EditorSection from "./EditorSection";
 import PersonalSection from "./PersonalSection";
 import ProvidersSection from "./ProvidersSection";
 
-type SettingsSectionId = "personal" | "models" | "editor" | "agent" | "about";
-
 const sections: {
-  id: SettingsSectionId;
+  id: SettingsSection;
   icon: ComponentType<{ className?: string; strokeWidth?: number }>;
 }[] = [
   { id: "personal", icon: Palette },
@@ -27,7 +25,8 @@ const sections: {
 export default function SettingsPage() {
   const { t } = useTranslation();
   const closeSettings = useUiStore((s) => s.closeSettings);
-  const [section, setSection] = useState<SettingsSectionId>("personal");
+  const section = useUiStore((s) => s.settingsSection);
+  const setSection = (next: SettingsSection) => useUiStore.setState({ settingsSection: next });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-editor">

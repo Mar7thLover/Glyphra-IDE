@@ -113,11 +113,16 @@ export default function CommandPalette() {
                   {t("palette.toggleTerminal")}
                 </Command.Item>
                 <Command.Item
-                  value="open review"
-                  onSelect={() => run(() => useReviewStore.getState().openReview())}
-                  className={itemClass}
+                  value="open review 审阅 changes diff"
+                  onSelect={() =>
+                    run(() =>
+                      useReviewStore.getState().openReview(useProjectStore.getState().current?.path),
+                    )
+                  }
+                  className={`${itemClass} flex items-center`}
                 >
-                  {t("palette.openReview")}
+                  <span>{t("palette.openReview")}</span>
+                  <span className="ml-auto text-[10px] text-ink-3">Ctrl Shift R</span>
                 </Command.Item>
               </>
             )}

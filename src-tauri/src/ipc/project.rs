@@ -110,99 +110,113 @@ pub fn project_recent(
 }
 
 #[tauri::command]
-pub fn fs_list(path: String) -> Result<Vec<DirEntryInfo>, String> {
-    let dir = canonical_dir(&path)?;
-    let mut entries = Vec::new();
+pub async fn fs_list(path: String) -> Result<Vec<DirEntryInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = canonical_dir(&path)?;
+        let mut entries = Vec::new();
 
-    for item in
-        fs::read_dir(&dir).map_err(|err| format!("failed to list {}: {err}", dir.display()))?
-    {
-        let item = item.map_err(|err| err.to_string())?;
-        let path = item.path();
-        let file_name = item.file_name().to_string_lossy().to_string();
-        if should_hide(&file_name) {
-            continue;
+        for item in
+            fs::read_dir(&dir).map_err(|err| format!("failed to list {}: {err}", dir.display()))?
+        {
+            let item = item.map_err(|err| err.to_string())?;
+            let path = item.path();
+            let file_name = item.file_name().to_string_lossy().to_string();
+            if should_hide(&file_name) {
+                continue;
+            }
+            let metadata = item.metadata().map_err(|err| err.to_string())?;
+            let kind = if metadata.is_dir() {
+                EntryKind::Directory
+            } else {
+                EntryKind::File
+            };
+            entries.push(DirEntryInfo {
+                path: path.to_string_lossy().to_string(),
+                name: file_name,
+                kind,
+            });
         }
-        let metadata = item.metadata().map_err(|err| err.to_string())?;
-        let kind = if metadata.is_dir() {
-            EntryKind::Directory
-        } else {
-            EntryKind::File
-        };
-        entries.push(DirEntryInfo {
-            path: path.to_string_lossy().to_string(),
-            name: file_name,
-            kind,
+
+        entries.sort_by(|a, b| match (&a.kind, &b.kind) {
+            (EntryKind::Directory, EntryKind::File) => std::cmp::Ordering::Less,
+            (EntryKind::File, EntryKind::Directory) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
         });
-    }
 
-    entries.sort_by(|a, b| match (&a.kind, &b.kind) {
-        (EntryKind::Directory, EntryKind::File) => std::cmp::Ordering::Less,
-        (EntryKind::File, EntryKind::Directory) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
-
-    Ok(entries)
+        Ok(entries)
+    })
+    .await
+    .map_err(|err| format!("file listing task failed: {err}"))?
 }
 
 const MAX_FILE_BYTES: u64 = 10 * 1024 * 1024;
 const LONG_LINE_CHARS: usize = 10_000;
 
 #[tauri::command]
-pub fn fs_read(path: String) -> Result<FileReadResult, String> {
-    let path = canonical_file(&path)?;
-    let metadata = fs::metadata(&path).map_err(|err| format!("failed to stat file: {err}"))?;
-    let truncated = metadata.len() > MAX_FILE_BYTES;
-    let bytes = if truncated {
-        fs::read(&path)
-            .map_err(|err| format!("failed to read file: {err}"))?
-            .into_iter()
-            .take(MAX_FILE_BYTES as usize)
-            .collect::<Vec<_>>()
-    } else {
-        fs::read(&path).map_err(|err| format!("failed to read file: {err}"))?
-    };
-    let content = String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8".to_string())?;
-    let long_lines = has_long_line(&content);
-    let degrade = truncated || long_lines;
-    Ok(FileReadResult {
-        path: path.to_string_lossy().to_string(),
-        hash: hash_text(&content),
-        content,
-        truncated,
-        long_lines,
-        read_only: metadata.permissions().readonly() || degrade,
+pub async fn fs_read(path: String) -> Result<FileReadResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = canonical_file(&path)?;
+        let metadata = fs::metadata(&path).map_err(|err| format!("failed to stat file: {err}"))?;
+        let truncated = metadata.len() > MAX_FILE_BYTES;
+        let bytes = if truncated {
+            fs::read(&path)
+                .map_err(|err| format!("failed to read file: {err}"))?
+                .into_iter()
+                .take(MAX_FILE_BYTES as usize)
+                .collect::<Vec<_>>()
+        } else {
+            fs::read(&path).map_err(|err| format!("failed to read file: {err}"))?
+        };
+        let content =
+            String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8".to_string())?;
+        let long_lines = has_long_line(&content);
+        let degrade = truncated || long_lines;
+        Ok(FileReadResult {
+            path: path.to_string_lossy().to_string(),
+            hash: hash_text(&content),
+            content,
+            truncated,
+            long_lines,
+            read_only: metadata.permissions().readonly() || degrade,
+        })
     })
+    .await
+    .map_err(|err| format!("file read task failed: {err}"))?
 }
 
 #[tauri::command]
-pub fn fs_write(
+pub async fn fs_write(
     app: AppHandle,
     engine: State<'_, Arc<CheckpointEngine>>,
     path: String,
     content: String,
     expected_hash: Option<String>,
 ) -> Result<FileWriteResult, String> {
-    let path = canonical_write_target(&path)?;
-    // L1 preimage: capture disk bytes before the first agent/editor write in an active turn.
-    let _ = engine.preimage_for_path(&app, &path);
-    if let Some(expected) = expected_hash {
-        if path.exists() {
-            let current = fs::read_to_string(&path)
-                .map_err(|err| format!("failed to read existing file: {err}"))?;
-            let current_hash = hash_text(&current);
-            if current_hash != expected {
-                return Err("file changed on disk; reload before saving".to_string());
+    let engine = Arc::clone(engine.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = canonical_write_target(&path)?;
+        // L1 preimage: capture disk bytes before the first agent/editor write in an active turn.
+        let _ = engine.preimage_for_path(&app, &path);
+        if let Some(expected) = expected_hash {
+            if path.exists() {
+                let current = fs::read_to_string(&path)
+                    .map_err(|err| format!("failed to read existing file: {err}"))?;
+                let current_hash = hash_text(&current);
+                if current_hash != expected {
+                    return Err("file changed on disk; reload before saving".to_string());
+                }
             }
         }
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| format!("failed to create parent: {err}"))?;
-    }
-    fs::write(&path, &content).map_err(|err| format!("failed to write file: {err}"))?;
-    Ok(FileWriteResult {
-        hash: hash_text(&content),
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|err| format!("failed to create parent: {err}"))?;
+        }
+        fs::write(&path, &content).map_err(|err| format!("failed to write file: {err}"))?;
+        Ok(FileWriteResult {
+            hash: hash_text(&content),
+        })
     })
+    .await
+    .map_err(|err| format!("file write task failed: {err}"))?
 }
 
 #[tauri::command]

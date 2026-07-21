@@ -48,56 +48,62 @@ export default function PermissionModal({ prompt, onRespond }: PermissionModalPr
   }, [onRespond, prompt.options]);
 
   return (
-    <div className="absolute inset-0 z-20 grid place-items-end bg-app/45 p-3 backdrop-blur-[2px]">
-      <div className="glass-float pop-in w-full rounded-2xl p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-ink">
+    <div className="absolute inset-0 z-20 grid min-w-0 place-items-end overflow-hidden bg-app/45 p-3 backdrop-blur-[2px]">
+      <div className="glass-float pop-in flex max-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-2xl p-3">
+        <div className="mb-2 flex shrink-0 items-center gap-2 text-xs font-semibold text-ink">
           <span className="grid size-6 place-items-center rounded-lg bg-accent-soft">
             <ShieldAlert className="size-3.5 text-accent" />
           </span>
           {t("agent.permissionTitle")}
         </div>
-        <p className="mb-1 text-xs text-ink-2">{prompt.title}</p>
-        {(prompt.kind || prompt.toolCallId || (prompt.locations && prompt.locations.length > 0)) && (
-          <div className="mb-3 space-y-0.5 font-mono text-[10px] text-ink-3">
-            {prompt.kind && <div>{prompt.kind}</div>}
-            {prompt.locations?.map((path) => (
-              <div key={path} className="truncate">
-                {path}
-              </div>
-            ))}
+        <div className="min-h-0 min-w-0 overflow-y-auto pr-0.5">
+          <p className="mb-1 min-w-0 whitespace-pre-wrap text-xs text-ink-2 [overflow-wrap:anywhere]">
+            {prompt.title}
+          </p>
+          {(prompt.kind ||
+            prompt.toolCallId ||
+            (prompt.locations && prompt.locations.length > 0)) && (
+            <div className="mb-3 min-w-0 space-y-0.5 font-mono text-[10px] text-ink-3">
+              {prompt.kind && <div className="[overflow-wrap:anywhere]">{prompt.kind}</div>}
+              {prompt.locations?.map((path) => (
+                <div key={path} className="truncate" title={path}>
+                  {path}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex min-w-0 flex-col gap-1.5">
+            {prompt.options.map((option, index) => {
+              const isAllow = option.kind.startsWith("allow");
+              const isReject = option.kind.startsWith("reject");
+              return (
+                <button
+                  key={option.optionId}
+                  type="button"
+                  onClick={() => onRespond(option.optionId)}
+                  className={`flex w-full min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs transition-all duration-100 ${
+                    isAllow
+                      ? "border-accent/35 bg-accent-soft text-ink hover:border-accent"
+                      : isReject
+                        ? "border-danger/25 bg-danger/5 text-ink-2 hover:border-danger/50"
+                        : "border-line bg-raised/40 text-ink-2 hover:border-accent hover:text-ink"
+                  }`}
+                >
+                  <kbd className="shrink-0">{index + 1}</kbd>
+                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{option.name}</span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => onRespond("cancelled")}
+              className="rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-3 hover:text-ink-2"
+            >
+              {t("agent.permissionCancel")} <span className="font-mono">Esc</span>
+            </button>
           </div>
-        )}
-        <div className="flex flex-col gap-1.5">
-          {prompt.options.map((option, index) => {
-            const isAllow = option.kind.startsWith("allow");
-            const isReject = option.kind.startsWith("reject");
-            return (
-              <button
-                key={option.optionId}
-                type="button"
-                onClick={() => onRespond(option.optionId)}
-                className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs transition-all duration-100 ${
-                  isAllow
-                    ? "border-accent/35 bg-accent-soft text-ink hover:border-accent"
-                    : isReject
-                      ? "border-danger/25 bg-danger/5 text-ink-2 hover:border-danger/50"
-                      : "border-line bg-raised/40 text-ink-2 hover:border-accent hover:text-ink"
-                }`}
-              >
-                <kbd className="shrink-0">{index + 1}</kbd>
-                <span className="min-w-0 flex-1">{option.name}</span>
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => onRespond("cancelled")}
-            className="rounded-lg px-2.5 py-1.5 text-left text-[11px] text-ink-3 hover:text-ink-2"
-          >
-            {t("agent.permissionCancel")} <span className="font-mono">Esc</span>
-          </button>
+          <p className="mt-2 text-[10px] text-ink-3">{t("agent.permissionHint")}</p>
         </div>
-        <p className="mt-2 text-[10px] text-ink-3">{t("agent.permissionHint")}</p>
       </div>
     </div>
   );

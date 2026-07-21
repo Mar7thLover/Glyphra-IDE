@@ -2,7 +2,7 @@
 
 @theme {
   --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI", monospace;
+  --font-mono: "Cascadia Mono", "Cascadia Code", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", "Microsoft YaHei UI", monospace;
 }
 
 /* Map runtime-switchable app tokens to Tailwind utilities (bg-app, text-ink, …). */
@@ -21,6 +21,7 @@
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-hover: var(--hov);
+  --color-active: var(--act);
   --color-active: var(--act);
   --color-danger: var(--danger);
   --color-ok: var(--ok);
@@ -117,6 +118,19 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Conversation content is intentionally selectable even though window chrome is not. */
+.agent-selectable,
+.agent-selectable * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.agent-selectable button,
+.agent-selectable button * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* ---------- Materials ---------- */
 
 /* Shell panels: sidebar, agent panel, title/status bars. */
@@ -150,6 +164,30 @@ body {
 
 .btn-accent:active:not(:disabled) {
   opacity: 0.88;
+}
+
+.glyphra-merge-control {
+  border: 1px solid var(--line) !important;
+  border-radius: 999px !important;
+  background: var(--bg-raised) !important;
+  color: var(--ink-2) !important;
+  padding: 2px 8px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease !important;
+}
+
+.glyphra-merge-control-accept:hover {
+  border-color: color-mix(in srgb, #2e9b62 40%, var(--line)) !important;
+  background: color-mix(in srgb, #2e9b62 8%, var(--bg-raised)) !important;
+  color: #2e9b62 !important;
+}
+
+.glyphra-merge-control-reject:hover {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line)) !important;
+  background: color-mix(in srgb, var(--danger) 7%, var(--bg-raised)) !important;
+  color: var(--danger) !important;
 }
 
 /* ---------- Micro-interactions ---------- */

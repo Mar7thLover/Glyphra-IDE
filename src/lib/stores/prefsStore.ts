@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
-import type { AgentPermissionMode, StartableBackend } from "@/lib/acp/types";
+import type {
+  AgentApprovalReviewer,
+  AgentPermissionMode,
+  StartableBackend,
+} from "@/lib/acp/types";
 
 const PREFS_KEY = "glyphra.prefs";
 
@@ -12,6 +16,11 @@ export interface GlyphraPrefs {
   defaultMode: AgentPermissionMode;
   defaultBackend: StartableBackend;
   defaultProviderId: string | null;
+  defaultAgentModel: string | null;
+  defaultReasoningEffort: string | null;
+  defaultContextWindow: number | null;
+  defaultFastMode: boolean;
+  defaultApprovalReviewer: AgentApprovalReviewer;
   openAgentOnProject: boolean;
 }
 
@@ -21,8 +30,13 @@ const defaults: GlyphraPrefs = {
   wordWrap: true,
   lineNumbers: true,
   defaultMode: "standard",
-  defaultBackend: "fixture",
+  defaultBackend: "auto",
   defaultProviderId: null,
+  defaultAgentModel: null,
+  defaultReasoningEffort: null,
+  defaultContextWindow: null,
+  defaultFastMode: false,
+  defaultApprovalReviewer: "user",
   // Right Agent panel stays collapsed until the titlebar entry opens it.
   openAgentOnProject: false,
 };
@@ -55,6 +69,11 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
       defaultMode,
       defaultBackend,
       defaultProviderId,
+      defaultAgentModel,
+      defaultReasoningEffort,
+      defaultContextWindow,
+      defaultFastMode,
+      defaultApprovalReviewer,
       openAgentOnProject,
     } = get();
     localStorage.setItem(
@@ -67,6 +86,11 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
         defaultMode,
         defaultBackend,
         defaultProviderId,
+        defaultAgentModel,
+        defaultReasoningEffort,
+        defaultContextWindow,
+        defaultFastMode,
+        defaultApprovalReviewer,
         openAgentOnProject,
       }),
     );

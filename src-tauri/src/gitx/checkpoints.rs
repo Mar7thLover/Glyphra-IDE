@@ -27,7 +27,7 @@ use tauri::{AppHandle, Manager};
 use ts_rs::TS;
 use uuid::Uuid;
 
-use super::cli::{self, project_root, rel_path};
+use super::cli::{self, project_root, rel_path, DiffSummary};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +59,14 @@ pub struct CkptFileContents {
     pub path: String,
     pub before: String,
     pub after: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/ipc/gen/CkptHunkSummary.ts")]
+pub struct CkptHunkSummary {
+    pub path: String,
+    pub summary: DiffSummary,
 }
 
 #[derive(Default)]
@@ -408,6 +416,87 @@ impl CheckpointEngine {
             path: rel_path.to_string(),
             before,
             after,
+        })
+    }
+
+    pub fn hunks(
+        &self,
+        app: &AppHandle,
+        project_path: &str,
+        turn_id: &str,
+        rel_path: &str,
+    ) -> Result<CkptHunkSummary, String> {
+        let project = project_root(project_path)?;
+        let root = checkpoint_root(app, &project)?;
+        let dir = turn_dir(&root, turn_id);
+        let meta = read_meta(&dir)?;
+        let file = meta
+            .files
+            .iter()
+            .find(|file| file.path == rel_path)
+            .ok_or_else(|| format!("file `{rel_path}` not in turn"))?;
+        if !file.preimage_available {
+            return Ok(CkptHunkSummary {
+                path: rel_path.to_string(),
+                summary: DiffSummary {
+                    available: false,
+                    ..DiffSummary::default()
+                },
+            });
+        }
+
+        let pre = pre_path(&dir, rel_path);
+        let after = project.join(rel_path);
+        let before_bytes = fs::read(&pre).unwrap_or_default();
+        let after_bytes = fs::read(&after).unwrap_or_default();
+        let binary = before_bytes.contains(&0)
+            || after_bytes.contains(&0)
+            || std::str::from_utf8(&before_bytes).is_err()
+            || std::str::from_utf8(&after_bytes).is_err();
+        let mut summary = if binary {
+            DiffSummary {
+                binary: true,
+                available: true,
+                ..DiffSummary::default()
+            }
+        } else if before_bytes == after_bytes {
+            DiffSummary {
+                available: true,
+                ..DiffSummary::default()
+            }
+        } else if !after.exists() || before_bytes.is_empty() || after_bytes.is_empty() {
+            let count = |bytes: &[u8]| {
+                if bytes.is_empty() {
+                    0
+                } else {
+                    bytes.split(|byte| *byte == b'\n').count() as u32
+                        - u32::from(bytes.last() == Some(&b'\n'))
+                }
+            };
+            DiffSummary {
+                additions: count(&after_bytes),
+                deletions: count(&before_bytes),
+                hunks: 1,
+                binary: false,
+                available: true,
+            }
+        } else {
+            let output = Command::new("git")
+                .args(["diff", "--no-index", "--no-color", "--unified=0", "--"])
+                .arg(&pre)
+                .arg(&after)
+                .output()
+                .map_err(|err| format!("failed to summarize checkpoint diff: {err}"))?;
+            if output.status.code() == Some(0) || output.status.code() == Some(1) {
+                cli::parse_unified_diff(&String::from_utf8_lossy(&output.stdout))
+            } else {
+                return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+            }
+        };
+        summary.available = true;
+        Ok(CkptHunkSummary {
+            path: rel_path.to_string(),
+            summary,
         })
     }
 

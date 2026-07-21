@@ -8,6 +8,7 @@ vi.mock("@/lib/ipc/ipc", () => ({
 }));
 
 import { ipc } from "@/lib/ipc/ipc";
+import { useUnsavedChangesStore } from "@/lib/unsavedChanges";
 import { useEditorStore } from "./editorStore";
 
 describe("editorStore", () => {
@@ -20,6 +21,7 @@ describe("editorStore", () => {
     });
     vi.mocked(ipc.fsRead).mockReset();
     vi.mocked(ipc.fsWrite).mockReset();
+    useUnsavedChangesStore.setState({ pending: null });
   });
 
   it("opens a file tab and marks degraded long-line files read-only", async () => {
@@ -76,5 +78,42 @@ describe("editorStore", () => {
     await useEditorStore.getState().openFile("/tmp/b.ts");
     await useEditorStore.getState().saveActive();
     expect(ipc.fsWrite).not.toHaveBeenCalled();
+  });
+
+  it("prompts before leaving a dirty tab and can discard the edit", async () => {
+    useEditorStore.setState({
+      activePath: "/tmp/a.ts",
+      tabs: [
+        {
+          path: "/tmp/a.ts",
+          name: "a.ts",
+          content: "changed",
+          savedContent: "original",
+          hash: "h1",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        },
+        {
+          path: "/tmp/b.ts",
+          name: "b.ts",
+          content: "other",
+          savedContent: "other",
+          hash: "h2",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        },
+      ],
+    });
+
+    const navigation = useEditorStore.getState().activateTab("/tmp/b.ts");
+    expect(useUnsavedChangesStore.getState().pending?.name).toBe("a.ts");
+    useUnsavedChangesStore.getState().decide("discard");
+    await navigation;
+
+    const state = useEditorStore.getState();
+    expect(state.activePath).toBe("/tmp/b.ts");
+    expect(state.tabs[0]?.content).toBe("original");
   });
 });

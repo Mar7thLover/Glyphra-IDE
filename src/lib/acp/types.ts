@@ -1,6 +1,11 @@
-export type AgentBackendKind = "codex-acp" | "claude-acp" | "pi-agent" | "custom-agent";
+export type AgentBackendKind =
+  | "codex-acp"
+  | "claude-acp"
+  | "pi-agent"
+  | "opencode-acp"
+  | "custom-agent";
 
-export type StartableBackend = AgentBackendKind | "fixture";
+export type StartableBackend = AgentBackendKind | "auto" | "fixture" | `custom:${string}`;
 
 /** Maps to INITIAL_AGENT_MODE / session set_mode. */
 export type AgentPermissionMode = "safe" | "standard" | "unleashed";
@@ -8,9 +13,36 @@ export type AgentPermissionMode = "safe" | "standard" | "unleashed";
 export interface AgentStartOptions {
   providerId?: string | null;
   mode?: AgentPermissionMode;
+  harness?: AgentHarnessLaunch;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  contextWindow?: number | null;
+  fastMode?: boolean;
+  approvalReviewer?: AgentApprovalReviewer;
+  prewarmedSessionId?: string | null;
 }
 
-export type CustomAgentProtocol = "acp" | "stdio-jsonl" | "shell-command";
+export type AgentApprovalReviewer = "user" | "auto_review";
+
+export type CustomAgentProtocol =
+  | "acp"
+  | "codex-app-server"
+  | "claude-stream-json"
+  | "pi-json"
+  | "stdio-jsonl"
+  | "shell-command"
+  | "openai-responses"
+  | "openai-chat"
+  | "anthropic-messages";
+
+export interface AgentHarnessLaunch {
+  protocol: CustomAgentProtocol;
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string>;
+  endpoint?: string | null;
+  model?: string | null;
+}
 
 export interface CustomAgentHarness {
   id: string;
@@ -19,6 +51,8 @@ export interface CustomAgentHarness {
   args: string[];
   protocol: CustomAgentProtocol;
   env: Record<string, string>;
+  endpoint?: string;
+  model?: string;
   notes?: string;
 }
 

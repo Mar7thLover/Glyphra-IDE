@@ -24,12 +24,24 @@ use crate::providers;
 pub struct AgentSpawnRequest {
     pub backend: String,
     pub cwd: String,
+    /// Harness wire protocol. ACP is passed through; other protocols use the
+    /// bundled normalizing bridge and still appear as ACP to the frontend.
+    pub protocol: Option<String>,
     pub command: Option<String>,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
+    pub endpoint: Option<String>,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub context_window: Option<u32>,
+    #[serde(default)]
+    pub fast_mode: bool,
+    pub approval_reviewer: Option<String>,
+    /// Native thread prepared during catalog loading, when supported.
+    pub prewarmed_session_id: Option<String>,
     /// Optional Glyphra provider id — secrets/CODEX_CONFIG injected at spawn.
     pub provider_id: Option<String>,
-    /// Permission preset: `safe` | `standard` | `unleashed`.
+    /// Permission preset: `safe` (request) | `standard` (auto) | `unleashed` (full).
     pub mode: Option<String>,
 }
 
@@ -91,9 +103,9 @@ impl AgentSupervisor {
             env.insert(
                 "INITIAL_AGENT_MODE".into(),
                 match mode {
-                    "safe" => "read-only".into(),
-                    "unleashed" => "agent-full-access".into(),
-                    _ => "agent".into(),
+                    "safe" => "request-approval".into(),
+                    "unleashed" => "full-access".into(),
+                    _ => "auto-approval".into(),
                 },
             );
         }
@@ -226,11 +238,69 @@ impl AgentSupervisor {
 }
 
 fn resolve_command(request: &AgentSpawnRequest) -> Result<(String, Vec<String>), String> {
-    if let Some(command) = &request.command {
-        if command.trim().is_empty() {
+    let protocol = request.protocol.as_deref().unwrap_or("acp");
+    let is_http = matches!(
+        protocol,
+        "openai-responses" | "openai-chat" | "anthropic-messages"
+    );
+    if request.command.is_some() || is_http {
+        let command = request.command.as_deref().unwrap_or("");
+        if command.trim().is_empty() && !is_http {
             return Err("custom agent command is empty".into());
         }
-        return Ok((command.clone(), request.args.clone()));
+        if protocol == "acp" {
+            return Ok((command.into(), request.args.clone()));
+        }
+
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+        let bridge = root.join("scripts/harness-bridge.mjs");
+        if !bridge.exists() {
+            return Err(format!("harness bridge missing at {}", bridge.display()));
+        }
+        let mut args = vec![
+            bridge.to_string_lossy().to_string(),
+            format!("--protocol={protocol}"),
+            format!("--command={command}"),
+            format!(
+                "--args={}",
+                serde_json::to_string(&request.args)
+                    .map_err(|err| format!("serialize harness args: {err}"))?
+            ),
+        ];
+        if let Some(endpoint) = request.endpoint.as_deref().filter(|v| !v.trim().is_empty()) {
+            args.push(format!("--endpoint={endpoint}"));
+        }
+        if let Some(model) = request.model.as_deref().filter(|v| !v.trim().is_empty()) {
+            args.push(format!("--model={model}"));
+        }
+        if let Some(effort) = request
+            .reasoning_effort
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+        {
+            args.push(format!("--reasoning-effort={effort}"));
+        }
+        if let Some(context_window) = request.context_window {
+            args.push(format!("--context-window={context_window}"));
+        }
+        if request.fast_mode {
+            args.push("--fast-mode=1".into());
+        }
+        if let Some(reviewer) = request
+            .approval_reviewer
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+        {
+            args.push(format!("--approval-reviewer={reviewer}"));
+        }
+        if let Some(session_id) = request
+            .prewarmed_session_id
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            args.push(format!("--prewarmed-session-id={session_id}"));
+        }
+        return Ok(("node".into(), args));
     }
 
     match request.backend.as_str() {

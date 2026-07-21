@@ -2,7 +2,8 @@ import { GitPullRequestArrow, Languages, Moon, Sun, TerminalSquare } from "lucid
 import { useTranslation } from "react-i18next";
 
 import { ipc } from "@/lib/ipc/ipc";
-import { useReviewStore } from "@/lib/stores/reviewStore";
+import { unresolvedReviewGroupCount, useReviewStore } from "@/lib/stores/reviewStore";
+import { useProjectStore } from "@/lib/stores/projectStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore, type Theme } from "@/lib/stores/uiStore";
 
@@ -17,7 +18,11 @@ export default function StatusBar() {
   const setTheme = useUiStore((s) => s.setTheme);
   const toggleTerminal = useTerminalStore((s) => s.toggle);
   const openReview = useReviewStore((s) => s.openReview);
-  const turnCount = useReviewStore((s) => s.turns.length);
+  const turns = useReviewStore((s) => s.turns);
+  const workingTree = useReviewStore((s) => s.workingTree);
+  const decisions = useReviewStore((s) => s.decisions);
+  const projectPath = useProjectStore((s) => s.current?.path);
+  const unresolved = unresolvedReviewGroupCount({ turns, workingTree, decisions });
 
   const toggleLang = () => {
     const next = i18n.language === "zh-CN" ? "en" : "zh-CN";
@@ -43,11 +48,17 @@ export default function StatusBar() {
       </span>
       <span className="text-ink-3/60">{t("app.prealpha")}</span>
       <div className="flex-1" />
-      <button type="button" onClick={() => openReview()} title={t("review.title")} className={item}>
+      <button
+        type="button"
+        onClick={() => openReview(projectPath)}
+        title={`${t("review.title")} · Ctrl+Shift+R`}
+        className={`${item} relative`}
+      >
         <GitPullRequestArrow className="size-3" />
-        {turnCount > 0 ? (
+        {unresolved > 0 && <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-[#c58a22]" />}
+        {unresolved > 0 ? (
           <span className="inline-flex min-w-[14px] items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium text-accent">
-            {turnCount}
+            {unresolved}
           </span>
         ) : (
           t("review.title")

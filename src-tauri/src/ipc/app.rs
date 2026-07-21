@@ -56,7 +56,7 @@ pub async fn window_open_agent(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let mut builder = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         &app,
         AGENT_WINDOW_LABEL,
         tauri::WebviewUrl::App("index.html".into()),
@@ -65,21 +65,35 @@ pub async fn window_open_agent(app: tauri::AppHandle) -> Result<(), String> {
     .inner_size(1000.0, 700.0)
     .min_inner_size(600.0, 440.0)
     .center()
-    .visible(false)
-    .decorations(false)
-    .transparent(true);
+    .visible(false);
 
-    if mica_supported() {
-        builder = builder.effects(tauri::utils::config::WindowEffectsConfig {
+    // Transparent, frameless windows and Mica are a Windows-only shell choice.
+    // Tauri does not expose `transparent` on this builder for every target.
+    #[cfg(windows)]
+    let builder = builder.decorations(false).transparent(true);
+    #[cfg(not(windows))]
+    let builder = builder.decorations(true);
+
+    #[cfg(windows)]
+    let builder = if mica_supported() {
+        builder.effects(tauri::utils::config::WindowEffectsConfig {
             effects: vec![tauri::utils::WindowEffect::Mica],
             state: None,
             radius: None,
             color: None,
-        });
-    }
+        })
+    } else {
+        builder
+    };
 
     builder.build().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+/// Quit the whole application, including auxiliary windows.
+#[tauri::command]
+pub fn app_exit(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// Focus the main IDE window from the Agents window.
