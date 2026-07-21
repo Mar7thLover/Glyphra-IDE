@@ -4,6 +4,10 @@ dist/
 src-tauri/target/
 src-tauri/gen/schemas/
 
+# mobile icon derivatives from `tauri icon` (desktop-only app)
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
 # logs / caches
 *.log
 pnpm-debug.log*

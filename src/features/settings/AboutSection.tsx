@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { getVersion } from "@tauri-apps/api/app";
 
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 
@@ -10,16 +11,34 @@ export default function AboutSection() {
   const runtime = useOnboardingStore((s) => s.runtime);
   const agents = useOnboardingStore((s) => s.agents);
   const loading = useOnboardingStore((s) => s.loading);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getVersion()
+      .then((version) => {
+        if (!cancelled) setAppVersion(version);
+      })
+      .catch(() => {
+        if (!cancelled) setAppVersion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="space-y-4">
       <div>
         <div className="text-[13px] font-medium text-ink">{t("app.name")}</div>
-        <div className="mt-0.5 text-[11px] text-ink-3">{t("app.prealpha")}</div>
+        <div className="mt-0.5 text-[11px] text-ink-3">
+          {appVersion ? `v${appVersion}` : t("app.prealpha")}
+          {appVersion ? ` · ${t("app.prealpha")}` : null}
+        </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-ink-3">{t("settings.aboutHint")}</p>

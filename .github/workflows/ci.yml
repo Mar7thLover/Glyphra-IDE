@@ -21,6 +21,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm exec vite build
       - run: pnpm check:size
+      - run: pnpm check:version
       - run: pnpm test
 
   bindings:

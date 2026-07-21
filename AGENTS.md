@@ -23,9 +23,10 @@ Use those as the source of truth. In short:
 
 ### Non-obvious caveats
 
-- **`icon.png` is committed** under `src-tauri/icons/icon.png` (RGBA). If it is ever removed,
-  regenerate from the `.ico` with ImageMagick:
-  `convert "src-tauri/icons/icon.ico[0]" -resize 256x256 -alpha on -background none PNG32:src-tauri/icons/icon.png`.
+- **Icons** live under `src-tauri/icons/` (committed). Regenerate the full set with
+  `pnpm exec tauri icon <1024-rgba.png> --output src-tauri/icons` rather than editing a
+  single size by hand. Fallback from the `.ico`: 
+  `convert "src-tauri/icons/icon.ico[0]" -resize 1024x1024 -alpha on -background none PNG32:/tmp/glyphra-icon.png`.
 - **Rust toolchain must be recent.** A transitive dependency requires the `edition2024`
   Cargo feature, so Rust/Cargo older than ~1.85 fails to even parse the manifest. Use the
   latest stable (`rustup default stable`).
@@ -36,3 +37,5 @@ Use those as the source of truth. In short:
   rendering fallbacks.
 - The first `pnpm tauri dev` compiles the Rust crate (~1 min cold). Later reloads are fast;
   Vite hot-reloads the frontend and Rust changes trigger a recompile+relaunch.
+- **Packaged releases** use `.github/workflows/release.yml` on `v*` tags. See
+  [docs/releasing.md](./docs/releasing.md). Keep versions synced with `pnpm check:version`.
