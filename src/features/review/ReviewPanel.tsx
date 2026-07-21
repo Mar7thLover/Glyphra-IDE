@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Eye,
   FileDiff,
+  FileCode2,
   PanelRightClose,
   RotateCcw,
   Undo2,
@@ -13,6 +14,7 @@ import { motion } from "motion/react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useEditorStore } from "@/lib/stores/editorStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 import {
@@ -419,6 +421,23 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
                 <span className="shrink-0 text-[9.5px] text-ink-3">
                   {Math.min(hunkProgress.total, hunkProgress.total - hunkProgress.remaining + 1)}/{hunkProgress.total}
                 </span>
+              )}
+              {current && activeFile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const absolute = activeFile.includes("/") || activeFile.includes("\\")
+                      ? activeFile.startsWith(current.path)
+                        ? activeFile
+                        : `${current.path.replace(/[\\/]+$/, "")}/${activeFile.replace(/^\.?[\\/]/, "")}`
+                      : `${current.path.replace(/[\\/]+$/, "")}/${activeFile}`;
+                    void useEditorStore.getState().openFile(absolute);
+                  }}
+                  title={t("review.openInEditor")}
+                  className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-2 hover:bg-hover hover:text-ink"
+                >
+                  <FileCode2 className="size-3" /> {t("review.openInEditor")}
+                </button>
               )}
               {activeGroup.readOnly ? (
                 <span className="rounded-full bg-hover px-1.5 py-0.5 text-[9px] text-ink-3">HEAD</span>

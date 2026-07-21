@@ -1,7 +1,8 @@
-import { GitPullRequestArrow, Languages, Moon, Sun, TerminalSquare } from "lucide-react";
+import { GitBranch, GitPullRequestArrow, Languages, Moon, Sun, TerminalSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ipc } from "@/lib/ipc/ipc";
+import { useGitStore } from "@/lib/stores/gitStore";
 import { unresolvedReviewGroupCount, useReviewStore } from "@/lib/stores/reviewStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
@@ -22,6 +23,7 @@ export default function StatusBar() {
   const workingTree = useReviewStore((s) => s.workingTree);
   const decisions = useReviewStore((s) => s.decisions);
   const projectPath = useProjectStore((s) => s.current?.path);
+  const branch = useGitStore((s) => s.branch);
   const unresolved = unresolvedReviewGroupCount({ turns, workingTree, decisions });
 
   const toggleLang = () => {
@@ -46,6 +48,21 @@ export default function StatusBar() {
         <span className="size-1.5 rounded-full bg-ok/80" />
         {t("status.ready")}
       </span>
+      {branch && (
+        <span
+          className="inline-flex items-center gap-1 px-1 font-mono text-[10.5px] text-ink-2"
+          title={branch.upstream ? `${branch.name} ↔ ${branch.upstream}` : branch.name}
+        >
+          <GitBranch className="size-3 text-ink-3" />
+          {branch.name}
+          {(branch.ahead > 0 || branch.behind > 0) && (
+            <span className="text-ink-3">
+              {branch.ahead > 0 && <span className="text-ok">↑{branch.ahead}</span>}
+              {branch.behind > 0 && <span className="text-danger">↓{branch.behind}</span>}
+            </span>
+          )}
+        </span>
+      )}
       <span className="text-ink-3/60">{t("app.prealpha")}</span>
       <div className="flex-1" />
       <button

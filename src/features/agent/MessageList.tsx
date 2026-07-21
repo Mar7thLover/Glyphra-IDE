@@ -9,6 +9,7 @@ import type { AgentTimelineItem } from "@/lib/acp/types";
 import { focusAgentComposer, useComposerDraft } from "@/lib/stores/composerStore";
 
 import PlanCard from "./PlanCard";
+import ReviewCommentCard, { parseReviewComments } from "./ReviewCommentCard";
 import ToolCard from "./ToolCard";
 
 const AssistantMarkdown = lazy(() => import("./AssistantMarkdown"));
@@ -40,12 +41,14 @@ function TimelineRow({ item }: { item: AgentTimelineItem }) {
   }
 
   if (item.kind === "assistant") {
+    const comments = parseReviewComments(item.text);
     return (
       <div className="px-3.5 py-2">
         <div className="text-[12.5px] leading-relaxed text-ink">
           <Suspense fallback={<div className="whitespace-pre-wrap text-ink-2">{item.text}</div>}>
             <AssistantMarkdown text={item.text} />
           </Suspense>
+          <ReviewCommentCard comments={comments} />
         </div>
       </div>
     );

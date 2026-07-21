@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { ipc, type DirEntryInfo, type FsEvent, type ProjectInfo, type RecentProject } from "@/lib/ipc/ipc";
 import { useGitStore } from "@/lib/stores/gitStore";
 import { useEditorStore } from "@/lib/stores/editorStore";
+import { useFileIndexStore } from "@/lib/stores/fileIndexStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 
 const WATCH_DEBOUNCE_MS = 300;
@@ -84,8 +85,9 @@ function enqueueRefresh(event: FsEvent) {
 }
 
 function clearProjectScopedStores() {
-  useEditorStore.setState({ tabs: [], activePath: null, loading: false, error: null });
-  useGitStore.setState({ statuses: {} });
+  useEditorStore.setState({ tabs: [], activePath: null, loading: false, error: null, reveal: null });
+  useGitStore.setState({ statuses: {}, branch: null });
+  useFileIndexStore.getState().clear();
   useReviewStore.setState({
     projectPath: null,
     turns: [],
@@ -140,6 +142,9 @@ async function refreshFromEvent(event: FsEvent) {
   });
   void useGitStore.getState().refresh(current.path);
   void useReviewStore.getState().refreshWorkingTree(current.path);
+  // Agent (and other) writers must refresh clean open tabs so the editor
+  // never silently overwrites disk with a stale buffer.
+  void useEditorStore.getState().syncFromDisk(event.paths);
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({

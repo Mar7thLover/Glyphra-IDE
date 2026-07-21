@@ -236,6 +236,42 @@ export class AgentBus {
         await ipc.fsWrite(ctx.params.path, ctx.params.content);
         return {};
       })
+      .onRequest(methods.client.terminal.create, async (ctx) => {
+        const terminalId = await ipc.agentTermCreate({
+          command: ctx.params.command,
+          args: ctx.params.args ?? [],
+          cwd: ctx.params.cwd ?? this.handle?.projectPath ?? null,
+          env: (ctx.params.env ?? []).map((item) => ({
+            name: item.name,
+            value: item.value,
+          })),
+          outputByteLimit: ctx.params.outputByteLimit ?? null,
+        });
+        return { terminalId };
+      })
+      .onRequest(methods.client.terminal.output, async (ctx) => {
+        const result = await ipc.agentTermOutput(ctx.params.terminalId);
+        return {
+          output: result.output,
+          truncated: result.truncated,
+          exitStatus:
+            result.exitCode == null && result.signal == null
+              ? null
+              : { exitCode: result.exitCode, signal: result.signal },
+        };
+      })
+      .onRequest(methods.client.terminal.waitForExit, async (ctx) => {
+        const result = await ipc.agentTermWait(ctx.params.terminalId);
+        return { exitCode: result.exitCode, signal: result.signal };
+      })
+      .onRequest(methods.client.terminal.kill, async (ctx) => {
+        await ipc.agentTermKill(ctx.params.terminalId);
+        return {};
+      })
+      .onRequest(methods.client.terminal.release, async (ctx) => {
+        await ipc.agentTermRelease(ctx.params.terminalId);
+        return {};
+      })
       .onNotification(methods.client.session.update, (ctx) => {
         if (this.ignoreSessionUpdates) return;
         const update = ctx.params.update;
@@ -257,6 +293,7 @@ export class AgentBus {
         protocolVersion: PROTOCOL_VERSION,
         clientCapabilities: {
           fs: { readTextFile: true, writeTextFile: true },
+          terminal: true,
           session: { configOptions: {} },
         },
         clientInfo: {
