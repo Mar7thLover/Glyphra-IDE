@@ -6,7 +6,7 @@ Most IDEs were designed for a human typing every line. Glyphra is designed for t
 
 大多数 IDE 是为"人逐行敲代码"设计的。Glyphra 面向的是现在真实发生的工作流:你把任务交给 agent,实时看它规划、编辑,把注意力放在审阅与驾驭上,而不是打字。调试器、插件市场、任务系统这些前 agent 时代的重型设施,Glyphra 有意地不做。
 
-> **Status: pre-alpha.** APIs and UI are still moving fast — expect breaking changes between commits.
+> **Status: pre-alpha / `0.1.0-beta.1`.** APIs and UI are still moving fast — expect breaking changes between commits. Packaged test builds: [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · release guide: [`docs/releasing.md`](./docs/releasing.md).
 
 ## Why Glyphra
 
@@ -43,7 +43,13 @@ pnpm test              # vitest
 pnpm typecheck         # tsc --noEmit
 pnpm check:bindings    # verify generated IPC types match src-tauri
 pnpm check:size        # bundle size budget
+pnpm check:version     # package / tauri / cargo version sync
+pnpm tauri build       # platform installers (see docs/releasing.md)
 ```
+
+## Releases
+
+Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). Details: [docs/releasing.md](./docs/releasing.md).
 
 ## Architecture at a glance
 
