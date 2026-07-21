@@ -1,4 +1,5 @@
 mod agent;
+mod agent_terminal;
 mod gitx;
 mod ipc;
 mod perf;
@@ -11,6 +12,7 @@ mod vault;
 use std::sync::Arc;
 
 use agent::supervisor::AgentSupervisor;
+use agent_terminal::AgentTerminalManager;
 use gitx::checkpoints::CheckpointEngine;
 use pty::PtyManager;
 use search::SearchManager;
@@ -32,6 +34,7 @@ pub fn run() {
         .manage(Arc::new(CheckpointEngine::default()))
         .manage(Arc::new(SearchManager::default()))
         .manage(Arc::new(PtyManager::default()))
+        .manage(Arc::new(AgentTerminalManager::default()))
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_ready,
             ipc::app::perf_mark,
@@ -78,6 +81,11 @@ pub fn run() {
             ipc::pty::pty_write,
             ipc::pty::pty_resize,
             ipc::pty::pty_close,
+            ipc::agent_term::agent_term_create,
+            ipc::agent_term::agent_term_output,
+            ipc::agent_term::agent_term_wait,
+            ipc::agent_term::agent_term_kill,
+            ipc::agent_term::agent_term_release,
             ipc::sessions::session_list,
             ipc::sessions::session_save,
             ipc::sessions::session_load,

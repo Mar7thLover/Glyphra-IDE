@@ -191,7 +191,12 @@
     "copyRelativePath": "Copy Relative Path",
     "closeTab": "Close Tab",
     "closeOtherTabs": "Close Other Tabs",
-    "closeTabsToRight": "Close Tabs to the Right"
+    "closeTabsToRight": "Close Tabs to the Right",
+    "askAgent": "Agent",
+    "agentReview": "Review selection",
+    "agentExplain": "Explain selection",
+    "agentRewrite": "Rewrite selection",
+    "agentTest": "Add tests"
   },
   "agent": {
     "shortcut": "Agent",
@@ -360,10 +365,17 @@
   },
   "palette": {
     "title": "Command palette",
+    "filesTitle": "Go to file",
     "placeholder": "Type a command…",
+    "filePlaceholder": "Type a file path…",
     "empty": "No matching commands.",
+    "fileEmpty": "No matching files.",
+    "indexing": "Indexing project files…",
     "groupNav": "Navigate",
     "groupAppearance": "Appearance",
+    "groupFiles": "Files",
+    "goToFile": "Go to file…",
+    "switchCommands": "Switch to commands",
     "toggleAgent": "Toggle Agent panel",
     "openAgentsWindow": "Open Agents window",
     "openSettings": "Open Settings",

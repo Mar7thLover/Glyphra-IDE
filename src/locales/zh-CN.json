@@ -191,7 +191,12 @@
     "copyRelativePath": "复制相对路径",
     "closeTab": "关闭标签页",
     "closeOtherTabs": "关闭其他标签页",
-    "closeTabsToRight": "关闭右侧标签页"
+    "closeTabsToRight": "关闭右侧标签页",
+    "askAgent": "Agent",
+    "agentReview": "审阅选区",
+    "agentExplain": "解释选区",
+    "agentRewrite": "重写选区",
+    "agentTest": "补测试"
   },
   "agent": {
     "shortcut": "Agent",
@@ -360,10 +365,17 @@
   },
   "palette": {
     "title": "命令面板",
+    "filesTitle": "转到文件",
     "placeholder": "输入命令…",
+    "filePlaceholder": "输入文件路径…",
     "empty": "没有匹配的命令。",
+    "fileEmpty": "没有匹配的文件。",
+    "indexing": "正在索引项目文件…",
     "groupNav": "导航",
     "groupAppearance": "外观",
+    "groupFiles": "文件",
+    "goToFile": "转到文件…",
+    "switchCommands": "切换到命令",
     "toggleAgent": "切换 Agent 面板",
     "openAgentsWindow": "打开 Agents 独立窗口",
     "openSettings": "打开设置",
