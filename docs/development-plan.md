@@ -1,5 +1,10 @@
 # Glyphra — Agent-First 轻量 IDE 实施计划
 
+> **进度快照（2026-07-21）**  
+> M0 / M1 / M2 / M2.5 **已完成**。当前主线见 [TODO.md](./TODO.md)：M3（多窗口 + 打包 + updater + Release）与审阅 UX R2–R3。  
+> 对外说明：[README](../README.md) · [简体中文](../README.zh-CN.md) · [文档索引](./README.md)。  
+> 自定义 harness 契约以 [harness-api.md](./harness-api.md) 为准（运行时优先原生 CLI 协议 + `scripts/harness-bridge.mjs`，ACP `npx` 适配器作兼容路径）。
+
 ## Context(为什么做)
 
 替代 VSCode 的**以 agentic work 为中心**的文本编辑器兼轻量 IDE:
@@ -126,19 +131,21 @@ interface AgentSession {  // UI 唯一消费面,纯 ACP 语义
 
 ## 里程碑(solo,各 1.5-2 周)
 
-**M0 壳与编辑器**:git init+MIT+README;pnpm+Vite8+React19+TS strict+Tailwind4.2+create-tauri-app;Mica+decorum 标题栏(Win10 降级);CSS 变量主题(明/暗);布局壳(motion 过渡);project_open+最近项目;文件树(virtuoso+notify 增量);CM6(vscode-keymap、语言懒加载、明暗高亮);tabs+脏标记+乐观锁保存;大文件降级;设置骨架;i18n 骨架;ts-rs 管线+drift 校验;tracing 启动 spans+`--smoke` 模式(TTI+进程树 RSS 落 JSON);CI 三平台 build+clippy+vitest+smoke;size-limit。
+> 状态图例：✅ 完成 · 🔶 部分完成 · ⬜ 未开始。细节执行项见 [TODO.md](./TODO.md)。
+
+**M0 壳与编辑器** ✅:git init+MIT+README;pnpm+Vite8+React19+TS strict+Tailwind4.2+create-tauri-app;Mica+decorum 标题栏(Win10 降级);CSS 变量主题(明/暗);布局壳(motion 过渡);project_open+最近项目;文件树(virtuoso+notify 增量);CM6(vscode-keymap、语言懒加载、明暗高亮);tabs+脏标记+乐观锁保存;大文件降级;设置骨架;i18n 骨架;ts-rs 管线+drift 校验;tracing 启动 spans+`--smoke` 模式(TTI+进程树 RSS 落 JSON);CI 三平台 build+clippy+vitest+smoke;size-limit。
 → **退出**:冷启动 <1.2s;空闲 RSS <150MB;首屏 JS <300KB gz;CI 绿。
 → **演示**:秒开 → 打开本仓库 → 开 3 文件切标签 → 切暗色 Mica 生效 → 切中文界面。
 
-**M1 Agent 核心**:supervisor(spawn/env/framing/exit/win32job);TauriStream+sdk 接通;codex-acp 全链(initialize→authenticate→session/new→prompt);claude-agent-acp 同;`custom-agent` 兼容层(Pi/任意 CLI:命令模板、环境变量、stdio-jsonl/ACP 模式、record/replay);聊天 UI(virtuoso followOutput+streamdown 懒 chunk);工具卡状态机(pending/in_progress/completed/failed,diff/terminal 折叠);计划卡;审批弹窗(键盘 y/n/a);预设映射+setMode;recorder+真实 fixture 各一组;fixture 回放 vitest;Provider 注册表+vault+自定义 Provider 表单/测试连接/CODEX_CONFIG 物化;onboarding(agent_detect+winget/irm/自定义命令安装卡);会话存档 JSONL+列表(原生恢复或上下文续接)。
+**M1 Agent 核心** ✅:supervisor(spawn/env/framing/exit/win32job);TauriStream+sdk 接通;codex-acp 全链(initialize→authenticate→session/new→prompt);claude-agent-acp 同;`custom-agent` 兼容层(Pi/任意 CLI:命令模板、环境变量、stdio-jsonl/ACP 模式、record/replay);聊天 UI(virtuoso followOutput+streamdown 懒 chunk);工具卡状态机(pending/in_progress/completed/failed,diff/terminal 折叠);计划卡;审批弹窗(键盘 y/n/a);预设映射+setMode;recorder+真实 fixture 各一组;fixture 回放 vitest;Provider 注册表+vault+自定义 Provider 表单/测试连接/CODEX_CONFIG 物化;onboarding(agent_detect+winget/irm/自定义命令安装卡);会话存档 JSONL+列表(原生恢复或上下文续接)。
 → **退出**:两家真流跑通;fixture 测试零 LLM 全绿;1k tokens/s 注入不掉帧;自定义 Provider 经 OpenRouter 真连成功且 `~/.codex/config.toml` 校验和不变。
 → **演示**:onboarding 检出 CLI → "标准"预设让 Claude 小重构 → 审批写文件 → 切 Codex+OpenRouter 自定义端点 → 重启后会话列表可见。
 
-**M2 评审与终端**:checkpoints.rs shadow repo(`GIT_DIR=%LOCALAPPDATA%/Glyphra/checkpoints/<hash>/git` + `GIT_WORK_TREE=<ws>` + 临时 GIT_INDEX_FILE;excludes 合并+嵌套 .git 探测);**三层预像:L1 ACP fs 写前捕获 / L2 git-clean 文件取 `git show HEAD:` / L3 turn 前仅快照脏文件集**;每 turn 粒度(非 Cline 的每 tool-call);评审队列(按 turn 分组,±徽标);unifiedMergeView 逐 hunk 接/拒(拒=还原该 hunk 落盘);turn 级整体还原(shadow checkout);与手工编辑共存(基线=预像,不锁文件);xterm 懒加载+webgl/回退+插件;pty.rs(ConPTY、8ms 合帧、job 归属);命令面板(cmdk);全局搜索(流式批推+虚拟列表+跳转);git 状态徽标;**IME 专项手测**;"编辑型 turn" fixture。
+**M2 评审与终端** ✅（M2.5 harden 亦已合入）:checkpoints.rs shadow repo(`GIT_DIR=%LOCALAPPDATA%/Glyphra/checkpoints/<hash>/git` + `GIT_WORK_TREE=<ws>` + 临时 GIT_INDEX_FILE;excludes 合并+嵌套 .git 探测);**三层预像:L1 ACP fs 写前捕获 / L2 git-clean 文件取 `git show HEAD:` / L3 turn 前仅快照脏文件集**;每 turn 粒度(非 Cline 的每 tool-call);评审队列(按 turn 分组,±徽标);unifiedMergeView 逐 hunk 接/拒(拒=还原该 hunk 落盘);turn 级整体还原(shadow checkout);与手工编辑共存(基线=预像,不锁文件);xterm 懒加载+webgl/回退+插件;pty.rs(ConPTY、8ms 合帧、job 归属);命令面板(cmdk);全局搜索(流式批推+虚拟列表+跳转);git 状态徽标;**IME 专项手测**;"编辑型 turn" fixture。
 → **退出**:50 文件 turn 快照 <1s;逐 hunk 回退字节级精确(fixture 断言);终端回显 p50 <16ms;10 万文件仓热搜 <1.5s;RSS <220MB。
 → **演示**:agent 改 6 文件 → 队列逐文件审 → 拒 2 hunk 收其余 → 终端跑测试 → 对 turn2 一键还原。
 
-**M3 多窗口与发布**:welcome 窗口(最近/新建);多窗口(每项目一窗,supervisor 按 (windowLabel, sessionId) 路由,关窗级联 kill);single-instance(二次启动带路径→现存进程开新窗);会话恢复升级(session/load 能力探测);NSIS+图标品牌;portable exe;updater 全链(minisign 密钥、latest.json、staging 演练升级);release.yml(tag→三平台→草稿 Release);zh-CN 全量翻译;微动效打磨(面板滑入、卡片展开、流光标、reduced-motion);键位速查+最小自定义;熔断/stderr 展示打磨;设置页完整;THIRD-PARTY 许可清单(cargo-about + license-checker);smoke 预算收口。
+**M3 多窗口与发布** 🔶 / ⬜（下一步主线）:welcome 窗口(最近/新建)🔶 应用内 welcome 已有、独立窗口与多窗路由未做;多窗口(每项目一窗,supervisor 按 (windowLabel, sessionId) 路由,关窗级联 kill)⬜;single-instance(二次启动带路径→现存进程开新窗)⬜;会话恢复升级(session/load 能力探测)✅;NSIS+图标品牌⬜(`bundle.active` 仍关);portable exe⬜;updater 全链(minisign 密钥、latest.json、staging 演练升级)⬜;release.yml(tag→三平台→草稿 Release)⬜;zh-CN 全量翻译✅(与 en 键对等);微动效打磨(面板滑入、卡片展开、流光标、reduced-motion)🔶;键位速查+最小自定义⬜;熔断/stderr 展示打磨✅;设置页完整🔶;THIRD-PARTY 许可清单(cargo-about + license-checker)⬜;smoke 预算收口🔶。
 → **退出**:installer <30MB;冷启动 <1.5s(CI 实测);空闲 <250MB(1 项目+1 终端);v0.1→v0.2 自动更新在干净虚拟机成功;双窗会话互不串流。
 → **演示**:装 NSIS → welcome 开双项目双窗并行两 agent → 触发内置更新 → 中文界面完整走一轮评审。
 

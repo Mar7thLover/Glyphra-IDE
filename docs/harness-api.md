@@ -1,5 +1,8 @@
 # Glyphra harness integration
 
+> Product overview: [README](../README.md) · [简体中文](../README.zh-CN.md).  
+> This document is the **contract of record** for built-in discovery and custom harnesses.
+
 Glyphra discovers supported executables on `PATH` and records the resolved command, native protocol, and launch arguments. The frontend consumes one ACP-shaped session stream regardless of the transport underneath it.
 
 ## Built-in discovery

@@ -1,5 +1,8 @@
 # IME hand-test checklist (M2+)
 
+> Part of the docs set — see [README](./README.md). Required gate before merging
+> editor / decoration / theme changes that touch CodeMirror composition.
+
 WebView2 + CodeMirror 6 + CJK IMEs (Microsoft Pinyin, Sogou, Rime) need a
 fixed gate before each milestone that ships editor changes.
 

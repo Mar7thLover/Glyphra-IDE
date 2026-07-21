@@ -6,6 +6,9 @@ Glyphra is a single-product **Tauri 2 desktop app**: a React 19 + Vite + TypeScr
 frontend (`src/`) driving a Rust backend (`src-tauri/`). There is one product and no
 separate services — the frontend and the Rust core run together as one app.
 
+Human-facing docs: [README.md](./README.md) (English) · [README.zh-CN.md](./README.zh-CN.md).
+Near-term backlog: [docs/TODO.md](./docs/TODO.md). Doc index: [docs/README.md](./docs/README.md).
+
 ### Running / building / testing
 
 Standard commands live in `package.json` (`scripts`) and `.github/workflows/ci.yml`.

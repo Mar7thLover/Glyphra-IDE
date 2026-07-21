@@ -1,64 +1,127 @@
+<div align="center">
+
+<img src="src-tauri/icons/icon.png" width="96" height="96" alt="Glyphra icon" />
+
 # Glyphra
 
 **The editor built for a world where agents write the code and you steer it.**
 
-Most IDEs were designed for a human typing every line. Glyphra is designed for the workflow that actually happens now: you delegate a task to a coding agent, watch it plan and edit in real time, and spend your attention reviewing and steering rather than typing. Everything else — debuggers, extension marketplaces, task runners — is legacy weight from the pre-agent era, and Glyphra leaves it out on purpose.
+[English](./README.md) · [简体中文](./README.zh-CN.md)
 
-大多数 IDE 是为"人逐行敲代码"设计的。Glyphra 面向的是现在真实发生的工作流:你把任务交给 agent,实时看它规划、编辑,把注意力放在审阅与驾驭上,而不是打字。调试器、插件市场、任务系统这些前 agent 时代的重型设施,Glyphra 有意地不做。
+[Features](#why-glyphra) · [Quick start](#quick-start) · [Architecture](#architecture) · [Docs](#documentation) · [Roadmap](#status--roadmap)
 
-> **Status: pre-alpha / `0.1.0-beta.1`.** APIs and UI are still moving fast — expect breaking changes between commits. Packaged test builds: [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · release guide: [`docs/releasing.md`](./docs/releasing.md).
+<br />
+
+![status](https://img.shields.io/badge/status-pre--alpha-amber?style=flat-square)
+![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+![stack](https://img.shields.io/badge/Tauri_2-React_19-0f172a?style=flat-square)
+![platforms](https://img.shields.io/badge/Windows_·_macOS_·_Linux-CI-green?style=flat-square)
+
+</div>
+
+---
+
+Most IDEs were designed for a human typing every line. Glyphra is designed for the workflow that actually happens now: you delegate a task to a coding agent, watch it plan and edit in real time, and spend your attention **reviewing and steering** rather than typing.
+
+Debuggers, extension marketplaces, and task runners are legacy weight from the pre-agent era — Glyphra leaves them out on purpose. What remains is a feather-light Tauri app: CodeMirror 6, an ACP-normalized agent timeline, and git-checkpointed review as the primary interaction.
+
+> **Status: pre-alpha / `0.1.0-beta.1`.** APIs and UI move fast — expect breaking changes between commits. Packaged test builds: [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · release guide: [`docs/releasing.md`](./docs/releasing.md).
 
 ## Why Glyphra
 
-- **Agent-native, not agent-bolted-on.** Codex, Claude Code, Pi, and OpenCode are auto-detected on `PATH` and driven through their own native protocols — no shim CLI, no lowest-common-denominator prompt format. Every session, regardless of transport, is normalized into one ACP-shaped timeline in the frontend, so the UI you use for Codex is the same UI you use for a custom HTTP harness.
-- **Review is the primary interaction, not an afterthought.** Every agent turn is checkpointed against git. Diffs render hunk-by-hunk with byte-accurate reconstruction, and you accept or reject changes the way you'd review a PR — because that's functionally what you're doing, dozens of times a session.
-- **Live control over a running agent.** Model, reasoning effort, and permission mode (request approval / auto-approve / full access) can change mid-session without tearing down the native thread — Glyphra forwards the change as a live config update (`session/set_config_option`, `turn/start` overrides) instead of restarting the conversation.
-- **Provider usage where you need it.** Subscription and API-key usage — context window consumed, rate-limit windows, credit balances — is normalized into one snapshot per provider, whether it comes from a CLI's own usage command or an API's rate-limit headers.
-- **Actually lightweight.** Tauri 2 + the OS WebView, not Electron. Cold start in about a second, low idle memory, Mica/Acrylic on Windows 11, and a CodeMirror 6 editor core instead of a bundled Monaco.
+| Pillar | What you get |
+| --- | --- |
+| **Agent-native** | Codex, Claude Code, Pi, and OpenCode are auto-detected on `PATH` and driven through their own native protocols — no shim CLI, no lowest-common-denominator prompt format. Custom ACP / JSONL / shell / HTTP harnesses plug into the same UI. |
+| **Review-first** | Every agent turn is checkpointed against a shadow git repo. Diffs render hunk-by-hunk with byte-accurate reconstruction; accept or reject the way you would review a PR. |
+| **Live control** | Model, reasoning effort, Fast mode, and permission level (request approval / auto-approve / full access) can change mid-session without tearing down the native thread. |
+| **Provider usage** | Subscription and API-key usage — context window, rate-limit windows, credits — normalized into one snapshot per provider in the composer. |
+| **Actually light** | Tauri 2 + the OS WebView, not Electron. Cold start around a second, low idle memory, Mica/Acrylic on Windows 11, CodeMirror 6 instead of a bundled Monaco. |
 
 ## What's inside
 
-| Area | What it does |
+| Area | Details |
 | --- | --- |
-| **Harness catalog** | Reads each native CLI's own model list, reasoning-effort options, context window, and permission profile at startup, so the composer reflects what the installed agent actually supports instead of a hardcoded list. |
-| **ACP-normalized sessions** | Codex JSON-RPC, Claude's stream-json, Pi's JSON events, and raw ACP all get bridged into one timeline format ([contract documented in `docs/harness-api.md`](./docs/harness-api.md)) — including custom stdio/JSONL/shell and OpenAI/Anthropic HTTP harnesses you configure yourself. |
-| **Checkpointed review** | Every turn snapshots the workspace through git; the review panel diffs hunk-by-hunk with byte-accurate reconstruction, so partial accepts never corrupt a file. |
-| **Provider usage snapshots** | A Rust↔Node bridge (`scripts/harness-bridge.mjs`) queries each CLI's native usage/rate-limit endpoint and normalizes it into one `ProviderUsageSnapshot` shape shown in the composer. |
-| **Editor core** | CodeMirror 6 with language auto-detection, VS Code-familiar keymap, unsaved-changes guarding, and a command palette — fast and small rather than feature-maximal. |
-| **Native platform feel** | Mica on Windows 11, light/dark themes, a real app menu bar, and PTY-backed terminal sessions per project. |
+| **Harness catalog** | Reads each CLI's native model list, reasoning options, context window, and permission profile at startup so the composer reflects what is actually installed. |
+| **ACP-normalized sessions** | Codex JSON-RPC, Claude stream-json, Pi JSON events, OpenCode ACP, plus custom stdio/JSONL/shell and OpenAI/Anthropic HTTP — all bridged into one timeline ([contract](./docs/harness-api.md)). |
+| **Checkpointed review** | Per-turn shadow snapshots; review panel with turn groups, working-tree diffs, keyboard adjudication (`j/k`, `a/r`), and turn-level restore. |
+| **Session archives** | Local JSONL archives with list / load / delete; live restore prefers native `session/resume` → `session/load`, then continuation context. |
+| **Editor core** | CodeMirror 6, language auto-detection, VS Code-familiar keymap, unsaved-changes guarding, command palette, ripgrep search, PTY terminal. |
+| **Onboarding** | First-run detect for git / Node / agent CLIs with winget · irm · npm install guides. |
 
-## Development
+## Quick start
 
-Prerequisites: [Rust](https://rustup.rs/) (stable), [Node.js](https://nodejs.org/) ≥ 20, [pnpm](https://pnpm.io/), git.
+**Prerequisites:** [Rust](https://rustup.rs/) (stable ≥ ~1.85), [Node.js](https://nodejs.org/) ≥ 20, [pnpm](https://pnpm.io/), git. Agent CLIs (Codex, Claude Code, …) are **not bundled** — install the ones you use; Glyphra discovers them on `PATH`.
 
 ```sh
 pnpm install
 pnpm tauri dev
 ```
 
-Other useful scripts:
+Useful scripts:
 
 ```sh
 pnpm test              # vitest
 pnpm typecheck         # tsc --noEmit
-pnpm check:bindings    # verify generated IPC types match src-tauri
-pnpm check:size        # bundle size budget
+pnpm check:bindings    # generated IPC types vs src-tauri
+pnpm check:size        # frontend bundle budget
 pnpm check:version     # package / tauri / cargo version sync
 pnpm tauri build       # platform installers (see docs/releasing.md)
 ```
+
+Frontend-only Vite preview (no Rust IPC): `pnpm dev` on port `1420`. Backend self-check (no GUI): after a debug build, `./src-tauri/target/debug/glyphra --smoke` prints a JSON status line and exits.
 
 ## Releases
 
 Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). Details: [docs/releasing.md](./docs/releasing.md).
 
-## Architecture at a glance
+## Architecture
 
-- **Frontend:** React 19 + Zustand stores + CodeMirror 6, built with Vite. IPC bindings are generated from Rust types (`ts-rs`) so the TypeScript side stays in sync with the Tauri backend by construction.
-- **Backend:** Rust/Tauri 2. `agent/` owns harness detection, the native catalog, and process supervision; `gitx/` owns checkpoint diffing and the git CLI wrapper; `ipc/` exposes typed commands to the frontend.
-- **Transport:** every harness — native or custom — is bridged into one ACP-shaped event stream (`message.delta`, `plan`, `tool.start`/`tool.end`, `done`, `error`), which is the only shape the frontend needs to understand.
+```
+┌─ Glyphra (Tauri 2) ─────────────────────────────────────────┐
+│  React 19 · Zustand · CodeMirror 6 · streamdown · xterm     │
+│    Agent panel · Review center · Editor · Search · Terminal │
+│    lib/acp AgentBus  ←── typed IPC (ts-rs) ──→  Rust core   │
+│  agent/ · gitx/ · pty · search · vault · providers          │
+└─────────────────────────────────────────────────────────────┘
+        │ native CLI / custom harness (stdio · HTTP)
+        ▼
+  Codex · Claude Code · Pi · OpenCode · your adapter
+```
+
+- **Frontend** owns ACP session semantics; **Rust** owns process supervision, framing, checkpoints, PTY, search, and the OS keyring.
+- Every harness is bridged into one ACP-shaped event stream (`message.delta`, `plan`, `tool.*`, `done`, `error`) — the only shape the UI needs to understand.
+- IPC types are generated with `ts-rs`; `pnpm check:bindings` fails CI on drift.
+
+## Documentation
+
+| Doc | Purpose |
+| --- | --- |
+| [docs/README.md](./docs/README.md) | Documentation index |
+| [docs/TODO.md](./docs/TODO.md) | Near-term execution backlog |
+| [docs/releasing.md](./docs/releasing.md) | Tagged release / packaging guide |
+| [docs/development-plan.md](./docs/development-plan.md) | Full product plan & milestones (zh) |
+| [docs/harness-api.md](./docs/harness-api.md) | Custom harness / provider contract |
+| [docs/git-review-ux-plan.md](./docs/git-review-ux-plan.md) | Review-center UX blueprint |
+| [docs/ime-checklist.md](./docs/ime-checklist.md) | CJK IME hand-test gate for editor changes |
+| [AGENTS.md](./AGENTS.md) | Cursor Cloud / agent contributor notes |
+
+## Status & roadmap
+
+| Milestone | Focus | State |
+| --- | --- | --- |
+| **M0** | Shell, editor, theme, CI, smoke | Done |
+| **M1** | Agent core, providers, onboarding, archives | Done |
+| **M2** | Checkpoints, review, terminal, search, palette | Done |
+| **M2.5** | Circuit breaker, byte-accurate ckpts, IME gate | Done |
+| **M3** | Multi-window, NSIS / portable, updater, release | In progress |
+| **Review R2–R3** | Selection → agent, inline review, commit assist | R2 partially landed |
+
+Post-v1 ideas: basic LSP, VS Code theme import, Gemini CLI, native Codex app-server client (drop Node), git worktree multi-agent board, MCP manager UI, SignPath code signing.
+
+See [docs/TODO.md](./docs/TODO.md) for the ordered near-term backlog.
 
 ## License
 
-[MIT](./LICENSE) — Glyphra itself and all bundled dependencies are MIT-compatible. Agent CLIs (Codex CLI, Claude Code, …) are **not bundled**; Glyphra detects and drives the ones you install.
+[MIT](./LICENSE) — Glyphra and its bundled dependencies are MIT-compatible. Agent CLIs are **not** shipped; Glyphra detects and drives the ones you install.
 
 Custom integration contract: [docs/harness-api.md](./docs/harness-api.md).
