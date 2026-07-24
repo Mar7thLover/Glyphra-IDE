@@ -8,11 +8,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, Manager};
-use tokio::process::Command;
 use ts_rs::TS;
 use uuid::Uuid;
 
-use crate::vault;
+use crate::{process_ext::tokio_command, runtime_resources, vault};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -240,7 +239,7 @@ fn now_epoch() -> u32 {
 
 pub async fn usage(app: &AppHandle, provider_id: &str) -> Result<ProviderUsageSnapshot, String> {
     if provider_id == "__codex_cli__" {
-        let mut snapshot = usage_codex_cli().await?;
+        let mut snapshot = usage_codex_cli(app).await?;
         snapshot.provider_id = provider_id.into();
         return Ok(snapshot);
     }
@@ -258,7 +257,7 @@ pub async fn usage(app: &AppHandle, provider_id: &str) -> Result<ProviderUsageSn
         .clone();
 
     let mut snapshot = match provider.kind {
-        ProviderKind::CodexLogin => usage_codex_cli().await?,
+        ProviderKind::CodexLogin => usage_codex_cli(app).await?,
         ProviderKind::ClaudeSubscription => usage_claude_cli().await?,
         ProviderKind::OpenaiKey | ProviderKind::CustomOpenai | ProviderKind::AnthropicKey => {
             usage_api(app, &provider).await?
@@ -268,18 +267,20 @@ pub async fn usage(app: &AppHandle, provider_id: &str) -> Result<ProviderUsageSn
     Ok(snapshot)
 }
 
-async fn usage_codex_cli() -> Result<ProviderUsageSnapshot, String> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let bridge = root.join("scripts/harness-bridge.mjs");
+async fn usage_codex_cli(app: &AppHandle) -> Result<ProviderUsageSnapshot, String> {
+    let bridge = runtime_resources::resolve(app, "harness-bridge.mjs")?;
+    let runtime_dir = bridge
+        .parent()
+        .ok_or_else(|| "bundled harness bridge has no parent directory".to_string())?;
     let output = tokio::time::timeout(
         Duration::from_secs(45),
-        Command::new("node")
-            .arg(bridge)
+        tokio_command("node")
+            .arg(&bridge)
             .arg("--usage=1")
             .arg("--protocol=codex-app-server")
             .arg("--command=codex")
             .arg("--args=[]")
-            .current_dir(&root)
+            .current_dir(runtime_dir)
             .kill_on_drop(true)
             .output(),
     )
@@ -299,7 +300,7 @@ async fn usage_codex_cli() -> Result<ProviderUsageSnapshot, String> {
 async fn usage_claude_cli() -> Result<ProviderUsageSnapshot, String> {
     let output = tokio::time::timeout(
         Duration::from_secs(45),
-        Command::new("claude")
+        tokio_command("claude")
             .args(["-p", "/usage", "--output-format", "json"])
             .kill_on_drop(true)
             .output(),

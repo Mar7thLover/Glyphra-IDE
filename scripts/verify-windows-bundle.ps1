@@ -1,0 +1,89 @@
+$ErrorActionPreference = "Stop"
+
+$projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$releaseRoot = Join-Path $projectRoot "src-tauri\target\release"
+$bundleRoot = Join-Path $releaseRoot "bundle"
+$maxInstallerBytes = 30MB
+$runtimeNames = @(
+  "codex-app-server-daemon.mjs",
+  "demo-edit-turn.jsonl",
+  "harness-bridge.mjs",
+  "replay-agent.mjs"
+)
+
+$portable = Join-Path $releaseRoot "glyphra.exe"
+$nsis = @(Get-ChildItem -Path (Join-Path $bundleRoot "nsis") -Filter "*.exe" -File -ErrorAction SilentlyContinue)
+$msi = @(Get-ChildItem -Path (Join-Path $bundleRoot "msi") -Filter "*.msi" -File -ErrorAction SilentlyContinue)
+
+if (-not (Test-Path -LiteralPath $portable -PathType Leaf)) {
+  throw "Missing portable executable: $portable"
+}
+if ($nsis.Count -eq 0) {
+  throw "No NSIS installer found under $bundleRoot\nsis"
+}
+if ($msi.Count -eq 0) {
+  throw "No MSI installer found under $bundleRoot\msi"
+}
+
+$nsisManifest = Join-Path $releaseRoot "nsis\x64\installer.nsi"
+$wixManifest = Join-Path $releaseRoot "wix\x64\main.wxs"
+$nsisHooks = Join-Path $projectRoot "src-tauri\windows\hooks.nsh"
+$wixFragment = Join-Path $projectRoot "src-tauri\windows\wix\file-context-menu.wxs"
+foreach ($name in $runtimeNames) {
+  $runtimePath = Join-Path $projectRoot "src-tauri\resources\runtime\$name"
+  if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+    throw "Missing generated runtime resource: $runtimePath"
+  }
+  foreach ($manifest in @($nsisManifest, $wixManifest)) {
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+      throw "Missing generated installer manifest: $manifest"
+    }
+    if (-not (Select-String -LiteralPath $manifest -SimpleMatch $name -Quiet)) {
+      throw "Installer manifest does not include runtime resource ${name}: $manifest"
+    }
+  }
+}
+
+$nsisShellMarkers = @(
+  "SystemFileAssociations\text\shell\Glyphra.OpenFile",
+  "SystemFileAssociations\.rs\shell\Glyphra.OpenFile",
+  "Applications\Glyphra.exe\SupportedTypes"
+)
+foreach ($marker in $nsisShellMarkers) {
+  if (-not (Select-String -LiteralPath $nsisHooks -SimpleMatch $marker -Quiet)) {
+    throw "NSIS installer does not include text-file shell registration: $marker"
+  }
+}
+if (-not (Select-String -LiteralPath $nsisManifest -SimpleMatch "hooks.nsh" -Quiet)) {
+  throw "Generated NSIS installer does not include the Glyphra installer hooks"
+}
+
+$wixShellMarkers = @(
+  "SystemFileAssociations\text\shell\Glyphra.OpenFile",
+  "SystemFileAssociations\.rs\shell\Glyphra.OpenFile",
+  "Applications\Glyphra.exe\SupportedTypes"
+)
+foreach ($marker in $wixShellMarkers) {
+  if (-not (Select-String -LiteralPath $wixFragment -SimpleMatch $marker -Quiet)) {
+    throw "MSI installer does not include text-file shell registration: $marker"
+  }
+}
+if (-not (Select-String -LiteralPath $wixManifest -SimpleMatch "GlyphraTextFileShellIntegration" -Quiet)) {
+  throw "Generated MSI manifest does not include the text-file shell component"
+}
+
+$artifacts = @((Get-Item -LiteralPath $portable)) + $nsis + $msi
+foreach ($artifact in $artifacts) {
+  if ($artifact.Length -le 1MB) {
+    throw "Artifact is unexpectedly small: $($artifact.FullName)"
+  }
+  if ($artifact.Extension -ne ".exe" -or $artifact.FullName -ne $portable) {
+    if ($artifact.Length -gt $maxInstallerBytes) {
+      throw "Installer exceeds the 30 MiB beta budget: $($artifact.FullName)"
+    }
+  }
+  $hash = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash
+  Write-Host ("OK {0} ({1:N2} MiB) SHA256={2}" -f $artifact.FullName, ($artifact.Length / 1MB), $hash)
+}
+
+Write-Host "Windows beta bundle verification passed."

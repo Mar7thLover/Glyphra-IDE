@@ -7,7 +7,8 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build:runtime": "node scripts/build-runtime-resources.mjs",
+    "build": "pnpm build:runtime && tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
@@ -16,7 +17,8 @@
     "check:bindings": "node scripts/check-bindings-drift.mjs",
     "check:version": "node scripts/check-version-sync.mjs",
     "fixture:agent": "node fixtures/replay-agent.mjs --tape=fixtures/tapes/demo-edit-turn.jsonl",
-    "release:build": "pnpm tauri build"
+    "release:build": "pnpm tauri build",
+    "release:windows": "pnpm check:version && pnpm tauri build --bundles nsis,msi && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-bundle.ps1"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",
@@ -53,6 +55,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "esbuild": "^0.27.7",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",

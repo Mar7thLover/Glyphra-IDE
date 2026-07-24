@@ -66,13 +66,14 @@ pnpm check:bindings    # generated IPC types vs src-tauri
 pnpm check:size        # frontend bundle budget
 pnpm check:version     # package / tauri / cargo version sync
 pnpm tauri build       # platform installers (see docs/releasing.md)
+pnpm release:windows   # NSIS + MSI + portable exe, then verify artifacts
 ```
 
 Frontend-only Vite preview (no Rust IPC): `pnpm dev` on port `1420`. Backend self-check (no GUI): after a debug build, `./src-tauri/target/debug/glyphra --smoke` prints a JSON status line and exits.
 
 ## Releases
 
-Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). Details: [docs/releasing.md](./docs/releasing.md).
+Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS + MSI + portable exe), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). The Windows installer registers Explorer's **Open Folder with Glyphra** action and `.glyphra-workspace` files. Details: [docs/releasing.md](./docs/releasing.md).
 
 ## Architecture
 

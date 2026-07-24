@@ -78,7 +78,7 @@ jobs:
             args: ""
             label: linux-x86_64
           - platform: windows-latest
-            args: ""
+            args: "--bundles nsis,msi"
             label: windows-x86_64
 
     runs-on: ${{ matrix.platform }}
@@ -132,7 +132,7 @@ jobs:
             ### Downloads
             | Platform | Installer |
             | --- | --- |
-            | Windows x64 | `.exe` NSIS installer (also ships a portable `.exe` binary) |
+            | Windows x64 | `.exe` NSIS installer, `.msi`, and portable `.exe` |
             | macOS Apple Silicon | `.dmg` / `.app` (`aarch64-apple-darwin`) |
             | macOS Intel | `.dmg` / `.app` (`x86_64-apple-darwin`) |
             | Linux x64 | `.AppImage`, `.deb`, `.rpm` |
@@ -150,6 +150,11 @@ jobs:
           # Windows portable-style binary; macOS/Linux GUI apps still need their installers.
           uploadPlainBinary: true
           projectPath: .
+
+      - name: Verify Windows installer artifacts
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/verify-windows-bundle.ps1
 
   summarize:
     needs: [version, publish-tauri]

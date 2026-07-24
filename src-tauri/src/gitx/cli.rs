@@ -1,12 +1,11 @@
 //! Thin shell-out helpers for git (status / show / readonly exec).
 
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+use crate::process_ext::std_command;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -43,7 +42,7 @@ pub struct GitFileStatus {
 }
 
 pub fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = std_command("git")
         .args(args)
         .current_dir(cwd)
         .output()
@@ -90,7 +89,7 @@ pub fn show_head_file(cwd: &Path, rel_path: &str) -> Result<Option<String>, Stri
 }
 
 pub fn show_head_bytes(cwd: &Path, rel_path: &str) -> Result<Option<Vec<u8>>, String> {
-    let output = Command::new("git")
+    let output = std_command("git")
         .args(["show", &format!("HEAD:{rel_path}")])
         .current_dir(cwd)
         .output()
@@ -172,7 +171,7 @@ pub fn diff_file(cwd: &Path, path: &str, base: &str) -> Result<GitFileDiff, Stri
     };
     let binary = is_binary(&before_bytes) || is_binary(&after_bytes);
 
-    let output = Command::new("git")
+    let output = std_command("git")
         .args([
             "diff",
             "--no-ext-diff",

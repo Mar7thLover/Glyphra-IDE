@@ -1,10 +1,11 @@
 import { Suspense, lazy, useEffect, useRef } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import UnsavedChangesDialog from "@/features/editor/UnsavedChangesDialog";
 import SettingsPage from "@/features/settings/SettingsPage";
-import { ipc } from "@/lib/ipc/ipc";
+import { ipc, type LaunchRequest } from "@/lib/ipc/ipc";
 import { useGitStore } from "@/lib/stores/gitStore";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
@@ -14,7 +15,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
-import { pickProject } from "@/lib/workspaceActions";
+import { openProjectPath, pickFile, pickProject } from "@/lib/workspaceActions";
 
 import ActivityRail from "./ActivityRail";
 import EditorArea from "./EditorArea";
@@ -26,6 +27,16 @@ import TitleBar from "./TitleBar";
 const AgentWorkspace = lazy(() => import("@/features/agent/AgentWorkspace"));
 const CommandPalette = lazy(() => import("@/features/palette/CommandPalette"));
 const mainWindow = getCurrentWindow();
+let launchQueue = Promise.resolve();
+
+function enqueueLaunchRequest(request: LaunchRequest) {
+  launchQueue = launchQueue.then(async () => {
+    const opened = await openProjectPath(request.projectPath, i18n.t("menu.unsavedProject"));
+    if (opened && request.filePath) {
+      await useEditorStore.getState().openFile(request.filePath);
+    }
+  });
+}
 
 function applyBootSettings(theme: string, language: string) {
   if (theme === "light" || theme === "dark") {
@@ -62,21 +73,35 @@ export default function App() {
   const lastProjectPath = useRef<string | null>(null);
 
   useEffect(() => {
-    if (booted.current) return;
-    booted.current = true;
-    void (async () => {
-      try {
-        const settings = await ipc.settingsGet();
-        applyBootSettings(settings.theme, settings.language);
-      } catch {
-        // localStorage FOUC path in index.html already applied a theme
-      }
-      const env = await ipc.appReady();
-      setMica(env.mica);
-      setHostOs(env.os);
-      requestAnimationFrame(() => void ipc.perfMark("tti"));
-      maybeAutoOpen();
-    })();
+    let disposed = false;
+    let unlistenLaunch: (() => void) | undefined;
+    void listen<LaunchRequest>("launch-request", (event) => enqueueLaunchRequest(event.payload))
+      .then(async (unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        unlistenLaunch = unlisten;
+        if (booted.current) return;
+        booted.current = true;
+        try {
+          const settings = await ipc.settingsGet();
+          applyBootSettings(settings.theme, settings.language);
+        } catch {
+          // localStorage FOUC path in index.html already applied a theme
+        }
+        const env = await ipc.appReady();
+        setMica(env.mica);
+        setHostOs(env.os);
+        const launchRequest = await ipc.appTakeLaunchRequest();
+        if (launchRequest) enqueueLaunchRequest(launchRequest);
+        requestAnimationFrame(() => void ipc.perfMark("tti"));
+        maybeAutoOpen();
+      });
+    return () => {
+      disposed = true;
+      unlistenLaunch?.();
+    };
   }, [maybeAutoOpen, setHostOs, setMica]);
 
   useEffect(() => {
@@ -107,7 +132,11 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
         e.preventDefault();
-        void pickProject(i18n.t("empty.openFolder"), i18n.t("menu.unsavedProject"));
+        if (e.shiftKey) {
+          void pickFile(i18n.t("menu.openFile"), i18n.t("menu.unsavedProject"));
+        } else {
+          void pickProject(i18n.t("empty.openFolder"), i18n.t("menu.unsavedProject"));
+        }
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();

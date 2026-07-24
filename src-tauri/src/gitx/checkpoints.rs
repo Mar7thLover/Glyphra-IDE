@@ -17,7 +17,6 @@ use std::{
     hash::{Hash, Hasher},
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -26,6 +25,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use ts_rs::TS;
 use uuid::Uuid;
+
+use crate::process_ext::std_command;
 
 use super::cli::{self, project_root, rel_path, DiffSummary};
 
@@ -134,7 +135,7 @@ fn ensure_shadow_git(root: &Path, project: &Path) -> Result<(), String> {
         return Ok(());
     }
     fs::create_dir_all(&git_dir).map_err(|err| format!("create shadow git: {err}"))?;
-    let status = Command::new("git")
+    let status = std_command("git")
         .args(["init"])
         .env("GIT_DIR", &git_dir)
         .env("GIT_WORK_TREE", project)
@@ -149,7 +150,7 @@ fn ensure_shadow_git(root: &Path, project: &Path) -> Result<(), String> {
                 "node_modules/\n.target/\ndist/\n.git/\n*.png\n*.jpg\n*.lock\n",
             );
             // Initial empty commit so HEAD exists.
-            let _ = Command::new("git")
+            let _ = std_command("git")
                 .args(["commit", "--allow-empty", "-m", "glyphra shadow baseline"])
                 .env("GIT_DIR", &git_dir)
                 .env("GIT_WORK_TREE", project)
@@ -348,13 +349,13 @@ impl CheckpointEngine {
         let git_dir = root.join("git");
         if git_dir.join("HEAD").exists() {
             for file in &files {
-                let _ = Command::new("git")
+                let _ = std_command("git")
                     .args(["add", "--", &file.path])
                     .env("GIT_DIR", &git_dir)
                     .env("GIT_WORK_TREE", &project)
                     .status();
             }
-            let _ = Command::new("git")
+            let _ = std_command("git")
                 .args(["commit", "-m", &format!("turn {}", turn.id)])
                 .env("GIT_DIR", &git_dir)
                 .env("GIT_WORK_TREE", &project)
@@ -481,7 +482,7 @@ impl CheckpointEngine {
                 available: true,
             }
         } else {
-            let output = Command::new("git")
+            let output = std_command("git")
                 .args(["diff", "--no-index", "--no-color", "--unified=0", "--"])
                 .arg(&pre)
                 .arg(&after)

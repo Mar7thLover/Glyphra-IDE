@@ -4,7 +4,7 @@
 use std::{
     collections::HashMap,
     io::Read,
-    process::{Child, Command, Stdio},
+    process::{Child, Stdio},
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc, Mutex,
@@ -15,6 +15,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+use crate::process_ext::std_command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +62,7 @@ pub struct AgentTerminalManager {
 
 impl AgentTerminalManager {
     pub fn create(&self, request: AgentTermCreateRequest) -> Result<String, String> {
-        let mut cmd = Command::new(&request.command);
+        let mut cmd = std_command(&request.command);
         cmd.args(&request.args);
         if let Some(cwd) = request.cwd.as_deref().filter(|value| !value.is_empty()) {
             cmd.current_dir(cwd);
@@ -267,10 +269,17 @@ mod tests {
     #[test]
     fn create_wait_release_echo() {
         let manager = AgentTerminalManager::default();
+        #[cfg(windows)]
+        let (command, args) = (
+            "cmd".to_string(),
+            vec!["/C".to_string(), "echo glyphra-term".to_string()],
+        );
+        #[cfg(not(windows))]
+        let (command, args) = ("echo".to_string(), vec!["glyphra-term".to_string()]);
         let id = manager
             .create(AgentTermCreateRequest {
-                command: "echo".into(),
-                args: vec!["glyphra-term".into()],
+                command,
+                args,
                 cwd: None,
                 env: vec![],
                 output_byte_limit: Some(4096),

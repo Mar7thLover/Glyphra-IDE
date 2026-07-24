@@ -94,9 +94,14 @@
 }
 
 :root[data-mica="true"][data-theme="dark"] {
-  --bg-app: rgba(19, 19, 19, 0.5);
-  --bg-panel: rgba(23, 23, 23, 0.38);
-  --bg-editor: rgba(26, 26, 26, 0.86);
+  /* Keep a hint of Mica, but do not let a light system backdrop wash out the
+     dark theme. These surfaces are also used as the base for translucent
+     Tailwind utilities such as bg-panel/60 and bg-raised/55. */
+  --bg-app: rgba(19, 19, 19, 0.92);
+  --bg-panel: rgba(23, 23, 23, 0.88);
+  --bg-editor: rgba(26, 26, 26, 0.96);
+  --bg-raised: rgba(36, 36, 36, 0.95);
+  --bg-overlay: rgba(30, 30, 30, 0.97);
 }
 
 html,

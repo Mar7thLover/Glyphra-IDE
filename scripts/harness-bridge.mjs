@@ -32,6 +32,7 @@ function childOptions(executable = command) {
     cwd: process.cwd(),
     env: process.env,
     stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
     shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(executable),
   };
 }

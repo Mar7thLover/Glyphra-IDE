@@ -15,7 +15,7 @@ mod export_bindings {
     //! Touch every `#[ts(export)]` type so `cargo test` regenerates
     //! `src/lib/ipc/gen/*.ts` for the drift checker.
     use super::{
-        app::EnvInfo,
+        app::{EnvInfo, LaunchRequest},
         project::*,
         sessions::{SessionArchive, SessionSummary},
         settings::AppSettings,
@@ -43,6 +43,7 @@ mod export_bindings {
     #[test]
     fn export_bindings() {
         EnvInfo::export_all().expect("export EnvInfo");
+        LaunchRequest::export_all().expect("export LaunchRequest");
         ProjectInfo::export_all().expect("export ProjectInfo");
         DirEntryInfo::export_all().expect("export DirEntryInfo");
         EntryKind::export_all().expect("export EntryKind");

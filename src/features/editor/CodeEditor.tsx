@@ -31,6 +31,7 @@ import { useUiStore } from "@/lib/stores/uiStore";
 
 import { editorThemeExtensions } from "./cmTheme";
 import { resolveEditorLanguage } from "./editorLanguage";
+import { modifiedCodeMarkerExtension } from "./modifiedCodeMarkers";
 
 interface CodeEditorProps {
   tab: EditorTab;
@@ -142,6 +143,7 @@ export default function CodeEditor({ tab, onChange, onSave }: CodeEditorProps) {
   } | null>(null);
   const themeCompartment = useRef(new Compartment());
   const prefsCompartment = useRef(new Compartment());
+  const modifiedCodeCompartment = useRef(new Compartment());
   const theme = useUiStore((s) => s.theme);
   const fontSize = usePrefsStore((s) => s.fontSize);
   const tabSize = usePrefsStore((s) => s.tabSize);
@@ -237,6 +239,9 @@ export default function CodeEditor({ tab, onChange, onSave }: CodeEditorProps) {
             editorChrome(fontSize, wordWrap, showLineNumbers, tabSize),
           ),
           themeCompartment.current.of(editorThemeExtensions(theme)),
+          modifiedCodeCompartment.current.of(
+            modifiedCodeMarkerExtension(tab.savedContent, t("editor.modifiedCode")),
+          ),
           imeSafeUpdateListener(queueChange),
           EditorView.updateListener.of((update) => {
             if (update.selectionSet || update.focusChanged || update.docChanged) {
@@ -303,6 +308,16 @@ export default function CodeEditor({ tab, onChange, onSave }: CodeEditorProps) {
       effects: themeCompartment.current.reconfigure(editorThemeExtensions(theme)),
     });
   }, [theme]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: modifiedCodeCompartment.current.reconfigure(
+        modifiedCodeMarkerExtension(tab.savedContent, t("editor.modifiedCode")),
+      ),
+    });
+  }, [tab.savedContent, t]);
 
   useEffect(() => {
     const view = viewRef.current;

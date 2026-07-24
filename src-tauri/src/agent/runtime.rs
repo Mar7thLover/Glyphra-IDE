@@ -1,9 +1,8 @@
-use std::process::Command;
-
 use serde::Serialize;
 use ts_rs::TS;
 
 use super::detect::which;
+use crate::process_ext::std_command;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -48,7 +47,7 @@ fn probe_tool(bin: &str, args: &[&str]) -> ToolStatus {
 }
 
 fn run_version(bin: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(bin).args(args).output().ok()?;
+    let output = std_command(bin).args(args).output().ok()?;
     if !output.status.success() && output.stdout.is_empty() && output.stderr.is_empty() {
         return None;
     }

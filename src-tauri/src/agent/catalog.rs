@@ -1,11 +1,10 @@
-use std::{path::PathBuf, time::Duration};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tokio::process::Command;
 use ts_rs::TS;
 
-use crate::providers;
+use crate::{process_ext::tokio_command, providers, runtime_resources};
 
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -93,13 +92,9 @@ pub async fn load(
     if request.command.trim().is_empty() {
         return Err("harness catalog command is empty".into());
     }
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    let bridge = root.join("scripts/harness-bridge.mjs");
-    if !bridge.exists() {
-        return Err(format!("harness bridge missing at {}", bridge.display()));
-    }
+    let bridge = runtime_resources::resolve(app, "harness-bridge.mjs")?;
 
-    let mut command = Command::new("node");
+    let mut command = tokio_command("node");
     command
         .arg(bridge)
         .arg("--catalog=1")

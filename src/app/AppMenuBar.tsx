@@ -11,7 +11,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore, type SettingsSection } from "@/lib/stores/uiStore";
-import { closeCurrentProject, pickProject } from "@/lib/workspaceActions";
+import { closeCurrentProject, pickFile, pickProject } from "@/lib/workspaceActions";
 
 type MenuId = "file" | "edit" | "view" | "terminal" | "settings" | "help";
 
@@ -100,6 +100,11 @@ export default function AppMenuBar() {
         label: t("menu.openProject"),
         shortcut: "Ctrl+O",
         action: () => pickProject(t("empty.openFolder"), unsaved),
+      },
+      {
+        label: t("menu.openFile"),
+        shortcut: "Ctrl+Shift+O",
+        action: () => pickFile(t("menu.openFile"), unsaved),
       },
       {
         label: t("menu.save"),

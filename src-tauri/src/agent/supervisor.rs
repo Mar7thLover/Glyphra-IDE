@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, Command},
+    process::{Child, ChildStdin},
     sync::Mutex,
 };
 use ts_rs::TS;
@@ -16,7 +16,7 @@ use super::{
     job::{self, JobGuard},
     recorder::{Direction, SessionRecorder},
 };
-use crate::providers;
+use crate::{process_ext::tokio_command, providers, runtime_resources};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -82,10 +82,10 @@ impl AgentSupervisor {
         request: AgentSpawnRequest,
         channel: Channel<AgentIoEvent>,
     ) -> Result<u32, String> {
-        let (program, args) = resolve_command(&request)?;
+        let (program, args) = resolve_command(app, &request)?;
         let session_id = self.next_session_id();
 
-        let mut command = Command::new(&program);
+        let mut command = tokio_command(&program);
         command
             .args(&args)
             .current_dir(&request.cwd)
@@ -237,7 +237,10 @@ impl AgentSupervisor {
     }
 }
 
-fn resolve_command(request: &AgentSpawnRequest) -> Result<(String, Vec<String>), String> {
+fn resolve_command(
+    app: &AppHandle,
+    request: &AgentSpawnRequest,
+) -> Result<(String, Vec<String>), String> {
     let protocol = request.protocol.as_deref().unwrap_or("acp");
     let is_http = matches!(
         protocol,
@@ -252,11 +255,7 @@ fn resolve_command(request: &AgentSpawnRequest) -> Result<(String, Vec<String>),
             return Ok((command.into(), request.args.clone()));
         }
 
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-        let bridge = root.join("scripts/harness-bridge.mjs");
-        if !bridge.exists() {
-            return Err(format!("harness bridge missing at {}", bridge.display()));
-        }
+        let bridge = runtime_resources::resolve(app, "harness-bridge.mjs")?;
         let mut args = vec![
             bridge.to_string_lossy().to_string(),
             format!("--protocol={protocol}"),
@@ -317,14 +316,9 @@ fn resolve_command(request: &AgentSpawnRequest) -> Result<(String, Vec<String>),
             vec!["-y".into(), "@earendil-works/pi-coding-agent".into()],
         )),
         "fixture" => {
-            let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-            let script = root.join("fixtures/replay-agent.mjs");
-            if !script.exists() {
-                return Err(format!("fixture agent missing at {}", script.display()));
-            }
+            let script = runtime_resources::resolve(app, "replay-agent.mjs")?;
             let mut args = vec![script.to_string_lossy().to_string()];
-            let tape = root.join("fixtures/tapes/demo-edit-turn.jsonl");
-            if tape.exists() {
+            if let Ok(tape) = runtime_resources::resolve(app, "demo-edit-turn.jsonl") {
                 args.push(format!("--tape={}", tape.display()));
             }
             Ok(("node".into(), args))

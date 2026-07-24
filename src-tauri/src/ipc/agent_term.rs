@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::agent_terminal::{
-    AgentTermCreateRequest, AgentTermOutput, AgentTerminalManager,
-};
+use crate::agent_terminal::{AgentTermCreateRequest, AgentTermOutput, AgentTerminalManager};
 
 #[tauri::command]
 pub fn agent_term_create(

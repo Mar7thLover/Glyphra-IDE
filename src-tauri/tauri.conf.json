@@ -4,7 +4,7 @@
   "version": "0.1.0-beta.1",
   "identifier": "dev.glyphra.ide",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm build:runtime && pnpm dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
@@ -35,10 +35,27 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
+    "publisher": "Glyphra contributors",
+    "homepage": "https://github.com/Mar7thLover/Glyphra-IDE",
     "shortDescription": "Agent-first, feather-light code studio",
     "longDescription": "Glyphra is an agent-native desktop editor: delegate work to Codex, Claude Code, Pi, or OpenCode, then review and steer changes instead of typing every line.",
     "copyright": "Copyright © 2026 Glyphra contributors",
     "licenseFile": "../LICENSE",
+    "fileAssociations": [
+      {
+        "ext": ["glyphra-workspace"],
+        "name": "Glyphra Workspace",
+        "description": "Glyphra IDE workspace",
+        "mimeType": "application/x-glyphra-workspace",
+        "role": "Editor"
+      }
+    ],
+    "resources": {
+      "resources/runtime/harness-bridge.mjs": "runtime/harness-bridge.mjs",
+      "resources/runtime/codex-app-server-daemon.mjs": "runtime/codex-app-server-daemon.mjs",
+      "resources/runtime/replay-agent.mjs": "runtime/replay-agent.mjs",
+      "resources/runtime/demo-edit-turn.jsonl": "runtime/demo-edit-turn.jsonl"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -48,11 +65,23 @@
     ],
     "windows": {
       "digestAlgorithm": "sha256",
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "wix": {
+        "version": "0.1.0.1",
+        "upgradeCode": "6a301616-fa42-5b9e-9e84-a236c0f5dea5",
+        "language": ["en-US", "zh-CN"],
+        "fragmentPaths": ["./windows/wix/file-context-menu.wxs"],
+        "componentRefs": ["GlyphraTextFileShellIntegration"]
+      },
       "nsis": {
         "installMode": "both",
         "compression": "lzma",
         "displayLanguageSelector": false,
-        "startMenuFolder": "Glyphra"
+        "languages": ["English", "SimpChinese"],
+        "startMenuFolder": "Glyphra",
+        "installerHooks": "./windows/hooks.nsh"
       }
     },
     "macOS": {

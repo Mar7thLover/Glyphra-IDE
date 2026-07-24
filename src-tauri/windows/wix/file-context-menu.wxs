@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="GlyphraTextFileShellIntegration"
+                 Guid="{10BC13ED-7633-450F-9A40-ECBF9070684C}"
+                 Win64="yes">
+        <RegistryValue Root="HKLM"
+                       Key="Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile"
+                       Type="string"
+                       Value="Open with Glyphra"
+                       KeyPath="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile"
+                       Name="Icon"
+                       Type="string"
+                       Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile\command"
+                       Type="string"
+                       Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+
+        <!-- Explicit source/text extensions cover machines that do not expose
+             a PerceivedType=text association for the extension. -->
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.c\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.c\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.c\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.cpp\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.cpp\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.cpp\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.h\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.h\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.h\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.cs\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.cs\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.cs\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.go\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.go\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.go\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.java\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.java\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.java\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.js\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.js\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.js\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.ts\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.ts\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.ts\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.tsx\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.tsx\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.tsx\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.py\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.py\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.py\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.rs\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.rs\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.rs\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.html\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.html\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.html\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.css\shell\Glyphra.OpenFile" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.css\shell\Glyphra.OpenFile" Name="Icon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\SystemFileAssociations\.css\shell\Glyphra.OpenFile\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe" Name="FriendlyAppName" Type="string" Value="Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\DefaultIcon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\shell\open" Name="FriendlyAppName" Type="string" Value="Open with Glyphra" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\shell\open\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".txt" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".md" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".markdown" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".log" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".json" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".jsonc" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".yaml" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".yml" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".toml" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".xml" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".csv" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".ini" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".cfg" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".conf" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".env" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".properties" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".rst" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".adoc" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".tsv" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".c" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".cpp" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".h" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".cs" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".go" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".java" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".js" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".ts" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".tsx" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".py" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".rs" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".html" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".css" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".sql" Type="string" Value="" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

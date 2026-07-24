@@ -13,6 +13,7 @@ export type { CkptTurnMeta } from "./gen/CkptTurnMeta";
 export type { DiffSummary } from "./gen/DiffSummary";
 export type { DirEntryInfo } from "./gen/DirEntryInfo";
 export type { EnvInfo } from "./gen/EnvInfo";
+export type { LaunchRequest } from "./gen/LaunchRequest";
 export type { FileReadResult } from "./gen/FileReadResult";
 export type { FileWriteResult } from "./gen/FileWriteResult";
 export type { FsEvent } from "./gen/FsEvent";
@@ -44,6 +45,7 @@ import type { CkptHunkSummary } from "./gen/CkptHunkSummary";
 import type { CkptTurnMeta } from "./gen/CkptTurnMeta";
 import type { DirEntryInfo } from "./gen/DirEntryInfo";
 import type { EnvInfo } from "./gen/EnvInfo";
+import type { LaunchRequest } from "./gen/LaunchRequest";
 import type { FileReadResult } from "./gen/FileReadResult";
 import type { FileWriteResult } from "./gen/FileWriteResult";
 import type { FsEvent } from "./gen/FsEvent";
@@ -63,6 +65,7 @@ import type { SessionSummary } from "./gen/SessionSummary";
 
 export const ipc = {
   appReady: () => invoke<EnvInfo>("app_ready"),
+  appTakeLaunchRequest: () => invoke<LaunchRequest | null>("app_take_launch_request"),
   perfMark: (name: string) => invoke<void>("perf_mark", { name }),
   windowOpenAgent: () => invoke<void>("window_open_agent"),
   windowFocusMain: () => invoke<void>("window_focus_main"),

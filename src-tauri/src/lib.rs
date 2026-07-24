@@ -3,8 +3,10 @@ mod agent_terminal;
 mod gitx;
 mod ipc;
 mod perf;
+mod process_ext;
 mod providers;
 mod pty;
+mod runtime_resources;
 mod search;
 mod state;
 mod vault;
@@ -25,10 +27,19 @@ pub fn run() {
 
     perf::init_tracing();
     let launch = std::time::Instant::now();
+    let args = std::env::args().collect::<Vec<_>>();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let initial_launch = ipc::app::launch_request_from_args(&args, &cwd.to_string_lossy());
 
     tauri::Builder::default()
+        // Must be the first plugin so a secondary process exits before later
+        // plugins can create competing process-level state.
+        .plugin(tauri_plugin_single_instance::init(
+            ipc::app::handle_second_instance,
+        ))
         .plugin(tauri_plugin_dialog::init())
         .manage(perf::Launch(launch))
+        .manage(ipc::app::LaunchState::new(initial_launch))
         .manage(state::AppState::default())
         .manage(Arc::new(AgentSupervisor::default()))
         .manage(Arc::new(CheckpointEngine::default()))
@@ -37,6 +48,7 @@ pub fn run() {
         .manage(Arc::new(AgentTerminalManager::default()))
         .invoke_handler(tauri::generate_handler![
             ipc::app::app_ready,
+            ipc::app::app_take_launch_request,
             ipc::app::perf_mark,
             ipc::app::window_open_agent,
             ipc::app::window_focus_main,

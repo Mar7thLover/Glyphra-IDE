@@ -1,7 +1,9 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use serde::Serialize;
 use ts_rs::TS;
+
+use crate::process_ext::std_command;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -132,7 +134,7 @@ fn supports_protocol(bin: &Path, protocol: &str) -> bool {
         "acp" => &["acp", "--help"],
         _ => &["--help"],
     };
-    Command::new(bin)
+    std_command(bin)
         .args(args)
         .output()
         .map(|output| output.status.success())
@@ -140,7 +142,7 @@ fn supports_protocol(bin: &Path, protocol: &str) -> bool {
 }
 
 fn run_version(bin: &Path, args: &[&str]) -> Option<String> {
-    let output = Command::new(bin).args(args).output().ok()?;
+    let output = std_command(bin).args(args).output().ok()?;
     if !output.status.success() && output.stdout.is_empty() && output.stderr.is_empty() {
         return None;
     }
