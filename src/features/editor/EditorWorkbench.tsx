@@ -215,13 +215,30 @@ export default function EditorWorkbench() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-editor">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-1.5">
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+        <div
+          role="tablist"
+          aria-label={t("editor.openTabs")}
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+        >
           {tabs.map((tab) => {
             const dirty = isEditorTabDirty(tab);
             const selected = tab.path === activePath;
             return (
-              <button
+              // A tab is a container, not a button: it holds its own close
+              // control, and nesting one interactive element inside another
+              // hides the inner one from the keyboard entirely.
+              <div
                 key={tab.path}
+                role="tab"
+                aria-selected={selected}
+                // Roving tabindex — Tab reaches the strip once, then the arrow
+                // keys of the surrounding toolbar move within it.
+                tabIndex={selected ? 0 : -1}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  setActivePath(tab.path);
+                }}
                 draggable
                 onDragStart={(event) => {
                   event.dataTransfer.effectAllowed = "move";
@@ -253,7 +270,9 @@ export default function EditorWorkbench() {
                 title={tab.path}
               >
                 <span className={`truncate ${tab.ephemeral ? "italic" : ""}`}>{tab.name}</span>
-                <span
+                <button
+                  type="button"
+                  aria-label={t("editor.closeTabNamed", { name: tab.name })}
                   onClick={(event) => {
                     event.stopPropagation();
                     void closeTab(tab.path);
@@ -264,8 +283,8 @@ export default function EditorWorkbench() {
                     <span className="absolute size-1.5 rounded-full bg-accent transition-opacity group-hover:opacity-0" />
                   )}
                   <X className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
-                </span>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>

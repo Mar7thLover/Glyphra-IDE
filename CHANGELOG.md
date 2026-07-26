@@ -28,6 +28,15 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
   Patch blocks are now recognised by their content rather than the fence label,
   and `--- /dev/null` entries create new files.
 
+### Fixed
+
+- **Editor tabs are keyboard-reachable.** The close control was a `<span>` click
+  handler nested inside the tab `<button>`, which no keyboard could reach. The
+  strip is now a `tablist` with roving focus and a real close button per tab.
+- Permission prompts, the command palette, and onboarding expose dialog
+  semantics, and the agent error dismissals have accessible names. A static
+  accessibility suite keeps all four checks from regressing.
+
 ## [0.2.0] — 2026-07-25
 
 First stable release. Everything below landed on top of the `0.1.0-beta.1` test

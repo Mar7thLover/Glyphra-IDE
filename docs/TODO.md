@@ -113,7 +113,10 @@ issue.
 - [x] `[agent]` Ctrl+K inline edit and ghost-text completion
 - [x] `[agent]` One-click apply diff from chat through checkpoints/review
 - [ ] `[agent]` Git-worktree multi-agent board
-- [ ] `[hardening]` End-to-end/component test layer and systematic accessibility pass
+- [x] `[hardening]` Systematic accessibility pass, guarded by `src/a11y.test.ts`
+- [ ] `[hardening]` End-to-end/component test layer — needs a decision on adding
+      `jsdom` + a component-testing library, which the dependency-light stance
+      makes a judgement call rather than an obvious yes
 - [ ] `[hardening]` SignPath Foundation code signing
 
 ## Verification gates

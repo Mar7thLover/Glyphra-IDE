@@ -49,15 +49,27 @@ export default function PermissionModal({ prompt, onRespond }: PermissionModalPr
 
   return (
     <div className="absolute inset-0 z-20 grid min-w-0 place-items-end overflow-hidden bg-app/45 p-3 backdrop-blur-[2px]">
-      <div className="glass-float pop-in flex max-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-2xl p-3">
-        <div className="mb-2 flex shrink-0 items-center gap-2 text-xs font-semibold text-ink">
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="agent-permission-title"
+        aria-describedby="agent-permission-body"
+        className="glass-float pop-in flex max-h-full w-full min-w-0 max-w-full flex-col overflow-hidden rounded-2xl p-3"
+      >
+        <div
+          id="agent-permission-title"
+          className="mb-2 flex shrink-0 items-center gap-2 text-xs font-semibold text-ink"
+        >
           <span className="grid size-6 place-items-center rounded-lg bg-accent-soft">
             <ShieldAlert className="size-3.5 text-accent" />
           </span>
           {t("agent.permissionTitle")}
         </div>
         <div className="min-h-0 min-w-0 overflow-y-auto pr-0.5">
-          <p className="mb-1 min-w-0 whitespace-pre-wrap text-xs text-ink-2 [overflow-wrap:anywhere]">
+          <p
+            id="agent-permission-body"
+            className="mb-1 min-w-0 whitespace-pre-wrap text-xs text-ink-2 [overflow-wrap:anywhere]"
+          >
             {prompt.title}
           </p>
           {(prompt.kind ||

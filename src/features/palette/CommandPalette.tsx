@@ -107,7 +107,18 @@ export default function CommandPalette() {
         : t("palette.placeholder");
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-start bg-app/40 px-4 pt-[12vh] backdrop-blur-[2px]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={
+        mode === "files"
+          ? t("palette.filesTitle")
+          : mode === "symbols"
+            ? t("palette.symbolsTitle")
+            : t("palette.title")
+      }
+      className="fixed inset-0 z-50 grid place-items-start bg-app/40 px-4 pt-[12vh] backdrop-blur-[2px]"
+    >
       <Command
         label={
           mode === "files"

@@ -507,7 +507,12 @@ export default function AgentWindowApp() {
                 {error && (
                   <Notice tone="danger">
                     <span className="min-w-0 flex-1">{error}</span>
-                    <button type="button" onClick={clearError} className="shrink-0 hover:opacity-80">
+                    <button
+              type="button"
+              aria-label={t("agent.dismissError")}
+              onClick={clearError}
+              className="shrink-0 hover:opacity-80"
+            >
                       <X className="size-3" />
                     </button>
                   </Notice>
@@ -558,6 +563,7 @@ export default function AgentWindowApp() {
                       <span className="min-w-0 flex-1">{error}</span>
                       <button
                         type="button"
+                        aria-label={t("agent.dismissError")}
                         onClick={clearError}
                         className="shrink-0 hover:opacity-80"
                       >
