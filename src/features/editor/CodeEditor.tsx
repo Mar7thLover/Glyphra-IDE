@@ -1362,6 +1362,14 @@ export default function CodeEditor({
       if (command === "undo") undo(view);
       if (command === "redo") redo(view);
       if (command === "selectAll") selectAll(view);
+      if (command === "goToDefinition") runGoToDefinition(view);
+      if (command === "findReferences") runFindReferences(view);
+      // Rename opens its own input, so it keeps focus rather than handing it
+      // straight back to the document.
+      if (command === "rename") {
+        runRename(view);
+        return;
+      }
       view.focus();
     };
     window.addEventListener(EDITOR_COMMAND_EVENT, onCommand);

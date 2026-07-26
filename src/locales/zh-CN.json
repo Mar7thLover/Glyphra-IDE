@@ -681,6 +681,11 @@
     "openSearch": "在文件中搜索",
     "toggleTerminal": "切换终端",
     "openReview": "打开变更审阅",
-    "toggleTheme": "切换明暗主题"
+    "toggleTheme": "切换明暗主题",
+    "cycleTone": "切换色调：标准 / 柔和 / 高对比",
+    "groupCode": "代码",
+    "goToDefinition": "转到定义",
+    "findReferences": "查找引用",
+    "renameSymbol": "重命名符号"
   }
 }

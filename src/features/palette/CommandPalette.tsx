@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { openAgentsWindow } from "@/lib/agentWindow";
+import { dispatchEditorCommand } from "@/lib/editorCommands";
 import { commandMatches } from "@/lib/keybindings";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import {
@@ -17,7 +18,7 @@ import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useSearchStore } from "@/lib/stores/searchStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
-import { useUiStore } from "@/lib/stores/uiStore";
+import { THEME_VARIANTS, useUiStore } from "@/lib/stores/uiStore";
 
 const itemClass =
   "cursor-pointer rounded-lg px-2.5 py-1.5 text-[12px] text-ink aria-selected:bg-hover";
@@ -30,6 +31,8 @@ export default function CommandPalette() {
   const setOpen = usePaletteStore((s) => s.setOpen);
   const setMode = usePaletteStore((s) => s.setMode);
   const hasProject = useProjectStore((s) => !!s.current);
+  // Editor-scoped commands only make sense when a buffer is actually open.
+  const hasEditor = useEditorStore((s) => s.activePath !== null);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
   const files = useFileIndexStore((s) => s.files);
   const symbols = useFileIndexStore((s) => s.symbols);
@@ -97,6 +100,15 @@ export default function CommandPalette() {
     ui.setTheme(next);
     const lang = i18n.language === "zh-CN" ? "zh-CN" : "en";
     usePrefsStore.getState().persist(next, lang);
+  };
+
+  const cycleVariant = () => {
+    const ui = useUiStore.getState();
+    const order = THEME_VARIANTS;
+    const next = order[(order.indexOf(ui.variant) + 1) % order.length];
+    ui.setVariant(next);
+    const lang = i18n.language === "zh-CN" ? "zh-CN" : "en";
+    usePrefsStore.getState().persist(ui.theme, lang);
   };
 
   const placeholder =
@@ -296,6 +308,27 @@ export default function CommandPalette() {
                   </>
                 )}
               </Command.Group>
+              {hasEditor && (
+                <Command.Group heading={t("palette.groupCode")} className={groupClass}>
+                  {(
+                    [
+                      ["goToDefinition", "palette.goToDefinition", "F12"],
+                      ["findReferences", "palette.findReferences", "Shift F12"],
+                      ["rename", "palette.renameSymbol", "F2"],
+                    ] as const
+                  ).map(([command, label, hint]) => (
+                    <Command.Item
+                      key={command}
+                      value={`${command} ${t(label)}`}
+                      onSelect={() => run(() => dispatchEditorCommand(command))}
+                      className={`${itemClass} flex items-center`}
+                    >
+                      <span>{t(label)}</span>
+                      <span className="ml-auto text-[10px] text-ink-3">{hint}</span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
               <Command.Group heading={t("palette.groupAppearance")} className={groupClass}>
                 <Command.Item
                   value="toggle theme dark light"
@@ -303,6 +336,13 @@ export default function CommandPalette() {
                   className={itemClass}
                 >
                   {t("palette.toggleTheme")}
+                </Command.Item>
+                <Command.Item
+                  value="cycle tone neutral soft contrast"
+                  onSelect={() => run(cycleVariant)}
+                  className={itemClass}
+                >
+                  {t("palette.cycleTone")}
                 </Command.Item>
               </Command.Group>
             </>

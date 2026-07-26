@@ -1,4 +1,5 @@
 import {
+  Braces,
   CircleX,
   GitBranch,
   GitPullRequestArrow,
@@ -10,10 +11,12 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { lspLanguageId, lspLanguageLabel } from "@/features/editor/lspLanguage";
 import { diagnosticCounts } from "@/lib/diagnostics";
 import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { TEXT_ENCODINGS, useEditorStore } from "@/lib/stores/editorStore";
 import { useGitStore } from "@/lib/stores/gitStore";
+import { useLspStore } from "@/lib/stores/lspStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { unresolvedReviewGroupCount, useReviewStore } from "@/lib/stores/reviewStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
@@ -72,6 +75,24 @@ export default function StatusBar() {
     if (!activePath || !docInfo || activeTab?.readOnly) return;
     setLineEnding(activePath, docInfo.eol === "LF" ? "CRLF" : "LF");
   };
+
+  // Language-server state for the active buffer. Nothing renders for file
+  // types with no server, so the bar stays quiet on plain text and markdown.
+  const lspLanguage = activeTab && !activeTab.truncated && !activeTab.longLines
+    ? lspLanguageId(activeTab.name)
+    : null;
+  const lspStatus = useLspStore((s) =>
+    lspLanguage ? (s.statuses[lspLanguage] ?? null) : null,
+  );
+  const lspReady = lspStatus?.state === "ready";
+  const lspLabel = lspLanguage
+    ? (lspStatus?.server ?? lspLanguageLabel(lspLanguage))
+    : null;
+  const lspTitle = !lspStatus
+    ? t("settings.languageServerIdle")
+    : lspReady
+      ? t("settings.languageServerReady")
+      : (lspStatus.message ?? t("settings.languageServerStopped"));
 
   const item =
     "flex h-full items-center gap-1 rounded-md px-1.5 transition-colors hover:bg-hover hover:text-ink-2";
@@ -193,6 +214,17 @@ export default function StatusBar() {
           t("review.title")
         )}
       </button>
+      {lspLabel && (
+        <button
+          type="button"
+          onClick={() => useUiStore.getState().openSettings("editor")}
+          title={lspTitle}
+          className={item}
+        >
+          <Braces className={`size-3 ${lspReady ? "" : "text-ink-3"}`} />
+          {lspLabel}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => {

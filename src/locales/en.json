@@ -681,6 +681,11 @@
     "openSearch": "Search in files",
     "toggleTerminal": "Toggle Terminal",
     "openReview": "Open change review",
-    "toggleTheme": "Toggle light / dark theme"
+    "toggleTheme": "Toggle light / dark theme",
+    "cycleTone": "Cycle tone: neutral / soft / contrast",
+    "groupCode": "Code",
+    "goToDefinition": "Go to definition",
+    "findReferences": "Find references",
+    "renameSymbol": "Rename symbol"
   }
 }

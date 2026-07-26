@@ -34,6 +34,10 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
   history. Worktrees are created under Glyphra's app data directory rather than
   inside the repository, and the primary checkout can never be removed.
 
+- **Discoverability for the new surfaces** — go to definition, find references
+  and rename symbol are in the command palette with their shortcuts, alongside a
+  tone cycler; the status bar shows which language server is serving the active
+  file and links to its settings.
 - **Tonal theme variants** — **Neutral**, **Soft** and **Contrast**, layered on
   top of light/dark in **Settings → Personal**. All three are achromatic by
   design: they redistribute the gray ramp and never introduce a hue. Contrast
