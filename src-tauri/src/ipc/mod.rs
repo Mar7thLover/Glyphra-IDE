@@ -5,6 +5,7 @@ pub mod ckpt;
 pub mod diagnostics;
 pub mod editorconfig;
 pub mod git;
+pub mod lsp;
 pub mod mcp;
 pub mod project;
 pub mod providers;
@@ -42,6 +43,10 @@ mod export_bindings {
     use crate::gitx::{
         checkpoints::{CkptFileContents, CkptFileDiff, CkptHunkSummary, CkptTurnMeta},
         cli::{DiffSummary, GitCommitResult, GitFileDiff, GitFileStatus},
+    };
+    use crate::lsp::{
+        LspCompletionItem, LspDiagnostic, LspDiagnosticsEvent, LspHover, LspLocation,
+        LspServerStatus, LspTextEdit,
     };
     use crate::mcp::{McpServerRecord, McpServerUpsert, McpTransport};
     use crate::providers::{ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert};
@@ -99,6 +104,13 @@ mod export_bindings {
         CkptFileDiff::export_all().expect("export CkptFileDiff");
         CkptFileContents::export_all().expect("export CkptFileContents");
         CkptHunkSummary::export_all().expect("export CkptHunkSummary");
+        LspServerStatus::export_all().expect("export LspServerStatus");
+        LspDiagnostic::export_all().expect("export LspDiagnostic");
+        LspDiagnosticsEvent::export_all().expect("export LspDiagnosticsEvent");
+        LspCompletionItem::export_all().expect("export LspCompletionItem");
+        LspHover::export_all().expect("export LspHover");
+        LspLocation::export_all().expect("export LspLocation");
+        LspTextEdit::export_all().expect("export LspTextEdit");
         SearchHit::export_all().expect("export SearchHit");
         SearchBatch::export_all().expect("export SearchBatch");
         PtyEvent::export_all().expect("export PtyEvent");

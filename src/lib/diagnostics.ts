@@ -1,5 +1,5 @@
 export type DiagnosticSeverity = "error" | "warning" | "info";
-export type DiagnosticSource = "editor" | "build" | "terminal" | "agent";
+export type DiagnosticSource = "editor" | "build" | "terminal" | "agent" | "lsp";
 
 export interface GlyphraDiagnostic {
   id: string;

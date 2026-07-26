@@ -48,7 +48,8 @@ Debuggers, extension marketplaces, and task runners are legacy weight from the p
 | **Editor core** | CodeMirror 6, language auto-detection, VS Code-familiar keymap, unsaved-changes guarding, command palette, ripgrep search, PTY terminal. |
 | **Inline editing** | `Ctrl+K` rewrites the selection in place through a hidden, tool-free agent session — accept with `Enter`, discard with `Esc`. Opt-in ghost-text completion uses the same session. |
 | **Editor comfort** | Minimap, breadcrumbs, sticky scroll, indent guides, bracket colors, `Ctrl+Shift+O` symbol jump, encoding detection, EditorConfig, format-on-save, and VS Code theme JSON import. |
-| **Problems panel** | A diagnostics store fed by builds, terminal output, and agent turns, surfaced in the gutter and a dedicated panel. |
+| **Language servers** | Lazily started per language — completion, hover, go to definition, find references, and rename. Nothing is bundled: install a server on `PATH` and Glyphra picks it up when you open a matching file. |
+| **Problems panel** | A diagnostics store fed by language servers, builds, terminal output, and agent turns, surfaced in the gutter and a dedicated panel. |
 | **MCP manager** | Add, edit, enable, and disable MCP servers from Settings — no hand-edited JSON. |
 | **Updates** | `tauri-plugin-updater` with minisign-signed manifests and an in-app update banner; installers stay unsigned for now. |
 | **Resilience** | Per-window error boundary, file-backed tracing plus `panic.log`, dirty-buffer autosave with hot-exit restore, and an opt-in diagnostic bundle. |
@@ -127,7 +128,7 @@ Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/rel
 | **Review R2–R3** | Selection → agent, inline review, commit assist | Done |
 | **v0.2** | Problems panel, MCP manager, keybindings, theme import, recovery | Done |
 
-Next up: lazy-started LSP (completion, hover, navigation, rename), one-click apply diff from chat, git-worktree multi-agent board, an end-to-end test layer with an accessibility pass, Gemini CLI, a native Rust Codex app-server client (drop Node), and SignPath code signing.
+Next up: one-click apply diff from chat, git-worktree multi-agent board, an end-to-end test layer with an accessibility pass, Gemini CLI, a native Rust Codex app-server client (drop Node), and SignPath code signing.
 
 See [docs/TODO.md](./docs/TODO.md) for the ordered near-term backlog.
 

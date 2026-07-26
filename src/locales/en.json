@@ -156,6 +156,9 @@
       "workbench.search": "Search in files",
       "workbench.review": "Open review",
       "editor.inlineEdit": "Inline edit with agent",
+      "editor.goToDefinition": "Go to definition",
+      "editor.findReferences": "Find references",
+      "editor.rename": "Rename symbol",
       "editor.save": "Save active editor",
       "editor.close": "Close active editor",
       "editor.nextTab": "Next editor tab"
@@ -236,6 +239,14 @@
     "indentGuides": "Indent guides",
     "ghostText": "Inline completion (ghost text)",
     "ghostTextHint": "Suggests the next few lines as you pause typing. Each suggestion costs one agent turn, so it stays off unless you enable it.",
+    "languageServer": "Language servers",
+    "languageServerHint": "Completion, hover, go to definition, references, rename and diagnostics. A server starts only after you open a matching file.",
+    "languageServerLanguages": "Per language",
+    "languageServerReady": "Running",
+    "languageServerMissing": "Not installed",
+    "languageServerStopped": "Stopped",
+    "languageServerIdle": "Not started",
+    "languageServerInstallHint": "Glyphra does not bundle language servers. Install the executable and make sure it is on PATH, then reopen the file.",
     "ghostTextDelay": "Completion delay",
     "ghostTextDelayValue": "{{ms}} ms",
     "terminalWebgl": "Use WebGL terminal renderer",
@@ -370,6 +381,18 @@
     "inlineEditUnchanged": "The agent returned the region unchanged.",
     "inlineEditTooLarge": "Selection is too large for inline edit. Select a smaller region.",
     "inlineEditPending": "Accept or discard the inline edit first."
+  },
+  "lsp": {
+    "close": "Close",
+    "definitions": "Definitions ({{n}})",
+    "references": "References ({{n}})",
+    "noReferences": "No references found.",
+    "renameTitle": "Rename symbol",
+    "renameHint": "Edits open as unsaved buffers — review, then save.",
+    "renameApplied": "Renamed {{edits}} occurrences in {{files}} files. Review and save.",
+    "renameEmpty": "The language server returned no edits for this symbol.",
+    "renameTooManyFiles": "Rename touches {{files}} files, which is more than Glyphra applies at once.",
+    "renameFailed": "Rename failed."
   },
   "agent": {
     "thinking": "Thought",
@@ -592,7 +615,8 @@
       "editor": "Editor",
       "build": "Build",
       "terminal": "Terminal",
-      "agent": "Agent"
+      "agent": "Agent",
+      "lsp": "Language server"
     }
   },
   "search": {

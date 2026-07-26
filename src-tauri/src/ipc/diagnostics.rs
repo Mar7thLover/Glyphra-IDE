@@ -14,8 +14,8 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::{
-    agent::supervisor::AgentSupervisor, agent_terminal::AgentTerminalManager, pty::PtyManager,
-    search::SearchManager,
+    agent::supervisor::AgentSupervisor, agent_terminal::AgentTerminalManager, lsp::LspManager,
+    pty::PtyManager, search::SearchManager,
 };
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
@@ -50,6 +50,7 @@ pub struct ResourceCounts {
     pub agent_terminals: usize,
     pub ptys: usize,
     pub searches: usize,
+    pub language_servers: usize,
 }
 
 #[tauri::command]
@@ -58,12 +59,14 @@ pub async fn diagnostics_resource_counts(
     terminals: State<'_, Arc<AgentTerminalManager>>,
     ptys: State<'_, Arc<PtyManager>>,
     searches: State<'_, Arc<SearchManager>>,
+    language_servers: State<'_, Arc<LspManager>>,
 ) -> Result<ResourceCounts, String> {
     Ok(ResourceCounts {
         agents: supervisor.live_count().await,
         agent_terminals: terminals.session_count(),
         ptys: ptys.live_count()?,
         searches: searches.live_count()?,
+        language_servers: language_servers.live_count().await,
     })
 }
 

@@ -23,6 +23,13 @@ export type { ImportedTheme } from "./gen/ImportedTheme";
 export type { ThemeColorSetting } from "./gen/ThemeColorSetting";
 export type { ThemeTokenSetting } from "./gen/ThemeTokenSetting";
 export type { LaunchRequest } from "./gen/LaunchRequest";
+export type { LspCompletionItem } from "./gen/LspCompletionItem";
+export type { LspDiagnostic } from "./gen/LspDiagnostic";
+export type { LspDiagnosticsEvent } from "./gen/LspDiagnosticsEvent";
+export type { LspHover } from "./gen/LspHover";
+export type { LspLocation } from "./gen/LspLocation";
+export type { LspServerStatus } from "./gen/LspServerStatus";
+export type { LspTextEdit } from "./gen/LspTextEdit";
 export type { MediaPreviewResult } from "./gen/MediaPreviewResult";
 export type { McpServerRecord } from "./gen/McpServerRecord";
 export type { McpServerUpsert } from "./gen/McpServerUpsert";
@@ -88,6 +95,11 @@ import type { PtyEvent } from "./gen/PtyEvent";
 import type { RecentProject } from "./gen/RecentProject";
 import type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
 import type { ResourceCounts } from "./gen/ResourceCounts";
+import type { LspCompletionItem } from "./gen/LspCompletionItem";
+import type { LspHover } from "./gen/LspHover";
+import type { LspLocation } from "./gen/LspLocation";
+import type { LspServerStatus } from "./gen/LspServerStatus";
+import type { LspTextEdit } from "./gen/LspTextEdit";
 import type { SearchBatch } from "./gen/SearchBatch";
 import type { SessionArchive } from "./gen/SessionArchive";
 import type { SessionSummary } from "./gen/SessionSummary";
@@ -140,6 +152,94 @@ export const ipc = {
     invoke<void>("editor_recovery_clear", { projectPath }),
   editorConfigResolve: (path: string) =>
     invoke<EditorConfigSettings>("editor_config_resolve", { path }),
+  lspOpen: (projectPath: string, path: string, languageId: string, content: string) =>
+    invoke<LspServerStatus>("lsp_open", { projectPath, path, languageId, content }),
+  lspChange: (projectPath: string, path: string, languageId: string, content: string) =>
+    invoke<boolean>("lsp_change", { projectPath, path, languageId, content }),
+  lspClose: (projectPath: string, path: string, languageId: string) =>
+    invoke<void>("lsp_close", { projectPath, path, languageId }),
+  lspCompletion: (
+    projectPath: string,
+    path: string,
+    languageId: string,
+    content: string,
+    line: number,
+    character: number,
+  ) =>
+    invoke<LspCompletionItem[]>("lsp_completion", {
+      projectPath,
+      path,
+      languageId,
+      content,
+      line,
+      character,
+    }),
+  lspHover: (
+    projectPath: string,
+    path: string,
+    languageId: string,
+    content: string,
+    line: number,
+    character: number,
+  ) =>
+    invoke<LspHover | null>("lsp_hover", {
+      projectPath,
+      path,
+      languageId,
+      content,
+      line,
+      character,
+    }),
+  lspDefinition: (
+    projectPath: string,
+    path: string,
+    languageId: string,
+    content: string,
+    line: number,
+    character: number,
+  ) =>
+    invoke<LspLocation[]>("lsp_definition", {
+      projectPath,
+      path,
+      languageId,
+      content,
+      line,
+      character,
+    }),
+  lspReferences: (
+    projectPath: string,
+    path: string,
+    languageId: string,
+    content: string,
+    line: number,
+    character: number,
+  ) =>
+    invoke<LspLocation[]>("lsp_references", {
+      projectPath,
+      path,
+      languageId,
+      content,
+      line,
+      character,
+    }),
+  lspRename: (
+    projectPath: string,
+    path: string,
+    languageId: string,
+    content: string,
+    line: number,
+    character: number,
+    newName: string,
+  ) =>
+    invoke<LspTextEdit[]>("lsp_rename", {
+      projectPath,
+      path,
+      languageId,
+      content,
+      line,
+      character,
+      newName,
+    }),
   settingsGet: () => invoke<AppSettings>("settings_get"),
   settingsSet: (settings: AppSettings) => invoke<void>("settings_set", { settings }),
   themeImportVsCode: (path: string) =>

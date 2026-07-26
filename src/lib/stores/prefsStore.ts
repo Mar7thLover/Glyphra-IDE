@@ -33,6 +33,9 @@ export const DEFAULT_KEYBINDINGS: KeybindingSetting[] = [
   { command: "workbench.search", key: "Ctrl+Shift+F", when: "projectOpen" },
   { command: "workbench.review", key: "Ctrl+Shift+R", when: "projectOpen" },
   { command: "editor.inlineEdit", key: "Ctrl+K", when: "editorFocus" },
+  { command: "editor.goToDefinition", key: "F12", when: "editorFocus" },
+  { command: "editor.findReferences", key: "Shift+F12", when: "editorFocus" },
+  { command: "editor.rename", key: "F2", when: "editorFocus" },
   { command: "editor.save", key: "Ctrl+S", when: "editorFocus" },
   { command: "editor.close", key: "Ctrl+W", when: "editorFocus" },
   { command: "editor.nextTab", key: "Ctrl+Tab", when: "editorFocus" },
@@ -53,6 +56,8 @@ export interface GlyphraPrefs {
   indentGuides: boolean;
   ghostText: boolean;
   ghostTextDelayMs: number;
+  languageServer: boolean;
+  languageServerDisabled: string[];
   customTheme: ImportedTheme | null;
   terminalWebgl: boolean;
   defaultMode: AgentPermissionMode;
@@ -82,6 +87,8 @@ export const defaultPrefs: GlyphraPrefs = {
   indentGuides: true,
   ghostText: false,
   ghostTextDelayMs: 400,
+  languageServer: true,
+  languageServerDisabled: [],
   customTheme: null,
   terminalWebgl: false,
   defaultMode: "standard",
@@ -124,6 +131,8 @@ function prefsFromSettings(settings: AppSettings): GlyphraPrefs {
     indentGuides: settings.indentGuides,
     ghostText: settings.ghostText,
     ghostTextDelayMs: settings.ghostTextDelayMs,
+    languageServer: settings.languageServer,
+    languageServerDisabled: [...settings.languageServerDisabled],
     customTheme: settings.customTheme,
     terminalWebgl: settings.terminalWebgl,
     defaultMode: settings.defaultMode as AgentPermissionMode,
@@ -164,6 +173,8 @@ function appSettings(
     indentGuides: prefs.indentGuides,
     ghostText: prefs.ghostText,
     ghostTextDelayMs: prefs.ghostTextDelayMs,
+    languageServer: prefs.languageServer,
+    languageServerDisabled: prefs.languageServerDisabled,
     customTheme: prefs.customTheme,
     terminalWebgl: prefs.terminalWebgl,
     defaultMode: prefs.defaultMode,
@@ -240,6 +251,8 @@ export const usePrefsStore = create<PrefsState>((set, get) => ({
       indentGuides: defaultPrefs.indentGuides,
       ghostText: defaultPrefs.ghostText,
       ghostTextDelayMs: defaultPrefs.ghostTextDelayMs,
+      languageServer: defaultPrefs.languageServer,
+      languageServerDisabled: [...defaultPrefs.languageServerDisabled],
       terminalWebgl: defaultPrefs.terminalWebgl,
     });
     schedulePersist(get());

@@ -5,6 +5,23 @@ All notable changes to Glyphra are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/) with pre-release tags for test builds.
 
+## [Unreleased]
+
+### Added
+
+- **Lazy language servers** — one process per `(window, workspace, language)`,
+  started only after a matching file is opened and retired once its last
+  document closes. Covers completion, hover, go to definition (`F12`), find
+  references (`Shift+F12`), rename (`F2`), and published diagnostics for Rust,
+  TypeScript/JavaScript, Python, Go, C/C++, Java, JSON, HTML, CSS, YAML and Lua.
+  No server is bundled; missing executables surface the install hint in the
+  editor and in **Settings → Editor**, where servers can be toggled globally or
+  per language.
+- Rename lands as unsaved buffers across every touched file rather than writing
+  to disk, so the change goes through the usual review-and-save path.
+- `diagnostics_resource_counts` now reports live language servers, and window
+  close cascades into shutting them down.
+
 ## [0.2.0] — 2026-07-25
 
 First stable release. Everything below landed on top of the `0.1.0-beta.1` test

@@ -84,7 +84,7 @@ export default function FaultDrillPanel() {
       {counts && (
         <p className="mt-2 font-mono text-[10px] text-ink-3">
           agents={counts.agents} agent-terminals={counts.agentTerminals} ptys={counts.ptys} searches=
-          {counts.searches}
+          {counts.searches} language-servers={counts.languageServers}
         </p>
       )}
       {error && <p className="mt-2 text-[10px] text-danger">{error}</p>}

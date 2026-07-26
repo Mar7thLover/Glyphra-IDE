@@ -48,7 +48,8 @@
 | **编辑器内核** | CodeMirror 6、语言自动探测、VS Code 风格键位、未保存保护、命令面板、ripgrep 搜索、PTY 终端。 |
 | **内联编辑** | `Ctrl+K` 用一个隐藏、禁用工具的 Agent 会话就地重写选区 —— `Enter` 采纳、`Esc` 丢弃；可选的幽灵文本补全复用同一会话。 |
 | **编辑器体验** | 缩略图、面包屑、粘性滚动、缩进参考线、括号配色、`Ctrl+Shift+O` 符号跳转、编码探测、EditorConfig、保存时格式化，以及 VS Code 主题 JSON 导入。 |
-| **问题面板** | 诊断存储由构建、终端输出与 agent 回合共同喂入，呈现在 gutter 与独立面板中。 |
+| **语言服务器** | 按语言懒启动，提供补全、悬停、转到定义、查找引用与重命名。不捆绑任何服务器：自行安装并放进 `PATH`，打开对应文件时 Glyphra 自动接管。 |
+| **问题面板** | 诊断存储由语言服务器、构建、终端输出与 agent 回合共同喂入，呈现在 gutter 与独立面板中。 |
 | **MCP 管理** | 在设置中增删改与启停 MCP server，无需手写 JSON。 |
 | **更新** | `tauri-plugin-updater` + minisign 签名清单与应用内更新提示条；安装包本身暂未签名。 |
 | **健壮性** | 每窗口错误边界、落盘 tracing 与 `panic.log`、脏缓冲自动保存与热退出恢复，以及可选的诊断包导出。 |
@@ -125,7 +126,7 @@ pnpm release:windows   # NSIS + MSI + 便携版 exe，并校验产物
 | **审阅 R2–R3** | 选区呼叫 agent、行内呈阅、提交辅助 | 已完成 |
 | **v0.2** | 问题面板、MCP 管理、快捷键自定义、主题导入、恢复 | 已完成 |
 
-接下来：按需启动的 LSP（补全、悬停、跳转、重命名）、从对话一键应用 diff、git worktree 多 agent 看板、端到端测试层与无障碍梳理、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、SignPath 签名。
+接下来：从对话一键应用 diff、git worktree 多 agent 看板、端到端测试层与无障碍梳理、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、SignPath 签名。
 
 有序的近期任务清单见 [docs/TODO.md](./docs/TODO.md)。
 

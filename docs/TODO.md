@@ -5,7 +5,7 @@
 > [development-plan.md](./development-plan.md) and
 > [git-review-ux-plan.md](./git-review-ux-plan.md).
 >
-> Last reviewed: **2026-07-25**. Status reflects the current working tree, not
+> Last reviewed: **2026-07-26**. Status reflects the current working tree, not
 > only the last commit on `main`.
 
 Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` agentic UX.
@@ -99,7 +99,7 @@ Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` ag
 
 ## P3 — post-release roadmap
 
-- [ ] `[editor]` Lazy-started LSP: completion, hover, navigation, references, rename, diagnostics
+- [x] `[editor]` Lazy-started LSP: completion, hover, navigation, references, rename, diagnostics
 - [x] `[editor]` VS Code theme JSON import
 - [x] `[editor]` Minimap, breadcrumbs, sticky scroll, bracket colors and indent guides
 - [x] `[editor]` Full EditorConfig support

@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use tauri::{State, Window};
 
 use crate::lsp::{
-    parse_completion_items, parse_hover, parse_locations, parse_workspace_edit,
-    LspCompletionItem, LspHover, LspLocation, LspManager, LspServerStatus, LspTextEdit,
+    parse_completion_items, parse_hover, parse_locations, parse_workspace_edit, LspCompletionItem,
+    LspHover, LspLocation, LspManager, LspServerStatus, LspTextEdit,
 };
 
 #[tauri::command]

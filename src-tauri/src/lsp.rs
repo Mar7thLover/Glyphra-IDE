@@ -103,6 +103,9 @@ pub struct LspLocation {
 #[ts(export, export_to = "../../src/lib/ipc/gen/LspTextEdit.ts")]
 pub struct LspTextEdit {
     pub path: String,
+    /// 1-based, like [`LspLocation`] and [`LspDiagnostic`] — the protocol's
+    /// 0-based positions are converted at the boundary so every coordinate
+    /// Glyphra hands the frontend counts the same way.
     pub start_line: u32,
     pub start_column: u32,
     pub end_line: u32,
@@ -244,7 +247,16 @@ impl LspManager {
         else {
             return Ok(());
         };
-        server.close_document(&path).await
+        server.close_document(&path).await?;
+        // Servers like rust-analyzer hold hundreds of megabytes. Once the last
+        // document is closed nothing can query them, so retire the process
+        // instead of letting it sit on the idle-memory budget until the window
+        // closes. Reopening a file starts a fresh one.
+        if server.document_count().await == 0 {
+            self.servers.lock().await.remove(&server.key);
+            server.shutdown().await;
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -456,6 +468,10 @@ impl LspServer {
             }),
         )
         .await
+    }
+
+    async fn document_count(&self) -> usize {
+        self.documents.lock().await.len()
     }
 
     async fn close_document(&self, path: &Path) -> Result<(), String> {
@@ -832,21 +848,26 @@ pub fn parse_completion_items(value: Value) -> Vec<LspCompletionItem> {
         .filter_map(|item| {
             let label = item.get("label")?.as_str()?.to_string();
             let text_edit = item.get("textEdit");
-            let insert_text = text_edit
-                .and_then(|edit| edit.get("newText"))
-                .and_then(Value::as_str)
-                .or_else(|| item.get("insertText").and_then(Value::as_str))
-                .unwrap_or(&label);
+            let insert_text = strip_snippet_placeholders(
+                text_edit
+                    .and_then(|edit| edit.get("newText"))
+                    .and_then(Value::as_str)
+                    .or_else(|| item.get("insertText").and_then(Value::as_str))
+                    .unwrap_or(&label),
+            );
             Some(LspCompletionItem {
                 label,
-                detail: item.get("detail").and_then(Value::as_str).map(str::to_owned),
+                detail: item
+                    .get("detail")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 documentation: item.get("documentation").and_then(markup_text),
                 kind: item
                     .get("kind")
                     .and_then(Value::as_u64)
                     .map(completion_kind)
                     .map(str::to_owned),
-                insert_text: strip_snippet_placeholders(insert_text),
+                insert_text,
                 sort_text: item
                     .get("sortText")
                     .and_then(Value::as_str)
@@ -948,10 +969,10 @@ fn push_text_edits(output: &mut Vec<LspTextEdit>, root: &Path, uri: &str, edits:
         };
         output.push(LspTextEdit {
             path: path.to_string_lossy().into_owned(),
-            start_line: number(start, "line"),
-            start_column: number(start, "character"),
-            end_line: number(end, "line"),
-            end_column: number(end, "character"),
+            start_line: number(start, "line").saturating_add(1),
+            start_column: number(start, "character").saturating_add(1),
+            end_line: number(end, "line").saturating_add(1),
+            end_column: number(end, "character").saturating_add(1),
             new_text: new_text.to_string(),
         });
     }
@@ -1127,9 +1148,7 @@ fn install_hint(language_id: &str) -> &'static str {
         }
         "python" => "Install pyright-langserver or python-lsp-server on PATH",
         "go" => "Install gopls and ensure it is on PATH",
-        "c" | "cpp" | "objective-c" | "objective-cpp" => {
-            "Install clangd and ensure it is on PATH"
-        }
+        "c" | "cpp" | "objective-c" | "objective-cpp" => "Install clangd and ensure it is on PATH",
         "java" => "Install Eclipse JDT Language Server (jdtls) on PATH",
         "json" | "html" | "css" | "scss" | "less" => {
             "Install the matching vscode-langservers-extracted server on PATH"
@@ -1153,14 +1172,21 @@ fn normalize_language_id(language_id: &str) -> String {
     language_id.trim().to_ascii_lowercase()
 }
 
+/// `canonicalize` yields extended-length (`\\?\`) paths on Windows. Language
+/// servers echo back plain paths in URIs, and every path here is also compared
+/// against frontend tab paths, so normalize to the plain form at the boundary —
+/// otherwise `path_is_within` silently rejects every diagnostic.
 fn canonical_workspace(root: &Path) -> Result<PathBuf, String> {
     root.canonicalize()
         .map_err(|error| format!("invalid LSP workspace {}: {error}", root.display()))
         .and_then(|root| {
             if root.is_dir() {
-                Ok(root)
+                Ok(crate::paths::simplified(&root))
             } else {
-                Err(format!("LSP workspace is not a directory: {}", root.display()))
+                Err(format!(
+                    "LSP workspace is not a directory: {}",
+                    root.display()
+                ))
             }
         })
 }
@@ -1169,6 +1195,7 @@ fn canonical_document(path: &Path, root: &Path) -> Result<PathBuf, String> {
     let path = path
         .canonicalize()
         .map_err(|error| format!("invalid LSP document {}: {error}", path.display()))?;
+    let path = crate::paths::simplified(&path);
     if !path_is_within(&path, root) {
         return Err("LSP document is outside the project".into());
     }
@@ -1221,6 +1248,36 @@ mod tests {
     }
 
     #[test]
+    fn canonical_paths_survive_a_uri_round_trip() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("main.rs");
+        std::fs::write(&file, "").unwrap();
+
+        let workspace = canonical_workspace(root.path()).unwrap();
+        let document = canonical_document(&file, &workspace).unwrap();
+        let echoed = uri_to_path(&path_to_uri(&document).unwrap()).unwrap();
+
+        // Servers echo back the URI they were handed. On Windows `canonicalize`
+        // yields `\\?\C:\…` while a decoded URI yields `C:\…`, so without
+        // normalizing both to the plain form this containment check fails and
+        // every diagnostic is silently dropped.
+        assert!(path_is_within(&echoed, &workspace));
+        assert!(!workspace.to_string_lossy().starts_with(r"\\?\"));
+        assert!(!document.to_string_lossy().starts_with(r"\\?\"));
+    }
+
+    #[test]
+    fn documents_outside_the_workspace_are_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().parent().unwrap().join("glyphra-lsp-outside.rs");
+        std::fs::write(&outside, "").unwrap();
+        let workspace = canonical_workspace(root.path()).unwrap();
+
+        assert!(canonical_document(&outside, &workspace).is_err());
+        let _ = std::fs::remove_file(outside);
+    }
+
+    #[test]
     fn workspace_edits_are_restricted_to_the_project() {
         let root = tempfile::tempdir().unwrap();
         let inside = root.path().join("inside.rs");
@@ -1248,6 +1305,9 @@ mod tests {
         let edits = parse_workspace_edit(value, root.path());
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "x");
+        // Protocol positions are 0-based; Glyphra reports 1-based everywhere.
+        assert_eq!((edits[0].start_line, edits[0].start_column), (1, 2));
+        assert_eq!((edits[0].end_line, edits[0].end_column), (1, 3));
         let _ = std::fs::remove_file(outside);
     }
 }

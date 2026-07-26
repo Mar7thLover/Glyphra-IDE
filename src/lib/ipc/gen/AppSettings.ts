@@ -11,4 +11,14 @@ ghostText: boolean,
 /**
  * Idle time before a ghost-text request is sent, in milliseconds.
  */
-ghostTextDelayMs: number, customTheme: ImportedTheme | null, terminalWebgl: boolean, defaultMode: string, defaultBackend: string, defaultProviderId: string | null, defaultAgentModel: string | null, defaultReasoningEffort: string | null, defaultContextWindow: number | null, defaultFastMode: boolean, defaultApprovalReviewer: string, openAgentOnProject: boolean, keybindings: Array<KeybindingSetting>, };
+ghostTextDelayMs: number, 
+/**
+ * Lazily started language servers for completion, hover, navigation and
+ * diagnostics. Servers are only spawned once a matching file is opened.
+ */
+languageServer: boolean, 
+/**
+ * Language ids the user has switched off individually, even when
+ * `language_server` is on.
+ */
+languageServerDisabled: Array<string>, customTheme: ImportedTheme | null, terminalWebgl: boolean, defaultMode: string, defaultBackend: string, defaultProviderId: string | null, defaultAgentModel: string | null, defaultReasoningEffort: string | null, defaultContextWindow: number | null, defaultFastMode: boolean, defaultApprovalReviewer: string, openAgentOnProject: boolean, keybindings: Array<KeybindingSetting>, };
