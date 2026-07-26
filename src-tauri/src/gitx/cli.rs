@@ -1,6 +1,10 @@
 //! Thin shell-out helpers for git (status / show / readonly exec).
 
-use std::path::{Path, PathBuf};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -39,6 +43,14 @@ pub struct GitFileStatus {
     pub path: String,
     /// Two-letter porcelain XY status (e.g. `M `, `??`, `A `).
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/ipc/gen/GitCommitResult.ts")]
+pub struct GitCommitResult {
+    pub hash: String,
+    pub summary: String,
 }
 
 pub fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
@@ -246,6 +258,63 @@ pub fn exec_readonly(cwd: &Path, args: &[String]) -> Result<String, String> {
     run_git(cwd, &refs)
 }
 
+pub fn commit_all(cwd: &Path, message: &str) -> Result<GitCommitResult, String> {
+    let message = message.trim();
+    if message.is_empty() {
+        return Err("commit message is empty".into());
+    }
+    if message.len() > 4096 || message.contains('\0') {
+        return Err("commit message is invalid or exceeds 4096 bytes".into());
+    }
+    let top_level = run_git(cwd, &["rev-parse", "--show-toplevel"])?;
+    let top_level = PathBuf::from(top_level.trim())
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve repository root: {err}"))?;
+    let project = cwd
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve project root: {err}"))?;
+    if top_level != project {
+        return Err(format!(
+            "project root {} is not the Git repository root {}",
+            project.display(),
+            top_level.display()
+        ));
+    }
+    if status_porcelain(cwd)?.is_empty() {
+        return Err("working tree has no changes to commit".into());
+    }
+
+    run_git(cwd, &["add", "--all"])?;
+    let mut child = std_command("git")
+        .args(["commit", "--file", "-"])
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("failed to run git commit: {err}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "failed to open git commit stdin".to_string())?
+        .write_all(message.as_bytes())
+        .map_err(|err| format!("failed to write commit message: {err}"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|err| format!("failed to wait for git commit: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let hash = run_git(cwd, &["rev-parse", "HEAD"])?.trim().to_string();
+    Ok(GitCommitResult {
+        hash,
+        summary: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+    })
+}
+
 fn canonicalize_allow_missing(path: &Path) -> PathBuf {
     if let Ok(canonical) = path.canonicalize() {
         return canonical;
@@ -348,6 +417,34 @@ mod tests {
         assert_eq!(result.summary.deletions, 1);
         assert_eq!(result.summary.hunks, 1);
 
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn controlled_commit_stages_all_and_uses_stdin_message() {
+        let root = std::env::temp_dir().join(format!(
+            "glyphra-commit-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        run_git(&root, &["init"]).unwrap();
+        run_git(&root, &["config", "user.name", "Glyphra Test"]).unwrap();
+        run_git(&root, &["config", "user.email", "test@glyphra.local"]).unwrap();
+        std::fs::write(root.join("file.txt"), "first\n").unwrap();
+
+        let result = commit_all(&root, "test: controlled commit\n\nbody").unwrap();
+        assert!(!result.hash.is_empty());
+        assert!(result.summary.contains("controlled commit"));
+        assert!(status_porcelain(&root).unwrap().is_empty());
+        assert_eq!(
+            run_git(&root, &["log", "-1", "--pretty=%B"])
+                .unwrap()
+                .trim(),
+            "test: controlled commit\n\nbody"
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

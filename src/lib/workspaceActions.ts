@@ -2,19 +2,27 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 
 import { useAgentStore } from "@/lib/stores/agentStore";
-import { useEditorStore } from "@/lib/stores/editorStore";
+import { isEditorTabDirty, useEditorStore } from "@/lib/stores/editorStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 function hasDirtyEditors() {
-  return useEditorStore.getState().tabs.some((tab) => tab.content !== tab.savedContent);
+  return useEditorStore.getState().tabs.some(isEditorTabDirty);
 }
 
-async function stopActiveAgent() {
-  if (useAgentStore.getState().session) {
-    await useAgentStore.getState().stop().catch(() => undefined);
-  }
+function samePath(first: string, second: string) {
+  const normalize = (path: string) =>
+    path.replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "");
+  return normalize(first) === normalize(second);
+}
+
+async function stopProjectAgents(projectPath: string) {
+  const state = useAgentStore.getState();
+  const ids = state.liveSessions
+    .filter((session) => session.projectPath === projectPath)
+    .map((session) => session.archiveId);
+  await Promise.all(ids.map((id) => state.closeLiveSession(id)));
 }
 
 export async function pickProject(dialogTitle: string, unsavedPrompt: string) {
@@ -34,8 +42,19 @@ export async function pickFile(dialogTitle: string, unsavedPrompt: string) {
 
 export async function openFilePath(path: string, unsavedPrompt: string) {
   const projectPath = await dirname(path);
-  const opened = await openProjectPath(projectPath, unsavedPrompt);
-  if (!opened) return false;
+  const current = useProjectStore.getState().current;
+  if (current && samePath(current.path, projectPath)) {
+    await useEditorStore.getState().openFile(path);
+    const normalizedPath = path.replace(/\\/g, "/");
+    return useEditorStore
+      .getState()
+      .tabs.some((tab) => tab.path.replace(/\\/g, "/") === normalizedPath);
+  }
+  if (hasDirtyEditors() && !window.confirm(unsavedPrompt)) return false;
+  if (current) await stopProjectAgents(current.path);
+  await useProjectStore.getState().openProject(projectPath);
+  const openedProject = useProjectStore.getState().current;
+  if (!openedProject || !samePath(openedProject.path, projectPath)) return false;
   await useEditorStore.getState().openFile(path);
   const normalizedPath = path.replace(/\\/g, "/");
   return useEditorStore
@@ -46,17 +65,19 @@ export async function openFilePath(path: string, unsavedPrompt: string) {
 /** Open a project requested by a dialog, the CLI, or an OS shell action. */
 export async function openProjectPath(path: string, unsavedPrompt: string) {
   const current = useProjectStore.getState().current;
-  if (current?.path === path) return true;
+  if (current && samePath(current.path, path)) return true;
   if (hasDirtyEditors() && !window.confirm(unsavedPrompt)) return false;
-  await stopActiveAgent();
+  if (current) await stopProjectAgents(current.path);
   await useProjectStore.getState().openProject(path);
-  return useProjectStore.getState().current?.path === path;
+  const openedProject = useProjectStore.getState().current;
+  return Boolean(openedProject && samePath(openedProject.path, path));
 }
 
 export async function closeCurrentProject(unsavedPrompt: string) {
-  if (!useProjectStore.getState().current) return;
+  const current = useProjectStore.getState().current;
+  if (!current) return;
   if (hasDirtyEditors() && !window.confirm(unsavedPrompt)) return;
-  await stopActiveAgent();
+  await stopProjectAgents(current.path);
   await useProjectStore.getState().closeProject();
   useTerminalStore.getState().setOpen(false);
   useUiStore.getState().setAgentOpen(false);

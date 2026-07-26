@@ -34,16 +34,27 @@ if (unique.size !== 1) {
 
 const appVersion = pkg.version;
 const prerelease = appVersion.match(/^(\d+)\.(\d+)\.(\d+)-(?:beta|rc)\.(\d+)$/);
-if (prerelease) {
+const stable = appVersion.match(/^(\d+)\.(\d+)\.(\d+)$/);
+
+// WiX only accepts numeric versions. Prereleases of X.Y.Z map to X.Y.Z.N so each
+// beta upgrades the last; the stable X.Y.Z takes X.Y.Z.0 and must therefore be
+// cut before any prerelease of the same X.Y.Z is published, or MSI will refuse
+// the upgrade.
+if (prerelease || stable) {
   const wixVersion = tauri.bundle?.windows?.wix?.version;
-  const expectedWixVersion = prerelease.slice(1).join(".");
-  if (Number(prerelease[4]) > 65535 || wixVersion !== expectedWixVersion) {
+  const expectedWixVersion = prerelease
+    ? prerelease.slice(1).join(".")
+    : `${stable.slice(1).join(".")}.0`;
+  if ((prerelease && Number(prerelease[4]) > 65535) || wixVersion !== expectedWixVersion) {
     console.error(
       `WiX version mismatch: expected ${expectedWixVersion} for ${appVersion}, got ${wixVersion ?? "<missing>"}.`,
     );
     process.exit(1);
   }
   console.log(`src-tauri/tauri.conf.json (WiX): ${wixVersion}`);
+} else {
+  console.error(`Unrecognized version format: ${appVersion} (expected X.Y.Z or X.Y.Z-beta.N / -rc.N).`);
+  process.exit(1);
 }
 
 console.log(`OK — Glyphra ${[...unique][0]}`);

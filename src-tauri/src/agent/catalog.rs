@@ -93,6 +93,7 @@ pub async fn load(
         return Err("harness catalog command is empty".into());
     }
     let bridge = runtime_resources::resolve(app, "harness-bridge.mjs")?;
+    let cwd = crate::paths::simplified_str(&request.cwd);
 
     let mut command = tokio_command("node");
     command
@@ -105,8 +106,8 @@ pub async fn load(
             serde_json::to_string(&request.args)
                 .map_err(|err| format!("serialize catalog args: {err}"))?
         ))
-        .arg(format!("--cwd={}", request.cwd))
-        .current_dir(&request.cwd)
+        .arg(format!("--cwd={cwd}"))
+        .current_dir(&cwd)
         .kill_on_drop(true);
 
     if let Some(model) = request.model.as_deref().filter(|value| !value.is_empty()) {

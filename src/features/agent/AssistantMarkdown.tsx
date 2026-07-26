@@ -1,9 +1,19 @@
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
 
-export default function AssistantMarkdown({ text }: { text: string }) {
+/**
+ * Assistant/reasoning prose. All typography lives in `.agent-md` (global.css)
+ * because Streamdown ships animations only — no element styling of its own.
+ */
+export default function AssistantMarkdown({
+  text,
+  tone = "normal",
+}: {
+  text: string;
+  tone?: "normal" | "quiet";
+}) {
   return (
-    <div className="agent-md text-ink-2 [&_code]:font-mono [&_p]:my-1 [&_pre]:my-2 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-panel [&_pre]:p-2">
+    <div className={`agent-md${tone === "quiet" ? " agent-md-quiet" : ""}`}>
       <Streamdown mode="streaming">{text}</Streamdown>
     </div>
   );

@@ -18052,6 +18052,112 @@ var prewarmedSessionId = option("prewarmed-session-id") || null;
 var approvalReviewer = option("approval-reviewer", "user");
 var mode = process.env.INITIAL_AGENT_MODE ?? "agent";
 var sessions = /* @__PURE__ */ new Map();
+var claudeReasoningEfforts = ["low", "medium", "high", "xhigh", "max"];
+var claudeModelCatalog = [
+  {
+    id: "default",
+    label: "Default (account recommendation)",
+    description: "Claude Code chooses the recommended model for the signed-in account.",
+    isDefault: true
+  },
+  {
+    id: "best",
+    label: "Best (Fable 5 / Opus 5)",
+    description: "Uses Fable 5 when the account has access; otherwise uses the latest Opus model."
+  },
+  {
+    id: "fable",
+    label: "Claude Fable 5 (latest)",
+    description: "Alias for Claude Fable 5, Anthropic's most capable model for long-running work."
+  },
+  {
+    id: "claude-fable-5",
+    label: "Claude Fable 5 (claude-fable-5)",
+    description: "Pinned Claude Fable 5 model ID. Availability depends on the account and provider."
+  },
+  {
+    id: "opus",
+    label: "Claude Opus 5 (latest)",
+    description: "Alias for the latest Opus model, suited to complex reasoning and agentic coding."
+  },
+  {
+    id: "claude-opus-5",
+    label: "Claude Opus 5 (claude-opus-5)",
+    description: "Pinned Claude Opus 5 model ID."
+  },
+  {
+    id: "claude-opus-4-8",
+    label: "Claude Opus 4.8 (claude-opus-4-8)",
+    description: "Pinned Claude Opus 4.8 model ID. Active legacy release with native 1M context.",
+    supportsFastMode: true
+  },
+  {
+    id: "claude-opus-4-7",
+    label: "Claude Opus 4.7 (claude-opus-4-7)",
+    description: "Pinned Claude Opus 4.7 model ID. Active legacy release.",
+    supportsFastMode: true
+  },
+  {
+    id: "claude-opus-4-6",
+    label: "Claude Opus 4.6 (claude-opus-4-6)",
+    description: "Pinned Claude Opus 4.6 model ID. Active legacy release."
+  },
+  {
+    id: "claude-opus-4-5-20251101",
+    label: "Claude Opus 4.5 (claude-opus-4-5-20251101)",
+    description: "Pinned Claude Opus 4.5 snapshot. Active legacy release."
+  },
+  {
+    id: "claude-opus-4-1-20250805",
+    label: "Claude Opus 4.1 (deprecated \xB7 retires 2026-08-05)",
+    description: "Deprecated but still callable until August 5, 2026."
+  },
+  {
+    id: "opus[1m]",
+    label: "Claude Opus 5 (1M context)",
+    description: "Opus alias with a 1 million-token context window when the account and provider support it."
+  },
+  {
+    id: "sonnet",
+    label: "Claude Sonnet 5 (latest)",
+    description: "Alias for the latest Sonnet model, the balanced choice for daily coding work."
+  },
+  {
+    id: "claude-sonnet-5",
+    label: "Claude Sonnet 5 (claude-sonnet-5)",
+    description: "Pinned Claude Sonnet 5 model ID."
+  },
+  {
+    id: "claude-sonnet-4-6",
+    label: "Claude Sonnet 4.6 (claude-sonnet-4-6)",
+    description: "Pinned Claude Sonnet 4.6 model ID. Active legacy release."
+  },
+  {
+    id: "claude-sonnet-4-5-20250929",
+    label: "Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)",
+    description: "Pinned Claude Sonnet 4.5 snapshot. Active legacy release."
+  },
+  {
+    id: "sonnet[1m]",
+    label: "Claude Sonnet 5 (1M context)",
+    description: "Sonnet alias with a 1 million-token context window when the account and provider support it."
+  },
+  {
+    id: "haiku",
+    label: "Claude Haiku 4.5 (latest)",
+    description: "Alias for the fast and efficient Haiku model."
+  },
+  {
+    id: "claude-haiku-4-5-20251001",
+    label: "Claude Haiku 4.5 (claude-haiku-4-5-20251001)",
+    description: "Pinned Claude Haiku 4.5 model ID."
+  },
+  {
+    id: "opusplan",
+    label: "OpusPlan (Opus plans, Sonnet executes)",
+    description: "Uses Opus while planning, then switches to Sonnet for implementation."
+  }
+];
 function childOptions(executable = command) {
   return {
     cwd: process.cwd(),
@@ -18209,7 +18315,17 @@ async function codexNotification(message) {
     const used = Number(usage.last?.totalTokens ?? usage.total?.totalTokens ?? 0);
     const size = Number(usage.modelContextWindow ?? 0);
     const session = sessions.get(params.threadId);
-    if (session) session.contextUsage = usage;
+    if (session) {
+      session.contextUsage = usage;
+      const total = usage.total ?? {};
+      session.usage = {
+        totalTokens: Number(total.totalTokens ?? 0),
+        inputTokens: Number(total.inputTokens ?? 0),
+        outputTokens: Number(total.outputTokens ?? 0),
+        thoughtTokens: Number(total.reasoningOutputTokens ?? 0),
+        cachedReadTokens: Number(total.cachedInputTokens ?? 0)
+      };
+    }
     if (size > 0) {
       await update(turn.cx, params.threadId, {
         sessionUpdate: "usage_update",
@@ -18325,7 +18441,54 @@ async function ensureCodex() {
   codexPeer.notify("initialized");
   return codexPeer;
 }
-async function codexNewSession(cwd) {
+function codexMcpServers(mcpServers = []) {
+  return Object.fromEntries(mcpServers.flatMap((server) => {
+    if (!server?.name) return [];
+    if (!server.type || server.type === "stdio") {
+      if (!server.command) return [];
+      return [[server.name, {
+        command: server.command,
+        args: server.args ?? [],
+        env: Object.fromEntries((server.env ?? []).map((entry) => [entry.name, entry.value])),
+        enabled: true
+      }]];
+    }
+    if (server.type === "http" || server.type === "sse") {
+      if (!server.url) return [];
+      return [[server.name, {
+        url: server.url,
+        http_headers: Object.fromEntries((server.headers ?? []).map((entry) => [entry.name, entry.value])),
+        enabled: true
+      }]];
+    }
+    return [];
+  }));
+}
+function claudeMcpConfig(mcpServers = []) {
+  return {
+    mcpServers: Object.fromEntries(mcpServers.flatMap((server) => {
+      if (!server?.name) return [];
+      if (!server.type || server.type === "stdio") {
+        if (!server.command) return [];
+        return [[server.name, {
+          command: server.command,
+          args: server.args ?? [],
+          env: Object.fromEntries((server.env ?? []).map((entry) => [entry.name, entry.value]))
+        }]];
+      }
+      if (server.type === "http" || server.type === "sse") {
+        if (!server.url) return [];
+        return [[server.name, {
+          type: server.type,
+          url: server.url,
+          headers: Object.fromEntries((server.headers ?? []).map((entry) => [entry.name, entry.value]))
+        }]];
+      }
+      return [];
+    }))
+  };
+}
+async function codexNewSession(cwd, mcpServers = []) {
   const peer = await ensureCodex();
   const permission = permissionConfig();
   if (process.platform === "win32" && permission.sandbox !== "danger-full-access") {
@@ -18343,13 +18506,14 @@ async function codexNewSession(cwd) {
       ...contextWindow ? {
         model_context_window: contextWindow,
         model_auto_compact_token_limit: Math.floor(contextWindow * 0.9)
-      } : {}
+      } : {},
+      ...mcpServers.length > 0 ? { mcp_servers: codexMcpServers(mcpServers) } : {}
     },
     ephemeral: false
   });
   return result.thread.id;
 }
-async function codexResumeSession(sessionId, cwd) {
+async function codexResumeSession(sessionId, cwd, mcpServers = []) {
   const peer = await ensureCodex();
   const permission = permissionConfig();
   if (process.platform === "win32" && permission.sandbox !== "danger-full-access") {
@@ -18368,7 +18532,8 @@ async function codexResumeSession(sessionId, cwd) {
       ...contextWindow ? {
         model_context_window: contextWindow,
         model_auto_compact_token_limit: Math.floor(contextWindow * 0.9)
-      } : {}
+      } : {},
+      ...mcpServers.length > 0 ? { mcp_servers: codexMcpServers(mcpServers) } : {}
     }
   });
   return result.thread?.id ?? sessionId;
@@ -18408,6 +18573,17 @@ async function ensureWindowsSandbox(peer, cwd) {
 async function codexPrompt(params, cx) {
   const peer = await ensureCodex();
   const session = sessions.get(params.sessionId);
+  if (userText(params).trim().toLowerCase() === "/compact") {
+    await peer.request("thread/compact/start", { threadId: params.sessionId });
+    await update(cx, params.sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Conversation context compacted by Codex." }
+    });
+    return {
+      stopReason: "end_turn",
+      ...session?.usage ? { usage: session.usage } : {}
+    };
+  }
   const permission = permissionConfig();
   const completion = new Promise((resolve, reject) => codexTurns.set(params.sessionId, { cx, resolve, reject, turnId: null }));
   try {
@@ -18428,7 +18604,7 @@ async function codexPrompt(params, cx) {
     const total = usage?.total;
     return {
       stopReason,
-      ...total ? {
+      ...session?.usage ? { usage: session.usage } : total ? {
         usage: {
           totalTokens: Number(total.totalTokens ?? 0),
           inputTokens: Number(total.inputTokens ?? 0),
@@ -18467,8 +18643,10 @@ async function streamProcess(args, params, cx, parser) {
   sessions.get(params.sessionId).active = null;
   if (code !== 0) throw new Error(`${protocol} harness exited (${code})`);
   const usage = sessions.get(params.sessionId)?.contextUsage;
+  const session = sessions.get(params.sessionId);
   return {
     stopReason: "end_turn",
+    ...session?.usage ? { usage: session.usage } : {},
     _meta: {
       glyphraContext: {
         used: Number(usage?.used ?? 0),
@@ -18486,6 +18664,9 @@ async function claudePrompt(params, cx) {
   if (session.model) args.push("--model", session.model);
   if (session.reasoningEffort) args.push("--effort", session.reasoningEffort);
   if (session.fastMode) args.push("--settings", JSON.stringify({ fastMode: true }));
+  if (session.mcpServers?.length) {
+    args.push("--mcp-config", JSON.stringify(claudeMcpConfig(session.mcpServers)));
+  }
   if (session.nativeSessionId) args.push("--resume", session.nativeSessionId);
   args.push(userText(params));
   return streamProcess(args, params, cx, async (event, state) => {
@@ -18513,6 +18694,19 @@ async function claudePrompt(params, cx) {
     }
     if (event.type === "result") {
       const modelUsages = Object.values(event.modelUsage ?? {});
+      const turnUsage = modelUsages.reduce((total, entry) => ({
+        inputTokens: total.inputTokens + Number(entry.inputTokens ?? 0) + Number(entry.cacheReadInputTokens ?? 0) + Number(entry.cacheCreationInputTokens ?? 0),
+        outputTokens: total.outputTokens + Number(entry.outputTokens ?? 0),
+        cachedReadTokens: total.cachedReadTokens + Number(entry.cacheReadInputTokens ?? 0),
+        cachedWriteTokens: total.cachedWriteTokens + Number(entry.cacheCreationInputTokens ?? 0)
+      }), { inputTokens: 0, outputTokens: 0, cachedReadTokens: 0, cachedWriteTokens: 0 });
+      session.usage.inputTokens += turnUsage.inputTokens;
+      session.usage.outputTokens += turnUsage.outputTokens;
+      session.usage.cachedReadTokens += turnUsage.cachedReadTokens;
+      session.usage.cachedWriteTokens += turnUsage.cachedWriteTokens;
+      session.usage.totalTokens = session.usage.inputTokens + session.usage.outputTokens;
+      const turnCost = Number(event.total_cost_usd ?? 0);
+      if (Number.isFinite(turnCost) && turnCost > 0) session.costUsd += turnCost;
       const measured = modelUsages.map((entry) => ({
         used: Number(entry.inputTokens ?? 0) + Number(entry.cacheReadInputTokens ?? 0) + Number(entry.cacheCreationInputTokens ?? 0) + Number(entry.outputTokens ?? 0),
         size: Number(entry.contextWindow ?? 0)
@@ -18522,7 +18716,8 @@ async function claudePrompt(params, cx) {
         await update(cx, params.sessionId, {
           sessionUpdate: "usage_update",
           used: measured.used,
-          size: measured.size
+          size: measured.size,
+          ...session.costUsd > 0 ? { cost: { amount: session.costUsd, currency: "USD" } } : {}
         });
       }
     }
@@ -18600,8 +18795,20 @@ async function httpPrompt(params, cx) {
   if (!response.ok) throw new Error(data.error?.message ?? `${response.status} ${response.statusText}`);
   const text = protocol === "anthropic-messages" ? data.content?.filter((part) => part.type === "text").map((part) => part.text).join("") : protocol === "openai-chat" ? data.choices?.[0]?.message?.content : data.output_text ?? data.output?.flatMap((item) => item.content ?? []).filter((part) => part.type === "output_text").map((part) => part.text).join("");
   session.history.push({ role: "assistant", content: text || "" });
+  const inputTokens = Number(
+    data.usage?.input_tokens ?? data.usage?.prompt_tokens ?? data.usage?.inputTokens ?? 0
+  );
+  const outputTokens = Number(
+    data.usage?.output_tokens ?? data.usage?.completion_tokens ?? data.usage?.outputTokens ?? 0
+  );
+  if (Number.isFinite(inputTokens) && inputTokens >= 0) session.usage.inputTokens += inputTokens;
+  if (Number.isFinite(outputTokens) && outputTokens >= 0) session.usage.outputTokens += outputTokens;
+  session.usage.totalTokens = session.usage.inputTokens + session.usage.outputTokens;
   await update(cx, params.sessionId, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: text || "(empty response)" } });
-  return { stopReason: "end_turn" };
+  return {
+    stopReason: "end_turn",
+    ...session.usage.totalTokens > 0 ? { usage: session.usage } : {}
+  };
 }
 var jsonlChild;
 var jsonlPending = /* @__PURE__ */ new Map();
@@ -18642,10 +18849,34 @@ async function jsonlPrompt(params, cx) {
 `);
   });
 }
-async function newSession(params) {
+function nativeCommands() {
+  if (protocol === "codex-app-server" || protocol === "claude-stream-json") {
+    return [
+      {
+        name: "compact",
+        description: "Compact the current conversation context"
+      },
+      {
+        name: "init",
+        description: "Initialize project instructions for the current workspace",
+        input: { hint: "optional guidance" }
+      }
+    ];
+  }
+  return [];
+}
+async function announceCommands(cx, sessionId) {
+  const availableCommands = nativeCommands();
+  if (!cx || availableCommands.length === 0) return;
+  await update(cx, sessionId, {
+    sessionUpdate: "available_commands_update",
+    availableCommands
+  });
+}
+async function newSession(params, cx) {
   let sessionId;
   try {
-    sessionId = protocol === "codex-app-server" ? prewarmedSessionId ?? await codexNewSession(params.cwd) : crypto.randomUUID();
+    sessionId = protocol === "codex-app-server" ? prewarmedSessionId ?? await codexNewSession(params.cwd, params.mcpServers) : crypto.randomUUID();
   } catch (error51) {
     process.stderr.write(`[harness-bridge] session/new failed: ${error51?.stack ?? error51}
 `);
@@ -18658,16 +18889,27 @@ async function newSession(params) {
     model: initialModel || null,
     reasoningEffort: initialReasoningEffort || null,
     fastMode: initialFastMode,
-    contextUsage: null
+    contextUsage: null,
+    mcpServers: params.mcpServers ?? [],
+    usage: {
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      thoughtTokens: 0,
+      cachedReadTokens: 0,
+      cachedWriteTokens: 0
+    },
+    costUsd: 0
   };
   sessions.set(sessionId, session);
+  await announceCommands(cx, sessionId);
   return { sessionId, configOptions: sessionConfigOptions(session) };
 }
-async function resumeSession(params) {
+async function resumeSession(params, cx) {
   if (protocol !== "codex-app-server") {
     throw new Error(`session/resume is not implemented by bridge protocol ${protocol}`);
   }
-  const sessionId = await codexResumeSession(params.sessionId, params.cwd);
+  const sessionId = await codexResumeSession(params.sessionId, params.cwd, params.mcpServers);
   const session = {
     active: null,
     nativeSessionId: sessionId,
@@ -18675,9 +18917,20 @@ async function resumeSession(params) {
     model: initialModel || null,
     reasoningEffort: initialReasoningEffort || null,
     fastMode: initialFastMode,
-    contextUsage: null
+    contextUsage: null,
+    mcpServers: params.mcpServers ?? [],
+    usage: {
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      thoughtTokens: 0,
+      cachedReadTokens: 0,
+      cachedWriteTokens: 0
+    },
+    costUsd: 0
   };
   sessions.set(sessionId, session);
+  await announceCommands(cx, sessionId);
   return { configOptions: sessionConfigOptions(session) };
 }
 function sessionConfigOptions(session) {
@@ -18829,16 +19082,14 @@ async function readCatalog(cwd) {
   }
   if (protocol === "claude-stream-json") {
     return {
-      models: ["sonnet", "opus", "haiku"].map((id) => ({
-        id,
-        label: id[0].toUpperCase() + id.slice(1),
-        description: `Claude ${id} alias`,
-        reasoningEfforts: ["low", "medium", "high", "xhigh", "max"].map((effort) => ({ id: effort, description: "" })),
+      models: claudeModelCatalog.map((model) => ({
+        ...model,
+        reasoningEfforts: claudeReasoningEfforts.map((id) => ({ id, description: "" })),
         defaultReasoningEffort: "medium",
-        supportsFastMode: id === "opus",
-        isDefault: id === "sonnet"
+        supportsFastMode: Boolean(model.supportsFastMode),
+        isDefault: Boolean(model.isDefault)
       })),
-      defaultModel: "sonnet",
+      defaultModel: "default",
       contextWindow: null,
       supportsContextWindow: false,
       supportsAutoReview: false,
@@ -18954,5 +19205,5 @@ if (option("usage") === "1") {
     },
     agentInfo: { name: `glyphra-${protocol}-bridge`, title, version: "0.1.0" },
     authMethods: []
-  })).onRequest(methods.agent.session.new, (ctx) => newSession(ctx.params)).onRequest(methods.agent.session.resume, (ctx) => resumeSession(ctx.params)).onRequest(methods.agent.authenticate, async () => ({})).onRequest(methods.agent.session.setMode, (ctx) => setMode(ctx.params)).onRequest(methods.agent.session.setConfigOption, (ctx) => setConfigOption(ctx.params)).onRequest(methods.agent.session.prompt, (ctx) => prompt(ctx.params, ctx.client)).onNotification(methods.agent.session.cancel, (ctx) => cancel(ctx.params)).connect(ndJsonStream(output, input));
+  })).onRequest(methods.agent.session.new, (ctx) => newSession(ctx.params, ctx.client)).onRequest(methods.agent.session.resume, (ctx) => resumeSession(ctx.params, ctx.client)).onRequest(methods.agent.authenticate, async () => ({})).onRequest(methods.agent.session.setMode, (ctx) => setMode(ctx.params)).onRequest(methods.agent.session.setConfigOption, (ctx) => setConfigOption(ctx.params)).onRequest(methods.agent.session.prompt, (ctx) => prompt(ctx.params, ctx.client)).onNotification(methods.agent.session.cancel, (ctx) => cancel(ctx.params)).connect(ndJsonStream(output, input));
 }

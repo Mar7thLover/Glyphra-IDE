@@ -16,7 +16,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::process_ext::std_command;
+use crate::{
+    agent::job::{self, JobGuard},
+    process_ext::std_command,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -52,16 +55,21 @@ struct LiveTerm {
     truncated: Arc<Mutex<bool>>,
     exit_code: Arc<Mutex<Option<i32>>>,
     child: Mutex<Option<Child>>,
+    job: Mutex<Option<JobGuard>>,
 }
 
 #[derive(Default)]
 pub struct AgentTerminalManager {
     next_id: AtomicU32,
-    sessions: Mutex<HashMap<String, Arc<LiveTerm>>>,
+    sessions: Mutex<HashMap<(String, String), Arc<LiveTerm>>>,
 }
 
 impl AgentTerminalManager {
-    pub fn create(&self, request: AgentTermCreateRequest) -> Result<String, String> {
+    pub fn create(
+        &self,
+        window_label: &str,
+        request: AgentTermCreateRequest,
+    ) -> Result<String, String> {
         let mut cmd = std_command(&request.command);
         cmd.args(&request.args);
         if let Some(cwd) = request.cwd.as_deref().filter(|value| !value.is_empty()) {
@@ -77,6 +85,10 @@ impl AgentTerminalManager {
         let mut child = cmd
             .spawn()
             .map_err(|err| format!("spawn `{}`: {err}", request.command))?;
+        let job_guard = job::attach_std(&child).unwrap_or_else(|err| {
+            tracing::warn!(target: "agent_terminal", error = %err, "job attach failed");
+            JobGuard::detached()
+        });
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -106,24 +118,30 @@ impl AgentTerminalManager {
             truncated,
             exit_code: Arc::clone(&exit_code),
             child: Mutex::new(Some(child)),
+            job: Mutex::new(Some(job_guard)),
         });
 
         let wait_live = Arc::clone(&live);
         thread::spawn(move || {
-            let status = {
-                let mut guard = match wait_live.child.lock() {
-                    Ok(guard) => guard,
-                    Err(_) => return,
+            let status = loop {
+                let poll = {
+                    let mut guard = match wait_live.child.lock() {
+                        Ok(guard) => guard,
+                        Err(_) => return,
+                    };
+                    match guard.as_mut() {
+                        Some(child) => child.try_wait(),
+                        None => return,
+                    }
                 };
-                match guard.as_mut() {
-                    Some(child) => child.wait().ok(),
-                    None => None,
+                match poll {
+                    Ok(Some(status)) => break status,
+                    Ok(None) => thread::sleep(Duration::from_millis(25)),
+                    Err(_) => return,
                 }
             };
-            if let Some(status) = status {
-                if let Ok(mut code) = wait_live.exit_code.lock() {
-                    *code = status.code().or(Some(1));
-                }
+            if let Ok(mut code) = wait_live.exit_code.lock() {
+                *code = status.code().or(Some(1));
             }
         });
 
@@ -131,22 +149,25 @@ impl AgentTerminalManager {
         self.sessions
             .lock()
             .map_err(|_| "agent terminal lock poisoned".to_string())?
-            .insert(id.clone(), live);
+            .insert((window_label.to_owned(), id.clone()), live);
         Ok(id)
     }
 
-    #[cfg(test)]
     pub fn session_count(&self) -> usize {
         self.sessions.lock().map(|s| s.len()).unwrap_or(0)
     }
 
-    pub fn output(&self, terminal_id: &str) -> Result<AgentTermOutput, String> {
-        let live = self.get(terminal_id)?;
+    pub fn output(&self, window_label: &str, terminal_id: &str) -> Result<AgentTermOutput, String> {
+        let live = self.get(window_label, terminal_id)?;
         snapshot(&live)
     }
 
-    pub fn wait_for_exit(&self, terminal_id: &str) -> Result<AgentTermOutput, String> {
-        let live = self.get(terminal_id)?;
+    pub fn wait_for_exit(
+        &self,
+        window_label: &str,
+        terminal_id: &str,
+    ) -> Result<AgentTermOutput, String> {
+        let live = self.get(window_label, terminal_id)?;
         for _ in 0..7500 {
             if live
                 .exit_code
@@ -161,8 +182,11 @@ impl AgentTerminalManager {
         Err(format!("timed out waiting for terminal `{terminal_id}`"))
     }
 
-    pub fn kill(&self, terminal_id: &str) -> Result<(), String> {
-        let live = self.get(terminal_id)?;
+    pub fn kill(&self, window_label: &str, terminal_id: &str) -> Result<(), String> {
+        let live = self.get(window_label, terminal_id)?;
+        if let Ok(mut job) = live.job.lock() {
+            job.take();
+        }
         if let Some(child) = live
             .child
             .lock()
@@ -179,15 +203,18 @@ impl AgentTerminalManager {
         Ok(())
     }
 
-    pub fn release(&self, terminal_id: &str) -> Result<(), String> {
+    pub fn release(&self, window_label: &str, terminal_id: &str) -> Result<(), String> {
         let live = {
             let mut sessions = self
                 .sessions
                 .lock()
                 .map_err(|_| "agent terminal lock poisoned".to_string())?;
-            sessions.remove(terminal_id)
+            sessions.remove(&(window_label.to_owned(), terminal_id.to_owned()))
         };
         if let Some(live) = live {
+            if let Ok(mut job) = live.job.lock() {
+                job.take();
+            }
             if let Some(mut child) = live
                 .child
                 .lock()
@@ -201,13 +228,65 @@ impl AgentTerminalManager {
         Ok(())
     }
 
-    fn get(&self, terminal_id: &str) -> Result<Arc<LiveTerm>, String> {
+    pub fn kill_window(&self, window_label: &str) -> Result<usize, String> {
+        let sessions = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "agent terminal lock poisoned".to_string())?;
+            let keys = sessions
+                .keys()
+                .filter(|(label, _)| label == window_label)
+                .cloned()
+                .collect::<Vec<_>>();
+            keys.into_iter()
+                .filter_map(|key| sessions.remove(&key))
+                .collect::<Vec<_>>()
+        };
+        let count = sessions.len();
+        stop_sessions(sessions);
+        Ok(count)
+    }
+
+    pub fn kill_all(&self) -> Result<usize, String> {
+        let sessions = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| "agent terminal lock poisoned".to_string())?;
+            std::mem::take(&mut *sessions)
+        };
+        let count = sessions.len();
+        stop_sessions(sessions.into_values());
+        Ok(count)
+    }
+
+    fn get(&self, window_label: &str, terminal_id: &str) -> Result<Arc<LiveTerm>, String> {
         self.sessions
             .lock()
             .map_err(|_| "agent terminal lock poisoned".to_string())?
-            .get(terminal_id)
+            .get(&(window_label.to_owned(), terminal_id.to_owned()))
             .cloned()
             .ok_or_else(|| format!("unknown terminal `{terminal_id}`"))
+    }
+}
+
+fn stop_sessions(sessions: impl IntoIterator<Item = Arc<LiveTerm>>) {
+    for live in sessions {
+        if let Ok(mut job) = live.job.lock() {
+            job.take();
+        }
+        if let Ok(mut child) = live.child.lock() {
+            if let Some(mut child) = child.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+        if let Ok(mut code) = live.exit_code.lock() {
+            if code.is_none() {
+                *code = Some(1);
+            }
+        }
     }
 }
 
@@ -277,18 +356,84 @@ mod tests {
         #[cfg(not(windows))]
         let (command, args) = ("echo".to_string(), vec!["glyphra-term".to_string()]);
         let id = manager
-            .create(AgentTermCreateRequest {
-                command,
-                args,
-                cwd: None,
-                env: vec![],
-                output_byte_limit: Some(4096),
-            })
+            .create(
+                "test-window",
+                AgentTermCreateRequest {
+                    command,
+                    args,
+                    cwd: None,
+                    env: vec![],
+                    output_byte_limit: Some(4096),
+                },
+            )
             .expect("create");
-        let waited = manager.wait_for_exit(&id).expect("wait");
+        let waited = manager.wait_for_exit("test-window", &id).expect("wait");
         assert_eq!(waited.exit_code, Some(0));
         assert!(waited.output.contains("glyphra-term"));
-        manager.release(&id).expect("release");
+        manager.release("test-window", &id).expect("release");
         assert_eq!(manager.session_count(), 0);
+    }
+
+    #[test]
+    fn kill_all_stops_and_releases_long_running_commands() {
+        let manager = AgentTerminalManager::default();
+        #[cfg(windows)]
+        let (command, args) = (
+            "cmd".to_string(),
+            vec!["/C".to_string(), "ping 127.0.0.1 -n 30 > nul".to_string()],
+        );
+        #[cfg(not(windows))]
+        let (command, args) = (
+            "sh".to_string(),
+            vec!["-c".to_string(), "sleep 30".to_string()],
+        );
+        manager
+            .create(
+                "test-window",
+                AgentTermCreateRequest {
+                    command,
+                    args,
+                    cwd: None,
+                    env: vec![],
+                    output_byte_limit: Some(4096),
+                },
+            )
+            .expect("create long-running command");
+
+        assert_eq!(manager.kill_all().expect("kill all"), 1);
+        assert_eq!(manager.session_count(), 0);
+    }
+
+    #[test]
+    fn kill_window_only_stops_matching_commands() {
+        let manager = AgentTerminalManager::default();
+        #[cfg(windows)]
+        let (command, args) = (
+            "cmd".to_string(),
+            vec!["/C".to_string(), "ping 127.0.0.1 -n 30 > nul".to_string()],
+        );
+        #[cfg(not(windows))]
+        let (command, args) = (
+            "sh".to_string(),
+            vec!["-c".to_string(), "sleep 30".to_string()],
+        );
+        for window_label in ["project-a", "project-b"] {
+            manager
+                .create(
+                    window_label,
+                    AgentTermCreateRequest {
+                        command: command.clone(),
+                        args: args.clone(),
+                        cwd: None,
+                        env: vec![],
+                        output_byte_limit: Some(4096),
+                    },
+                )
+                .expect("create long-running command");
+        }
+
+        assert_eq!(manager.kill_window("project-a").expect("kill window"), 1);
+        assert_eq!(manager.session_count(), 1);
+        assert_eq!(manager.kill_all().expect("cleanup"), 1);
     }
 }

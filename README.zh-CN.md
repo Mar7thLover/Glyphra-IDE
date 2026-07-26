@@ -12,7 +12,7 @@
 
 <br />
 
-![status](https://img.shields.io/badge/status-pre--alpha-amber?style=flat-square)
+![release](https://img.shields.io/badge/release-v0.2.0-6366f1?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![stack](https://img.shields.io/badge/Tauri_2-React_19-0f172a?style=flat-square)
 ![platforms](https://img.shields.io/badge/Windows_·_macOS_·_Linux-CI-green?style=flat-square)
@@ -25,7 +25,7 @@
 
 调试器、插件市场、任务系统是前 agent 时代的重型遗产 —— Glyphra 有意不做。留下的是一台极轻的 Tauri 应用：CodeMirror 6、ACP 归一化的 agent 时间线，以及以 git checkpoint 审阅为主交互。
 
-> **状态：pre-alpha / `0.1.0-beta.1`。** API 与 UI 仍在快速变动，提交之间可能不兼容。测试包见 [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · 发布说明见 [`docs/releasing.md`](./docs/releasing.md)。
+> **状态：`0.2.0` —— 第一个正式版。** 签名的应用内更新、checkpoint 审阅与完整编辑器能力均已就绪，可用于日常开发。仍处于 `0.x`：设置项与 harness 契约在小版本之间仍可能调整，应用二进制也尚未做代码签名。安装包见 [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · 更新日志见 [`CHANGELOG.md`](./CHANGELOG.md) · 发布说明见 [`docs/releasing.md`](./docs/releasing.md)。
 
 ## 为什么选 Glyphra
 
@@ -46,6 +46,12 @@
 | **Checkpoint 审阅** | 按 turn 的 shadow 快照；审阅面板含 turn 分组、工作区 diff、键盘裁决（`j/k`、`a/r`）与整轮还原。 |
 | **会话存档** | 本地 JSONL 存档（列表 / 加载 / 删除）；恢复优先原生 `session/resume` → `session/load`，再退回上下文续接。 |
 | **编辑器内核** | CodeMirror 6、语言自动探测、VS Code 风格键位、未保存保护、命令面板、ripgrep 搜索、PTY 终端。 |
+| **内联编辑** | `Ctrl+K` 用一个隐藏、禁用工具的 Agent 会话就地重写选区 —— `Enter` 采纳、`Esc` 丢弃；可选的幽灵文本补全复用同一会话。 |
+| **编辑器体验** | 缩略图、面包屑、粘性滚动、缩进参考线、括号配色、`Ctrl+Shift+O` 符号跳转、编码探测、EditorConfig、保存时格式化，以及 VS Code 主题 JSON 导入。 |
+| **问题面板** | 诊断存储由构建、终端输出与 agent 回合共同喂入，呈现在 gutter 与独立面板中。 |
+| **MCP 管理** | 在设置中增删改与启停 MCP server，无需手写 JSON。 |
+| **更新** | `tauri-plugin-updater` + minisign 签名清单与应用内更新提示条；安装包本身暂未签名。 |
+| **健壮性** | 每窗口错误边界、落盘 tracing 与 `panic.log`、脏缓冲自动保存与热退出恢复，以及可选的诊断包导出。 |
 | **Onboarding** | 首启检测 git / Node / agent CLI，并提供 winget · irm · npm 安装引导。 |
 
 ## 快速开始
@@ -64,6 +70,10 @@ pnpm test              # vitest
 pnpm typecheck         # tsc --noEmit
 pnpm check:bindings    # 生成的 IPC 类型是否与 src-tauri 一致
 pnpm check:size        # 前端包体预算
+pnpm check:version     # package / tauri / cargo 版本一致性
+pnpm licenses:check    # 依赖许可策略与 THIRD-PARTY.md 是否最新
+pnpm tauri build       # 各平台安装包（见 docs/releasing.md）
+pnpm release:windows   # NSIS + MSI + 便携版 exe，并校验产物
 ```
 
 后端自检（无需 GUI）：debug 构建后执行 `./src-tauri/target/debug/glyphra --smoke`，打印一行 JSON 状态后退出。
@@ -94,6 +104,9 @@ pnpm check:size        # 前端包体预算
 | --- | --- |
 | [docs/README.md](./docs/README.md) | 文档索引 |
 | [docs/TODO.md](./docs/TODO.md) | 近期执行 backlog |
+| [docs/releasing.md](./docs/releasing.md) | 打标发布 / 打包指南 |
+| [docs/release-drills.md](./docs/release-drills.md) | 发布前的全新安装、更新与故障演练 |
+| [CHANGELOG.md](./CHANGELOG.md) | 各版本发布说明 |
 | [docs/development-plan.md](./docs/development-plan.md) | 完整产品计划与里程碑 |
 | [docs/harness-api.md](./docs/harness-api.md) | 自定义 harness / Provider 契约 |
 | [docs/git-review-ux-plan.md](./docs/git-review-ux-plan.md) | 审阅中心 UX 蓝图 |
@@ -108,10 +121,11 @@ pnpm check:size        # 前端包体预算
 | **M1** | Agent 核心、Provider、onboarding、存档 | 已完成 |
 | **M2** | Checkpoint、审阅、终端、搜索、命令面板 | 已完成 |
 | **M2.5** | 熔断、字节级 ckpt、IME 门禁 | 已完成 |
-| **M3** | 多窗口、NSIS / portable、updater、Release | 下一步 |
-| **审阅 R2–R3** | 选区呼叫 agent、行内呈阅、提交辅助 | 计划中 |
+| **M3** | 多窗口、NSIS / portable、updater、Release | 已完成 |
+| **审阅 R2–R3** | 选区呼叫 agent、行内呈阅、提交辅助 | 已完成 |
+| **v0.2** | 问题面板、MCP 管理、快捷键自定义、主题导入、恢复 | 已完成 |
 
-v1 之后：基础 LSP、VS Code 主题导入、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、git worktree 多 agent 看板、MCP 管理器 UI、SignPath 签名。
+接下来：按需启动的 LSP（补全、悬停、跳转、重命名）、从对话一键应用 diff、git worktree 多 agent 看板、端到端测试层与无障碍梳理、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、SignPath 签名。
 
 有序的近期任务清单见 [docs/TODO.md](./docs/TODO.md)。
 

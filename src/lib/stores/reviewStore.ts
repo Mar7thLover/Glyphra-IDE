@@ -69,6 +69,34 @@ function checkpointFiles(turns: CkptTurnMeta[]) {
   return turns.flatMap((turn) => turn.files.map((file) => ({ turnId: turn.id, path: file.path })));
 }
 
+export function generateCommitMessage(files: GitFileDiff[]): string {
+  const paths = files.map((file) => file.path.replace(/\\/g, "/"));
+  if (paths.length === 0) return "";
+  const allDocs = paths.every(
+    (path) =>
+      path.toLowerCase().endsWith(".md") ||
+      path.toLowerCase().startsWith("docs/"),
+  );
+  if (allDocs) return "docs: update project documentation";
+  const allTests = paths.every((path) =>
+    /(^|\/)(__tests__|tests?|fixtures)(\/|$)|\.(test|spec)\.[^.]+$/i.test(path),
+  );
+  if (allTests) return "test: update test coverage";
+  if (files.length === 1) {
+    const file = files[0];
+    const verb =
+      file.status === "added" ? "add" : file.status === "deleted" ? "remove" : "update";
+    return `chore: ${verb} ${file.path.replace(/\\/g, "/")}`;
+  }
+  return `chore: update ${files.length} files`;
+}
+
+/** Turns are stored newest-first; restoring this prefix rewinds to before target. */
+export function turnsToRestoreBefore(turns: CkptTurnMeta[], targetId: string) {
+  const targetIndex = turns.findIndex((turn) => turn.id === targetId);
+  return targetIndex < 0 ? [] : turns.slice(0, targetIndex + 1);
+}
+
 function firstPending(
   turns: CkptTurnMeta[],
   decisions: Record<string, ReviewDecision>,
@@ -108,6 +136,7 @@ interface ReviewState {
   selectTurn: (projectPath: string, turnId: string) => Promise<void>;
   selectFile: (projectPath: string, turnId: string, path: string) => Promise<void>;
   restoreTurn: (projectPath: string, turnId: string) => Promise<void>;
+  restoreBeforeTurn: (projectPath: string, turnId: string) => Promise<void>;
   restoreFile: (projectPath: string, turnId: string, path: string) => Promise<void>;
   acceptFile: (projectPath: string, turnId: string, path: string) => Promise<void>;
   resolveFile: (
@@ -323,6 +352,41 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       await get().refresh(projectPath);
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  restoreBeforeTurn: async (projectPath, turnId) => {
+    if (turnId === WORKTREE_GROUP_ID) return;
+    set({ loading: true, error: null });
+    try {
+      const turns = turnsToRestoreBefore(get().turns, turnId);
+      if (turns.length === 0) {
+        throw new Error("Checkpoint is no longer available");
+      }
+      // Newest → oldest is required when multiple turns touched the same file.
+      for (const turn of turns) {
+        await ipc.ckptRestoreTurn(projectPath, turn.id);
+      }
+      const decisions = { ...get().decisions };
+      for (const turn of turns) {
+        for (const file of turn.files) {
+          decisions[reviewFileKey(turn.id, file.path)] = "rejected";
+        }
+      }
+      saveDecisions(projectPath, decisions);
+      set({
+        decisions,
+        loading: false,
+        contents: null,
+        activeTurnId: null,
+        activeFile: null,
+      });
+      await get().refresh(projectPath);
+    } catch (error) {
+      set({
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   },
 

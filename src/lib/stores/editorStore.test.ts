@@ -2,26 +2,58 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/ipc/ipc", () => ({
   ipc: {
+    fsMediaPreview: vi.fn(),
     fsRead: vi.fn(),
     fsWrite: vi.fn(),
+    editorConfigResolve: vi.fn(),
   },
 }));
 
 import { ipc } from "@/lib/ipc/ipc";
 import { useUnsavedChangesStore } from "@/lib/unsavedChanges";
-import { useEditorStore } from "./editorStore";
+import { convertLineEndings, useEditorStore } from "./editorStore";
+
+const fileEncoding = { encoding: "UTF-8", bom: false };
+const tabEncoding = {
+  encoding: "UTF-8",
+  savedEncoding: "UTF-8",
+  bom: false,
+  savedBom: false,
+};
 
 describe("editorStore", () => {
   beforeEach(() => {
     useEditorStore.setState({
       tabs: [],
       activePath: null,
+      primaryPath: null,
+      secondaryPath: null,
+      focusedPane: "primary",
       loading: false,
       error: null,
       reveal: null,
+      cursor: null,
+      docInfo: null,
+      recoveryNotice: null,
     });
     vi.mocked(ipc.fsRead).mockReset();
     vi.mocked(ipc.fsWrite).mockReset();
+    vi.mocked(ipc.fsMediaPreview).mockReset();
+    vi.mocked(ipc.editorConfigResolve).mockReset();
+    vi.mocked(ipc.fsMediaPreview).mockResolvedValue(null);
+    vi.mocked(ipc.editorConfigResolve).mockResolvedValue({
+      sourceFiles: [],
+      indentStyle: null,
+      indentSize: null,
+      tabWidth: null,
+      endOfLine: null,
+      charset: null,
+      trimTrailingWhitespace: null,
+      insertFinalNewline: null,
+      maxLineLength: null,
+      quoteType: null,
+      spellingLanguage: null,
+    });
     useUnsavedChangesStore.setState({ pending: null });
   });
 
@@ -33,6 +65,7 @@ describe("editorStore", () => {
       truncated: false,
       longLines: true,
       readOnly: true,
+      ...fileEncoding,
     });
 
     await useEditorStore.getState().openFile("/tmp/wide.txt");
@@ -51,6 +84,7 @@ describe("editorStore", () => {
       truncated: false,
       longLines: false,
       readOnly: false,
+      ...fileEncoding,
     });
 
     await useEditorStore.getState().openFile("/tmp/a.ts", { line: 2, column: 1 });
@@ -70,6 +104,7 @@ describe("editorStore", () => {
           name: "a.ts",
           content: "old",
           savedContent: "old",
+          ...tabEncoding,
           hash: "h1",
           truncated: false,
           longLines: false,
@@ -80,6 +115,7 @@ describe("editorStore", () => {
           name: "dirty.ts",
           content: "local",
           savedContent: "disk",
+          ...tabEncoding,
           hash: "d1",
           truncated: false,
           longLines: false,
@@ -98,6 +134,7 @@ describe("editorStore", () => {
           truncated: false,
           longLines: false,
           readOnly: false,
+          ...fileEncoding,
         };
       }
       throw new Error(`unexpected ${path}`);
@@ -120,6 +157,7 @@ describe("editorStore", () => {
       truncated: false,
       longLines: false,
       readOnly: false,
+      ...fileEncoding,
     });
     vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "h2" });
 
@@ -129,25 +167,143 @@ describe("editorStore", () => {
     expect(dirty?.content).not.toBe(dirty?.savedContent);
 
     await useEditorStore.getState().saveActive();
-    expect(ipc.fsWrite).toHaveBeenCalledWith("/tmp/a.ts", "const x = 2;\n", "h1");
+    expect(ipc.fsWrite).toHaveBeenCalledWith(
+      "/tmp/a.ts",
+      "const x = 2;\n",
+      "h1",
+      "UTF-8",
+      false,
+    );
     const saved = useEditorStore.getState().tabs[0];
     expect(saved?.hash).toBe("h2");
     expect(saved?.savedContent).toBe("const x = 2;\n");
   });
 
+  it("opens binary and media files as previews without reading them as text", async () => {
+    vi.mocked(ipc.fsMediaPreview).mockResolvedValue({
+      path: "/tmp/logo.png",
+      kind: "image",
+      mime: "image/png",
+      size: 128,
+      dataUrl: "data:image/png;base64,AAAA",
+    });
+
+    await useEditorStore.getState().openFile("/tmp/logo.png");
+    const tab = useEditorStore.getState().tabs[0];
+    expect(tab?.preview?.kind).toBe("image");
+    expect(tab?.readOnly).toBe(true);
+    expect(ipc.fsRead).not.toHaveBeenCalled();
+  });
+
+  it("replaces unpinned explorer previews and supports split/reorder", async () => {
+    vi.mocked(ipc.fsRead).mockImplementation(async (path: string) => ({
+      path,
+      content: `${path}\n`,
+      hash: `hash:${path}`,
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      ...fileEncoding,
+    }));
+
+    await useEditorStore.getState().openFile("/tmp/a.ts", { preview: true });
+    await useEditorStore.getState().openFile("/tmp/b.ts", { preview: true });
+    expect(useEditorStore.getState().tabs.map((tab) => tab.path)).toEqual(["/tmp/b.ts"]);
+
+    useEditorStore.getState().pinTab("/tmp/b.ts");
+    await useEditorStore.getState().openFile("/tmp/c.ts", { preview: true });
+    expect(useEditorStore.getState().tabs.map((tab) => tab.path)).toEqual([
+      "/tmp/b.ts",
+      "/tmp/c.ts",
+    ]);
+
+    useEditorStore.getState().splitActive();
+    expect(useEditorStore.getState().secondaryPath).toBe("/tmp/b.ts");
+    useEditorStore.getState().reorderTabs("/tmp/c.ts", "/tmp/b.ts");
+    expect(useEditorStore.getState().tabs.map((tab) => tab.path)).toEqual([
+      "/tmp/c.ts",
+      "/tmp/b.ts",
+    ]);
+    useEditorStore.getState().closeSplit();
+    expect(useEditorStore.getState().secondaryPath).toBeNull();
+  });
+
+  it("converts line endings and marks the buffer dirty", () => {
+    expect(convertLineEndings("a\r\nb\rc\n", "LF")).toBe("a\nb\nc\n");
+    expect(convertLineEndings("a\nb\n", "CRLF")).toBe("a\r\nb\r\n");
+
+    useEditorStore.setState({
+      tabs: [
+        {
+          path: "/tmp/a.ts",
+          name: "a.ts",
+          content: "a\nb\n",
+          savedContent: "a\nb\n",
+          ...tabEncoding,
+          hash: "h1",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+        },
+      ],
+      activePath: "/tmp/a.ts",
+      docInfo: {
+        languageName: "TypeScript",
+        eol: "LF",
+        indentStyle: "space",
+        indentSize: 2,
+        editorConfigIndent: false,
+      },
+    });
+
+    useEditorStore.getState().setLineEnding("/tmp/a.ts", "CRLF");
+    const state = useEditorStore.getState();
+    expect(state.tabs[0]?.content).toBe("a\r\nb\r\n");
+    expect(state.tabs[0]?.content).not.toBe(state.tabs[0]?.savedContent);
+    expect(state.docInfo?.eol).toBe("CRLF");
+  });
+
   it("skips save when content is unchanged", async () => {
     vi.mocked(ipc.fsRead).mockResolvedValue({
       path: "/tmp/b.ts",
-      content: "ok",
+      content: "ok\n",
       hash: "h",
       truncated: false,
       longLines: false,
       readOnly: false,
+      ...fileEncoding,
     });
 
     await useEditorStore.getState().openFile("/tmp/b.ts");
     await useEditorStore.getState().saveActive();
     expect(ipc.fsWrite).not.toHaveBeenCalled();
+  });
+
+  it("converts encoding on save even when text is unchanged", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/legacy.txt",
+      content: "café\n",
+      hash: "legacy-hash",
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      encoding: "windows-1252",
+      bom: false,
+    });
+    vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "utf8-hash" });
+
+    await useEditorStore.getState().openFile("/tmp/legacy.txt");
+    useEditorStore.getState().setEncoding("/tmp/legacy.txt", "UTF-8");
+    await useEditorStore.getState().saveActive();
+
+    expect(ipc.fsWrite).toHaveBeenCalledWith(
+      "/tmp/legacy.txt",
+      "café\n",
+      "legacy-hash",
+      "UTF-8",
+      false,
+    );
+    expect(useEditorStore.getState().tabs[0]?.savedEncoding).toBe("UTF-8");
   });
 
   it("prompts before leaving a dirty tab and can discard the edit", async () => {
@@ -159,6 +315,7 @@ describe("editorStore", () => {
           name: "a.ts",
           content: "changed",
           savedContent: "original",
+          ...tabEncoding,
           hash: "h1",
           truncated: false,
           longLines: false,
@@ -169,6 +326,7 @@ describe("editorStore", () => {
           name: "b.ts",
           content: "other",
           savedContent: "other",
+          ...tabEncoding,
           hash: "h2",
           truncated: false,
           longLines: false,

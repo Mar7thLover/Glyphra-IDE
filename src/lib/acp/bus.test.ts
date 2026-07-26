@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import * as acp from "@agentclientprotocol/sdk";
 
+import {
+  buildPromptBlocks,
+  diagnosticTextFromSessionUpdate,
+  normalizeAvailableCommands,
+} from "./bus";
 import { applySessionUpdate } from "./sessionUpdates";
 
 /**
@@ -8,7 +13,43 @@ import { applySessionUpdate } from "./sessionUpdates";
  * Proves initialize → session/new → prompt → updates → permission.
  */
 describe("ACP SDK in-process roundtrip", () => {
+  it("builds ACP image content blocks without data URL prefixes", () => {
+    expect(
+      buildPromptBlocks("inspect this", [
+        { id: "image-1", name: "shot.png", mimeType: "image/png", data: "YWJj" },
+      ]),
+    ).toEqual([
+      { type: "text", text: "inspect this" },
+      { type: "image", mimeType: "image/png", data: "YWJj" },
+    ]);
+  });
+
+  it("normalizes and de-duplicates harness-native commands", () => {
+    expect(normalizeAvailableCommands([
+      { name: "/compact", description: " Compact context " },
+      { name: "compact", description: "duplicate" },
+      { name: "init", description: "Initialize", input: { hint: " guidance " } },
+      { name: "bad command", description: "ignored" },
+    ])).toEqual([
+      { name: "compact", description: "Compact context", inputHint: undefined },
+      { name: "init", description: "Initialize", inputHint: "guidance" },
+    ]);
+  });
+
+  it("extracts compiler output from tool updates for diagnostics", () => {
+    expect(diagnosticTextFromSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "build",
+      status: "failed",
+      rawOutput: {
+        stdout: "src/app.ts(3,4): error TS2322: mismatch",
+        data: "ignored-base64",
+      },
+    })).toContain("src/app.ts(3,4)");
+  });
+
   it("runs initialize, session, prompt with permission", async () => {
+    let receivedMcpServers: unknown[] = [];
     const agentApp = acp
       .agent({ name: "fixture-inprocess" })
       .onRequest(acp.methods.agent.initialize, async () => ({
@@ -17,9 +58,10 @@ describe("ACP SDK in-process roundtrip", () => {
         agentInfo: { name: "fixture-inprocess", version: "0" },
         authMethods: [],
       }))
-      .onRequest(acp.methods.agent.session.new, async () => ({
-        sessionId: "s-test",
-      }))
+      .onRequest(acp.methods.agent.session.new, async (ctx) => {
+        receivedMcpServers = ctx.params.mcpServers;
+        return { sessionId: "s-test" };
+      })
       .onRequest(acp.methods.agent.session.prompt, async (ctx) => {
         await ctx.client.notify(acp.methods.client.session.update, {
           sessionId: ctx.params.sessionId,
@@ -81,7 +123,15 @@ describe("ACP SDK in-process roundtrip", () => {
           clientInfo: { name: "glyphra-test", version: "0" },
         });
 
-        return ctx.buildSession("/tmp").withSession(async (session) => {
+        return ctx.buildSession({
+          cwd: "/tmp",
+          mcpServers: [{
+            name: "files",
+            command: "node",
+            args: ["server.js"],
+            env: [],
+          }],
+        }).withSession(async (session) => {
           expect(session.sessionId).toBe("s-test");
           void session.prompt("ping");
           for (;;) {
@@ -98,5 +148,11 @@ describe("ACP SDK in-process roundtrip", () => {
       true,
     );
     expect(timeline.some((item) => item.kind === "tool")).toBe(true);
+    expect(receivedMcpServers).toEqual([{
+      name: "files",
+      command: "node",
+      args: ["server.js"],
+      env: [],
+    }]);
   });
 });

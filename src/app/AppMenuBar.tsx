@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 
 import { openAgentsWindow } from "@/lib/agentWindow";
 import { dispatchEditorCommand } from "@/lib/editorCommands";
-import { useEditorStore } from "@/lib/stores/editorStore";
+import { formatShortcut } from "@/lib/platform";
+import { isEditorTabDirty, useEditorStore } from "@/lib/stores/editorStore";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
@@ -66,13 +67,14 @@ export default function AppMenuBar() {
   const hasActive = useEditorStore((s) => s.activePath !== null);
   const canSave = useEditorStore((s) => {
     const active = s.tabs.find((tab) => tab.path === s.activePath);
-    return Boolean(active && !active.readOnly && active.content !== active.savedContent);
+    return Boolean(active && !active.readOnly && isEditorTabDirty(active));
   });
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const activePanel = useUiStore((s) => s.activePanel);
   const agentOpen = useUiStore((s) => s.agentOpen);
   const terminalOpen = useTerminalStore((s) => s.open);
   const reviewOpen = useReviewStore((s) => s.open);
+  const hostOs = useUiStore((s) => s.hostOs);
   const hasProject = Boolean(current);
 
   useEffect(() => {
@@ -259,7 +261,17 @@ export default function AppMenuBar() {
           >
             {t(`menu.${id}`)}
           </button>
-          {open === id && <MenuDropdown entries={entries[id]} onRun={run} />}
+          {open === id && (
+            <MenuDropdown
+              entries={entries[id].map((entry) => ({
+                ...entry,
+                shortcut: entry.shortcut
+                  ? formatShortcut(entry.shortcut, hostOs)
+                  : undefined,
+              }))}
+              onRun={run}
+            />
+          )}
         </div>
       ))}
     </nav>

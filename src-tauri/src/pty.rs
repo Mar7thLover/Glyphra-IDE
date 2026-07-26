@@ -37,12 +37,17 @@ struct LivePty {
 #[derive(Default)]
 pub struct PtyManager {
     next_id: AtomicU32,
-    sessions: Mutex<HashMap<u32, LivePty>>,
+    sessions: Mutex<HashMap<(String, u32), LivePty>>,
 }
 
 impl PtyManager {
+    pub fn live_count(&self) -> Result<usize, String> {
+        Ok(self.sessions.lock().map_err(|_| "pty lock poisoned")?.len())
+    }
+
     pub fn open(
         self: &Arc<Self>,
+        window_label: &str,
         cwd: String,
         cols: u16,
         rows: u16,
@@ -84,11 +89,12 @@ impl PtyManager {
             .map_err(|err| format!("take writer: {err}"))?;
 
         let pty_id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let session_key = (window_label.to_owned(), pty_id);
         self.sessions
             .lock()
             .map_err(|_| "pty lock poisoned")?
             .insert(
-                pty_id,
+                session_key.clone(),
                 LivePty {
                     master: pair.master,
                     writer,
@@ -96,6 +102,7 @@ impl PtyManager {
             );
 
         let manager = Arc::clone(self);
+        let exit_key = session_key;
         thread::spawn(move || {
             let mut buf = [0u8; 8192];
             let mut pending = Vec::new();
@@ -123,17 +130,17 @@ impl PtyManager {
                 data: "0".into(),
             });
             if let Ok(mut sessions) = manager.sessions.lock() {
-                sessions.remove(&pty_id);
+                sessions.remove(&exit_key);
             }
         });
 
         Ok(pty_id)
     }
 
-    pub fn write(&self, pty_id: u32, data: String) -> Result<(), String> {
+    pub fn write(&self, window_label: &str, pty_id: u32, data: String) -> Result<(), String> {
         let mut sessions = self.sessions.lock().map_err(|_| "pty lock poisoned")?;
         let session = sessions
-            .get_mut(&pty_id)
+            .get_mut(&(window_label.to_owned(), pty_id))
             .ok_or_else(|| format!("unknown pty {pty_id}"))?;
         session
             .writer
@@ -146,10 +153,16 @@ impl PtyManager {
         Ok(())
     }
 
-    pub fn resize(&self, pty_id: u32, cols: u16, rows: u16) -> Result<(), String> {
+    pub fn resize(
+        &self,
+        window_label: &str,
+        pty_id: u32,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), String> {
         let sessions = self.sessions.lock().map_err(|_| "pty lock poisoned")?;
         let session = sessions
-            .get(&pty_id)
+            .get(&(window_label.to_owned(), pty_id))
             .ok_or_else(|| format!("unknown pty {pty_id}"))?;
         session
             .master
@@ -163,10 +176,25 @@ impl PtyManager {
         Ok(())
     }
 
-    pub fn close(&self, pty_id: u32) -> Result<(), String> {
+    pub fn close(&self, window_label: &str, pty_id: u32) -> Result<(), String> {
         let mut sessions = self.sessions.lock().map_err(|_| "pty lock poisoned")?;
-        sessions.remove(&pty_id);
+        sessions.remove(&(window_label.to_owned(), pty_id));
         Ok(())
+    }
+
+    pub fn close_window(&self, window_label: &str) -> Result<usize, String> {
+        let mut sessions = self.sessions.lock().map_err(|_| "pty lock poisoned")?;
+        let before = sessions.len();
+        sessions.retain(|(label, _), _| label != window_label);
+        Ok(before - sessions.len())
+    }
+
+    /// Dropping every PTY master closes ConPTY/Unix PTYs and terminates shells.
+    pub fn close_all(&self) -> Result<usize, String> {
+        let mut sessions = self.sessions.lock().map_err(|_| "pty lock poisoned")?;
+        let count = sessions.len();
+        sessions.clear();
+        Ok(count)
     }
 }
 
@@ -302,6 +330,13 @@ mod tests {
             shell_cwd(r"D:\Projects\Glyphra-IDE".into()),
             r"D:\Projects\Glyphra-IDE"
         );
+    }
+
+    #[test]
+    fn close_all_is_idempotent_when_no_ptys_are_open() {
+        let manager = PtyManager::default();
+        assert_eq!(manager.close_all().unwrap(), 0);
+        assert_eq!(manager.close_all().unwrap(), 0);
     }
 
     #[cfg(not(windows))]

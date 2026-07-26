@@ -3,11 +3,15 @@ import {
   client,
   methods,
   type ClientConnection,
+  type ContentBlock,
+  type McpServer,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionUpdate,
 } from "@agentclientprotocol/sdk";
 
 import { ipc } from "@/lib/ipc/ipc";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 
 import { continuationContext, newArchiveId } from "./archive";
 import {
@@ -21,6 +25,10 @@ import { openAgentTransport, type AcpTransport } from "./stream";
 import { applySessionUpdate } from "./sessionUpdates";
 import type {
   AgentPermissionMode,
+  AgentImageAttachment,
+  AgentAvailableCommand,
+  AgentConversationCost,
+  AgentConversationUsage,
   AgentStartOptions,
   AgentTimelineItem,
   PermissionPrompt,
@@ -48,11 +56,141 @@ export interface AgentSessionHandle {
   /** Current conversation context usage reported by the harness. */
   contextUsed: number | null;
   contextSize: number | null;
+  /** Harness-native slash commands advertised for this live session. */
+  availableCommands: AgentAvailableCommand[];
+  /** Cumulative per-conversation token usage and cost when advertised. */
+  usage: AgentConversationUsage | null;
+  cost: AgentConversationCost | null;
+  /** ACP prompt capability advertised by the connected harness. */
+  supportsImages: boolean;
 }
 
 type Listener = (session: AgentSessionHandle) => void;
 
 const STDERR_TAIL = 12;
+
+export interface AgentPromptOptions {
+  displayText?: string;
+  checkpointId?: string | null;
+  images?: AgentImageAttachment[];
+}
+
+export function buildPromptBlocks(
+  text: string,
+  images: AgentImageAttachment[] = [],
+): ContentBlock[] {
+  const blocks: ContentBlock[] = [];
+  if (text.trim()) blocks.push({ type: "text", text });
+  blocks.push(
+    ...images.map(
+      (image): ContentBlock => ({
+        type: "image",
+        data: image.data,
+        mimeType: image.mimeType,
+      }),
+    ),
+  );
+  return blocks;
+}
+
+function finiteNonNegative(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+export function normalizeAvailableCommands(
+  commands: Array<{
+    name?: unknown;
+    description?: unknown;
+    input?: { hint?: unknown } | null;
+  }>,
+): AgentAvailableCommand[] {
+  const seen = new Set<string>();
+  return commands.flatMap((command) => {
+    if (typeof command.name !== "string") return [];
+    const name = command.name.trim().replace(/^\/+/, "");
+    if (!name || /\s/.test(name) || name.length > 128) return [];
+    const key = name.toLowerCase();
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{
+      name,
+      description:
+        typeof command.description === "string"
+          ? command.description.trim().slice(0, 512)
+          : "",
+      inputHint:
+        typeof command.input?.hint === "string"
+          ? command.input.hint.trim().slice(0, 256) || undefined
+          : undefined,
+    }];
+  });
+}
+
+function collectDiagnosticStrings(
+  value: unknown,
+  output: string[],
+  depth = 0,
+) {
+  if (depth > 5 || output.join("\n").length >= 64 * 1024) return;
+  if (typeof value === "string") {
+    if (value.trim()) output.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectDiagnosticStrings(item, output, depth + 1));
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    if (["data", "oldText", "newText"].includes(key)) continue;
+    collectDiagnosticStrings(child, output, depth + 1);
+  }
+}
+
+export function diagnosticTextFromSessionUpdate(update: SessionUpdate): string {
+  if (update.sessionUpdate !== "tool_call_update") return "";
+  const output: string[] = [];
+  collectDiagnosticStrings(update.rawOutput, output);
+  collectDiagnosticStrings(update.content, output);
+  return output.join("\n").slice(0, 64 * 1024);
+}
+
+function normalizedUsage(
+  usage: {
+    totalTokens?: unknown;
+    inputTokens?: unknown;
+    outputTokens?: unknown;
+    thoughtTokens?: unknown;
+    cachedReadTokens?: unknown;
+    cachedWriteTokens?: unknown;
+  } | null | undefined,
+): AgentConversationUsage | null {
+  const totalTokens = finiteNonNegative(usage?.totalTokens);
+  const inputTokens = finiteNonNegative(usage?.inputTokens);
+  const outputTokens = finiteNonNegative(usage?.outputTokens);
+  if (totalTokens === null || inputTokens === null || outputTokens === null) return null;
+  const optional = (value: unknown) => finiteNonNegative(value) ?? undefined;
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    thoughtTokens: optional(usage?.thoughtTokens),
+    cachedReadTokens: optional(usage?.cachedReadTokens),
+    cachedWriteTokens: optional(usage?.cachedWriteTokens),
+  };
+}
+
+function normalizedCost(
+  cost: { amount?: unknown; currency?: unknown } | null | undefined,
+): AgentConversationCost | null {
+  const amount = finiteNonNegative(cost?.amount);
+  if (amount === null || typeof cost?.currency !== "string") return null;
+  const currency = cost.currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  return { amount, currency };
+}
 
 function modeIdFor(mode: AgentPermissionMode): string {
   if (mode === "safe") return "request-approval";
@@ -123,6 +261,9 @@ export class AgentBus {
       items: [...this.handle.items],
       permission: this.handle.permission ? { ...this.handle.permission } : null,
       stderrTail: [...this.handle.stderrTail],
+      availableCommands: [...this.handle.availableCommands],
+      usage: this.handle.usage ? { ...this.handle.usage } : null,
+      cost: this.handle.cost ? { ...this.handle.cost } : null,
       circuitOpen: this.circuit.open,
     };
   }
@@ -133,11 +274,17 @@ export class AgentBus {
     for (const listener of this.listeners) listener(snap);
   }
 
-  private pushSystem(text: string) {
+  private pushSystem(text: string, note?: "config" | "alert") {
     if (!this.handle) return;
     this.handle.items = [
       ...this.handle.items,
-      { id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, kind: "system", text, at: Date.now() },
+      {
+        id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        kind: "system",
+        text,
+        note,
+        at: Date.now(),
+      },
     ];
     this.emit();
   }
@@ -173,6 +320,10 @@ export class AgentBus {
       circuitOpen: false,
       contextUsed: null,
       contextSize: options.contextWindow ?? null,
+      availableCommands: [],
+      usage: restore?.usage ? { ...restore.usage } : null,
+      cost: restore?.cost ? { ...restore.cost } : null,
+      supportsImages: false,
     };
     this.emit();
 
@@ -216,10 +367,11 @@ export class AgentBus {
           trip
             ? `Agent crashed (exit ${code}). ${trip}`
             : `Agent crashed (exit ${code}). Restart or browse past sessions.`,
+          "alert",
         );
         if (trip) this.handle.error = trip;
       } else {
-        this.pushSystem(`Agent exited (${code})`);
+        this.pushSystem(`Agent exited (${code})`, "alert");
       }
       this.connection = null;
     });
@@ -275,12 +427,34 @@ export class AgentBus {
       .onNotification(methods.client.session.update, (ctx) => {
         if (this.ignoreSessionUpdates) return;
         const update = ctx.params.update;
-        if (!this.handle || this.handle.acpSessionId !== ctx.params.sessionId) return;
+        if (!this.handle) return;
+        // Agents may publish initial commands while session/new is still
+        // resolving. Bind the first update to the single starting session so
+        // those capabilities are not lost before buildSession().start().
+        if (
+          this.handle.acpSessionId === null
+          && this.handle.status === "starting"
+        ) {
+          this.handle.acpSessionId = ctx.params.sessionId;
+        }
+        if (this.handle.acpSessionId !== ctx.params.sessionId) return;
         if (update.sessionUpdate === "usage_update") {
           this.handle.contextUsed = update.used;
           this.handle.contextSize = update.size;
+          const cost = normalizedCost(update.cost);
+          if (cost) this.handle.cost = cost;
+        } else if (update.sessionUpdate === "available_commands_update") {
+          this.handle.availableCommands = normalizeAvailableCommands(
+            update.availableCommands,
+          );
         } else {
           this.handle.items = applySessionUpdate(this.handle.items, update);
+          const diagnosticText = diagnosticTextFromSessionUpdate(update);
+          if (diagnosticText) {
+            useDiagnosticsStore
+              .getState()
+              .ingestText("agent", diagnosticText, this.handle.projectPath);
+          }
         }
         this.emit();
       })
@@ -304,6 +478,8 @@ export class AgentBus {
       });
 
       this.handle.agentName = init.agentInfo?.title ?? init.agentInfo?.name;
+      this.handle.supportsImages =
+        init.agentCapabilities?.promptCapabilities?.image === true;
       this.pushSystem(
         `Connected${this.handle.agentName ? ` to ${this.handle.agentName}` : ""} · ${options.harness?.protocol ?? "ACP"}`,
       );
@@ -329,6 +505,7 @@ export class AgentBus {
       }
 
       const restoreSessionId = restore?.acpSessionId;
+      const mcpServers: McpServer[] = options.mcpServers ?? [];
       if (restoreSessionId) {
         const capabilities = init.agentCapabilities;
         let restoredNatively = false;
@@ -337,7 +514,7 @@ export class AgentBus {
             await connection.agent.request(methods.agent.session.resume, {
               sessionId: restoreSessionId,
               cwd,
-              mcpServers: [],
+              mcpServers,
             });
             this.handle.acpSessionId = restoreSessionId;
             restoredNatively = true;
@@ -355,7 +532,7 @@ export class AgentBus {
             await connection.agent.request(methods.agent.session.load, {
               sessionId: restoreSessionId,
               cwd,
-              mcpServers: [],
+              mcpServers,
             });
             this.handle.acpSessionId = restoreSessionId;
             restoredNatively = true;
@@ -369,14 +546,18 @@ export class AgentBus {
           }
         }
         if (!restoredNatively) {
-          const active = await connection.agent.buildSession(cwd).start();
+          const active = await connection.agent
+            .buildSession({ cwd, mcpServers })
+            .start();
           this.handle.acpSessionId = active.sessionId;
           active.dispose();
           this.continuationContextPending = continuationContext(restore.items);
           this.pushSystem("Continued in a new agent process with the previous conversation context");
         }
       } else {
-        const active = await connection.agent.buildSession(cwd).start();
+        const active = await connection.agent
+          .buildSession({ cwd, mcpServers })
+          .start();
         this.handle.acpSessionId = active.sessionId;
         active.dispose();
         if (restore) {
@@ -398,7 +579,10 @@ export class AgentBus {
       }
 
       if (options.providerId) {
-        this.pushSystem(`Provider: ${options.providerId.slice(0, 8)}… (env injected at spawn)`);
+        this.pushSystem(
+          `Provider: ${options.providerId.slice(0, 8)}… (env injected at spawn)`,
+          "config",
+        );
       }
       if (options.model) {
         const details = [
@@ -482,10 +666,10 @@ export class AgentBus {
       this.configuredFastMode = config.fastMode;
       changed.push(config.fastMode ? "fast mode" : "standard speed");
     }
-    if (changed.length > 0) this.pushSystem(`Next turn: ${changed.join(" · ")}`);
+    if (changed.length > 0) this.pushSystem(`Next turn: ${changed.join(" · ")}`, "config");
   }
 
-  async prompt(text: string) {
+  async prompt(text: string, options: AgentPromptOptions = {}) {
     if (
       !this.handle ||
       !this.connection ||
@@ -498,10 +682,22 @@ export class AgentBus {
     if (this.handle.status === "busy") {
       throw new Error("Agent is already answering — cancel the turn first");
     }
+    const images = options.images ?? [];
+    if (images.length > 0 && !this.handle.supportsImages) {
+      throw new Error("The connected agent does not advertise ACP image input support");
+    }
 
     this.handle.items = [
       ...this.handle.items,
-      { id: `user-${Date.now()}`, kind: "user", text, at: Date.now() },
+      {
+        id: `user-${Date.now()}`,
+        kind: "user",
+        text: options.displayText?.trim() || text,
+        promptText: options.displayText?.trim() === text ? undefined : text,
+        checkpointId: options.checkpointId ?? undefined,
+        images: images.length > 0 ? images : undefined,
+        at: Date.now(),
+      },
     ];
     this.handle.status = "busy";
     this.emit();
@@ -512,8 +708,10 @@ export class AgentBus {
       const promptText = handoff ? `${handoff}\n\n<new_user_message>\n${text}\n</new_user_message>` : text;
       const response = await this.connection.agent.request(methods.agent.session.prompt, {
         sessionId: this.handle.acpSessionId,
-        prompt: [{ type: "text", text: promptText }],
+        prompt: buildPromptBlocks(promptText, images),
       });
+      const usage = normalizedUsage(response.usage);
+      if (usage) this.handle.usage = usage;
       const context = response._meta?.glyphraContext as
         | { used?: unknown; size?: unknown }
         | undefined;
@@ -573,6 +771,7 @@ export class AgentBus {
     } catch (error) {
       this.pushSystem(
         `Cancel failed: ${error instanceof Error ? error.message : String(error)}`,
+        "alert",
       );
     }
   }

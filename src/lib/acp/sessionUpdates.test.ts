@@ -51,6 +51,55 @@ describe("applySessionUpdate", () => {
     });
   });
 
+  it("preserves structured file diffs from tool updates", () => {
+    let items = applySessionUpdate([], {
+      sessionUpdate: "tool_call",
+      toolCallId: "edit-1",
+      title: "Edit a.ts",
+      kind: "edit",
+      status: "in_progress",
+    });
+    items = applySessionUpdate(items, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "edit-1",
+      status: "completed",
+      content: [
+        {
+          type: "diff",
+          path: "/repo/a.ts",
+          oldText: "const a = 1;\n",
+          newText: "const a = 2;\n",
+        },
+      ],
+    });
+
+    expect(items[0]).toMatchObject({
+      kind: "tool",
+      content: [
+        {
+          kind: "diff",
+          path: "/repo/a.ts",
+          oldText: "const a = 1;\n",
+          newText: "const a = 2;\n",
+        },
+      ],
+    });
+  });
+
+  it("merges streamed thought chunks into a collapsible item", () => {
+    let items = applySessionUpdate([], {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "Inspect " },
+    });
+    items = applySessionUpdate(items, {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "the store." },
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: "thought", text: "Inspect the store." });
+  });
+
   it("appends plan entries", () => {
     const items = applySessionUpdate([], {
       sessionUpdate: "plan",

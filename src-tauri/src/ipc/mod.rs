@@ -2,13 +2,18 @@ pub mod agent;
 pub mod agent_term;
 pub mod app;
 pub mod ckpt;
+pub mod diagnostics;
+pub mod editorconfig;
 pub mod git;
+pub mod mcp;
 pub mod project;
 pub mod providers;
 pub mod pty;
+pub mod recovery;
 pub mod search;
 pub mod sessions;
 pub mod settings;
+pub mod theme;
 
 #[cfg(test)]
 mod export_bindings {
@@ -16,9 +21,13 @@ mod export_bindings {
     //! `src/lib/ipc/gen/*.ts` for the drift checker.
     use super::{
         app::{EnvInfo, LaunchRequest},
+        diagnostics::{DiagnosticBundle, DiagnosticInfo},
+        editorconfig::EditorConfigSettings,
         project::*,
-        sessions::{SessionArchive, SessionSummary},
+        recovery::{EditorRecoverySnapshot, EditorRecoveryTab},
+        sessions::{SessionArchive, SessionCost, SessionSummary, SessionUsage},
         settings::AppSettings,
+        theme::{ImportedTheme, ThemeColorSetting, ThemeTokenSetting},
     };
     use crate::agent::{
         catalog::{
@@ -32,8 +41,9 @@ mod export_bindings {
     use crate::agent_terminal::{AgentTermCreateRequest, AgentTermEnvVar, AgentTermOutput};
     use crate::gitx::{
         checkpoints::{CkptFileContents, CkptFileDiff, CkptHunkSummary, CkptTurnMeta},
-        cli::{DiffSummary, GitFileDiff, GitFileStatus},
+        cli::{DiffSummary, GitCommitResult, GitFileDiff, GitFileStatus},
     };
+    use crate::mcp::{McpServerRecord, McpServerUpsert, McpTransport};
     use crate::providers::{ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert};
     use crate::pty::PtyEvent;
     use crate::search::{SearchBatch, SearchHit};
@@ -49,8 +59,21 @@ mod export_bindings {
         EntryKind::export_all().expect("export EntryKind");
         FileReadResult::export_all().expect("export FileReadResult");
         FileWriteResult::export_all().expect("export FileWriteResult");
+        MediaPreviewResult::export_all().expect("export MediaPreviewResult");
+        ProjectSymbol::export_all().expect("export ProjectSymbol");
         FsEvent::export_all().expect("export FsEvent");
+        EditorRecoveryTab::export_all().expect("export EditorRecoveryTab");
+        EditorRecoverySnapshot::export_all().expect("export EditorRecoverySnapshot");
         AppSettings::export_all().expect("export AppSettings");
+        ImportedTheme::export_all().expect("export ImportedTheme");
+        ThemeColorSetting::export_all().expect("export ThemeColorSetting");
+        ThemeTokenSetting::export_all().expect("export ThemeTokenSetting");
+        DiagnosticInfo::export_all().expect("export DiagnosticInfo");
+        DiagnosticBundle::export_all().expect("export DiagnosticBundle");
+        EditorConfigSettings::export_all().expect("export EditorConfigSettings");
+        McpTransport::export_all().expect("export McpTransport");
+        McpServerRecord::export_all().expect("export McpServerRecord");
+        McpServerUpsert::export_all().expect("export McpServerUpsert");
         RecentProject::export_all().expect("export RecentProject");
         AgentDetectInfo::export_all().expect("export AgentDetectInfo");
         AgentCatalogRequest::export_all().expect("export AgentCatalogRequest");
@@ -70,6 +93,7 @@ mod export_bindings {
         ProviderTestResult::export_all().expect("export ProviderTestResult");
         GitFileStatus::export_all().expect("export GitFileStatus");
         GitFileDiff::export_all().expect("export GitFileDiff");
+        GitCommitResult::export_all().expect("export GitCommitResult");
         DiffSummary::export_all().expect("export DiffSummary");
         CkptTurnMeta::export_all().expect("export CkptTurnMeta");
         CkptFileDiff::export_all().expect("export CkptFileDiff");
@@ -83,5 +107,7 @@ mod export_bindings {
         AgentTermOutput::export_all().expect("export AgentTermOutput");
         SessionSummary::export_all().expect("export SessionSummary");
         SessionArchive::export_all().expect("export SessionArchive");
+        SessionUsage::export_all().expect("export SessionUsage");
+        SessionCost::export_all().expect("export SessionCost");
     }
 }

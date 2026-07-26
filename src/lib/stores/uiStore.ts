@@ -4,11 +4,19 @@ export type Theme = "light" | "dark";
 /** Left sidebar panels — Settings is a separate full page. */
 export type Panel = "files" | "search";
 export type WorkspaceView = "editor" | "git-review";
-export type SettingsSection = "personal" | "models" | "editor" | "agent" | "about";
+export type SettingsSection =
+  | "personal"
+  | "models"
+  | "editor"
+  | "keybindings"
+  | "agent"
+  | "mcp"
+  | "about";
 
 const AGENT_OPEN_KEY = "glyphra.agentOpen";
 
 function readAgentOpen(): boolean {
+  if (typeof localStorage === "undefined") return false;
   const stored = localStorage.getItem(AGENT_OPEN_KEY);
   if (stored === null) return false;
   return stored === "1";
@@ -40,8 +48,13 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  theme: (document.documentElement.dataset.theme as Theme) ?? "dark",
-  mica: document.documentElement.dataset.mica === "true",
+  theme:
+    typeof document === "undefined"
+      ? "dark"
+      : ((document.documentElement.dataset.theme as Theme) ?? "dark"),
+  mica:
+    typeof document !== "undefined" &&
+    document.documentElement.dataset.mica === "true",
   hostOs: "",
   activePanel: "files",
   workspaceView: "editor",
@@ -51,13 +64,19 @@ export const useUiStore = create<UiState>((set, get) => ({
   settingsSection: "personal",
 
   setTheme: (theme) => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("glyphra.theme", theme);
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = theme;
+    }
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("glyphra.theme", theme);
+    }
     set({ theme });
   },
 
   setMica: (mica) => {
-    document.documentElement.dataset.mica = String(mica);
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.mica = String(mica);
+    }
     set({ mica });
   },
 
@@ -70,7 +89,12 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
   },
 
-  setHostOs: (hostOs) => set({ hostOs }),
+  setHostOs: (hostOs) => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.platform = hostOs;
+    }
+    set({ hostOs });
+  },
 
   showPanel: (panel) =>
     set({ activePanel: panel, sidebarOpen: true, settingsOpen: false, workspaceView: "editor" }),
@@ -78,7 +102,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   showWorkspace: (workspaceView) => set({ workspaceView, settingsOpen: false }),
 
   setAgentOpen: (open) => {
-    localStorage.setItem(AGENT_OPEN_KEY, open ? "1" : "0");
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(AGENT_OPEN_KEY, open ? "1" : "0");
+    }
     set({ agentOpen: open });
   },
 

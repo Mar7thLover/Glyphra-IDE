@@ -6,6 +6,8 @@ import {
   Eye,
   FileDiff,
   FileCode2,
+  GitCommitHorizontal,
+  Loader2,
   PanelRightClose,
   RotateCcw,
   Undo2,
@@ -15,16 +17,20 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next";
 
 import { useEditorStore } from "@/lib/stores/editorStore";
+import { ipc } from "@/lib/ipc/ipc";
+import { useGitStore } from "@/lib/stores/gitStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 import {
   reviewFileKey,
+  generateCommitMessage,
   sumDiffs,
   useReviewStore,
   WORKTREE_GROUP_ID,
 } from "@/lib/stores/reviewStore";
 
 import MergeEditor, { type MergeEditorHandle } from "./MergeEditor";
+import { reviewKeyboardAction } from "./reviewKeyboard";
 
 export const REVIEW_WIDTH = 500;
 
@@ -100,6 +106,11 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
   const [expandedCompleted, setExpandedCompleted] = useState<Set<string>>(new Set());
   const [keyboardMode, setKeyboardMode] = useState(false);
   const [hunkProgress, setHunkProgress] = useState({ remaining: 0, total: 0 });
+  const [commitOpen, setCommitOpen] = useState(false);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [committing, setCommitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [commitHash, setCommitHash] = useState<string | null>(null);
   const page = variant === "page";
   const visible = page || open;
 
@@ -161,6 +172,49 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
     activeGroup && !activeGroup.readOnly
       ? activeGroup.files.find((file) => file.path === activeFile)
       : null;
+  const pendingCheckpointFiles = turns.reduce(
+    (count, turn) =>
+      count +
+      turn.files.filter((file) => !decisions[reviewFileKey(turn.id, file.path)]).length,
+    0,
+  );
+  const canCommit = pendingCheckpointFiles === 0 && workingTree.length > 0;
+
+  const openCommit = () => {
+    setCommitMessage(generateCommitMessage(workingTree));
+    setCommitError(null);
+    setCommitOpen(true);
+  };
+
+  const commitChanges = async () => {
+    const message = commitMessage.trim();
+    if (!message || !current) return;
+    if (
+      !window.confirm(
+        t("review.commitConfirm", {
+          count: workingTree.length,
+          message: message.split(/\r?\n/)[0],
+        }),
+      )
+    ) {
+      return;
+    }
+    setCommitting(true);
+    setCommitError(null);
+    try {
+      const result = await ipc.gitCommit(current.path, message);
+      setCommitHash(result.hash);
+      setCommitOpen(false);
+      await Promise.all([
+        useReviewStore.getState().refresh(current.path),
+        useGitStore.getState().refresh(current.path),
+      ]);
+    } catch (error) {
+      setCommitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCommitting(false);
+    }
+  };
 
   const moveFile = (direction: 1 | -1) => {
     if (!current || flatFiles.length === 0) return;
@@ -172,37 +226,36 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (!current || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!current) return;
     const target = event.target as HTMLElement;
     const isEditor = target.closest(".cm-editor") !== null;
-    if (isEditor && !keyboardMode) return;
-    if (event.key === "Escape" && keyboardMode) {
-      event.preventDefault();
-      setKeyboardMode(false);
-      return;
-    }
-    if (event.key === "j" || event.key === "k") {
-      event.preventDefault();
-      moveFile(event.key === "j" ? 1 : -1);
-      return;
-    }
-    if (event.key === "Enter" && contents) {
-      event.preventDefault();
+    const action = reviewKeyboardAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      hasModifier: event.metaKey || event.ctrlKey || event.altKey,
+      isEditor,
+      keyboardMode,
+      hasContents: Boolean(contents),
+      hasReviewFile: Boolean(
+        activeTurnId && activeTurnId !== WORKTREE_GROUP_ID && activeFile,
+      ),
+    });
+    if (action === "none") return;
+    event.preventDefault();
+    if (action === "exit-keyboard") setKeyboardMode(false);
+    if (action === "next-file") moveFile(1);
+    if (action === "previous-file") moveFile(-1);
+    if (action === "focus-hunk") {
       setKeyboardMode(true);
       mergeRef.current?.focusFirstHunk();
-      return;
     }
-    if (!activeTurnId || activeTurnId === WORKTREE_GROUP_ID || !activeFile) return;
-    if (event.shiftKey && event.key.toLowerCase() === "a") {
-      event.preventDefault();
+    if (action === "accept-file" && activeTurnId && activeFile) {
       flushPendingWrite();
       void acceptFile(current.path, activeTurnId, activeFile);
-      return;
     }
-    if (!event.shiftKey && (event.key === "a" || event.key === "r")) {
-      event.preventDefault();
+    if (action === "accept-hunk" || action === "reject-hunk") {
       setKeyboardMode(true);
-      mergeRef.current?.decide(event.key === "a" ? "accept" : "reject");
+      mergeRef.current?.decide(action === "accept-hunk" ? "accept" : "reject");
     }
   };
 
@@ -235,6 +288,17 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
           <span className="hidden text-[9.5px] text-ink-3 min-[1180px]:inline">
             {t("review.keyboardHint")}
           </span>
+          {canCommit && (
+            <button
+              type="button"
+              onClick={openCommit}
+              className="inline-flex h-6 items-center gap-1 rounded-full border border-line px-2 text-[10px] text-ink-2 hover:border-line-strong hover:bg-hover hover:text-ink"
+              title={t("review.commitHint")}
+            >
+              <GitCommitHorizontal className="size-3" />
+              {t("review.commit")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -250,6 +314,52 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
         </header>
 
         {error && <div className="border-b border-danger/20 px-3 py-1.5 text-[11px] text-danger">{error}</div>}
+        {commitHash && (
+          <div className="border-b border-ok/20 bg-ok/5 px-3 py-1.5 text-[10.5px] text-ok">
+            {t("review.commitCreated", { hash: commitHash.slice(0, 8) })}
+          </div>
+        )}
+        {commitOpen && (
+          <div className="border-b border-line bg-raised/65 p-2.5">
+            <label className="block text-[10px] font-medium text-ink-2">
+              {t("review.commitMessage")}
+            </label>
+            <textarea
+              autoFocus
+              value={commitMessage}
+              onChange={(event) => setCommitMessage(event.target.value)}
+              rows={3}
+              maxLength={4096}
+              className="mt-1 w-full resize-y rounded-lg border border-line bg-editor px-2.5 py-2 font-mono text-[10.5px] text-ink outline-none focus:border-line-strong"
+            />
+            {commitError && (
+              <div className="mt-1 text-[10px] text-danger">{commitError}</div>
+            )}
+            <div className="mt-2 flex justify-end gap-1.5">
+              <button
+                type="button"
+                disabled={committing}
+                onClick={() => setCommitOpen(false)}
+                className="rounded-md px-2 py-1 text-[10px] text-ink-3 hover:bg-hover hover:text-ink"
+              >
+                {t("review.commitCancel")}
+              </button>
+              <button
+                type="button"
+                disabled={committing || !commitMessage.trim()}
+                onClick={() => void commitChanges()}
+                className="btn-accent inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] disabled:opacity-40"
+              >
+                {committing ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <GitCommitHorizontal className="size-3" />
+                )}
+                {t("review.commitNow")}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="max-h-[44%] min-h-28 shrink-0 overflow-y-auto border-b border-line p-2">
           {groups.length === 0 ? (

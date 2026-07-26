@@ -18096,9 +18096,35 @@ async function initialize() {
     authMethods: []
   };
 }
-async function newSession() {
+async function newSession(_params, cx) {
   const sessionId = crypto.randomUUID();
-  sessions.set(sessionId, { pending: null });
+  sessions.set(sessionId, {
+    pending: null,
+    mcpServers: _params.mcpServers ?? [],
+    usage: {
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      thoughtTokens: 0,
+      cachedReadTokens: 0,
+      cachedWriteTokens: 0
+    },
+    cost: 0
+  });
+  await cx.notify(methods.client.session.update, {
+    sessionId,
+    update: {
+      sessionUpdate: "available_commands_update",
+      availableCommands: [
+        { name: "compact", description: "Compact the fixture conversation context" },
+        {
+          name: "init",
+          description: "Initialize fixture project instructions",
+          input: { hint: "optional guidance" }
+        }
+      ]
+    }
+  });
   return { sessionId };
 }
 async function promptFromTape(params, cx, tapeEvents2) {
@@ -18171,6 +18197,19 @@ async function promptSynthetic(params, cx) {
   session.pending = new AbortController();
   const signal = session.pending.signal;
   const userText = Array.isArray(params.prompt) && params.prompt[0]?.type === "text" ? params.prompt[0].text : "hello";
+  if (userText.trim().toLowerCase() === "/compact") {
+    await cx.notify(methods.client.session.update, {
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: `Fixture context compacted \xB7 ${session.mcpServers.length} MCP server(s).`
+        }
+      }
+    });
+    return { stopReason: "end_turn", usage: session.usage };
+  }
   await cx.notify(methods.client.session.update, {
     sessionId: params.sessionId,
     update: {
@@ -18285,7 +18324,22 @@ async function promptSynthetic(params, cx) {
     });
   }
   session.pending = null;
-  return { stopReason: "end_turn" };
+  const inputTokens = Math.max(1, Math.ceil(userText.length / 4));
+  const outputTokens = 48;
+  session.usage.inputTokens += inputTokens;
+  session.usage.outputTokens += outputTokens;
+  session.usage.totalTokens = session.usage.inputTokens + session.usage.outputTokens;
+  session.cost += 1e-3;
+  await cx.notify(methods.client.session.update, {
+    sessionId: params.sessionId,
+    update: {
+      sessionUpdate: "usage_update",
+      used: session.usage.totalTokens,
+      size: 32768,
+      cost: { amount: session.cost, currency: "USD" }
+    }
+  });
+  return { stopReason: "end_turn", usage: session.usage };
 }
 async function cancel(params) {
   sessions.get(params.sessionId)?.pending?.abort();
@@ -18298,7 +18352,7 @@ if (tapePath) {
 var output = Writable.toWeb(process.stdout);
 var input = Readable.toWeb(process.stdin);
 var stream = ndJsonStream(output, input);
-agent({ name: "glyphra-fixture" }).onRequest(methods.agent.initialize, (ctx) => initialize(ctx.params)).onRequest(methods.agent.session.new, (ctx) => newSession(ctx.params)).onRequest(methods.agent.authenticate, async () => ({})).onRequest(
+agent({ name: "glyphra-fixture" }).onRequest(methods.agent.initialize, (ctx) => initialize(ctx.params)).onRequest(methods.agent.session.new, (ctx) => newSession(ctx.params, ctx.client)).onRequest(methods.agent.authenticate, async () => ({})).onRequest(
   methods.agent.session.prompt,
   (ctx) => tapeEvents ? promptFromTape(ctx.params, ctx.client, tapeEvents) : promptSynthetic(ctx.params, ctx.client)
 ).onNotification(methods.agent.session.cancel, (ctx) => cancel(ctx.params)).connect(stream);

@@ -1,105 +1,137 @@
-# Glyphra — near-term TODO
+# Glyphra — productization roadmap
 
-> Living backlog after M0–M2.5. Prefer this file for **what to do next**; keep
-> long-form rationale in [development-plan.md](./development-plan.md) and
+> Living backlog for taking Glyphra from the completed M0–M2.5 foundation to
+> a production-ready, agent-first desktop IDE. Long-form rationale remains in
+> [development-plan.md](./development-plan.md) and
 > [git-review-ux-plan.md](./git-review-ux-plan.md).
 >
-> Last reviewed: **2026-07-21** (synced with `main` @ docs refresh).
+> Last reviewed: **2026-07-25**. Status reflects the current working tree, not
+> only the last commit on `main`.
 
-## Done (do not re-open unless regressing)
+Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` agentic UX.
 
-- [x] M0 — shell, CM6 editor, theme, i18n skeleton, CI, `--smoke`
-- [x] M1 — agent supervisor, Codex / Claude / custom harnesses, providers + vault, onboarding, session archives
-- [x] M2 — shadow checkpoints, review panel + MergeEditor, PTY terminal, ripgrep search, command palette
+## Completed foundation
+
+- [x] M0 — Tauri shell, CodeMirror 6 editor, theme, i18n, CI, `--smoke`
+- [x] M1 — agent supervisor, ACP harnesses, providers/vault, onboarding, session archives
+- [x] M2 — checkpoints, review/MergeEditor, PTY terminal, search, command palette
 - [x] M2.5 — circuit breaker, byte-accurate checkpoints, IME checklist gate
-- [x] Agent workspace polish — harness catalog, provider usage snapshots, session restore path
-- [x] Review R1 (core) — turn groups, `+/-` badges, keyboard adjudication, working-tree group
+- [x] Review R1–R2 — turn groups, keyboard adjudication, selection → Agent actions
+- [x] Editor disk sync, search jump-to-line, Ctrl+P file index, ACP terminal capability
+- [x] Tauri bundling, branded icons, NSIS/MSI/portable Windows artifacts
+- [x] macOS ARM/Intel, Linux and Windows release matrix
+- [x] Tag-driven GitHub Release workflow and Windows bundle verifier
+- [x] First tagged prerelease: `v0.1.0-beta.1`
+- [x] First stable release: `v0.2.0` (updater, Problems panel, MCP manager, keybindings, theme import, recovery)
 
----
+## P0 — production safety and release blockers
 
-## P0 — ship a usable release track (M3 core)
+### P0.1 Safety baseline
 
-Ordered for dependency: packaging is blocked on multi-window only where process routing must be window-scoped; otherwise work can parallelize.
+- [x] `[hardening]` Per-window React ErrorBoundary with reload and copy-diagnostics actions
+- [x] `[hardening]` File-backed tracing plus synchronous `panic.log` for `panic=abort`
+- [x] `[hardening]` Dirty-buffer snapshots, two-second autosave, hot-exit restore and conflict notice
+- [x] `[hardening]` Remove plaintext vault writes; migrate legacy plaintext only after keyring succeeds
+- [x] `[hardening]` Rust `kill_all`/`close_all` fallback for agent, command-runner, PTY and search resources
+- [x] `[editor]` Status bar: line/column, selection count, indentation, UTF-8, EOL and language
+- [x] `[editor]` Clickable LF/CRLF conversion
+- [x] `[editor]` Image/audio/video preview plus safe generic-binary placeholder
+- [x] `[agent]` `@file` references inline live unsaved content, with bounded disk fallback
+- [x] `[agent]` Structured tool diff rendering and collapsible streamed thought cards
 
-### P0.1 Multi-window & process routing
+### P0.2 Remaining release gates
 
-- [ ] Per-project window (`proj-<hash>` label) + welcome window
-- [ ] Rust `AppState` keyed by `(windowLabel, sessionId)` — no cross-window stream bleed
-- [ ] CloseRequested → confirm running turn → cascade kill (Job Object / equivalent)
-- [ ] `single-instance`: second launch with path opens a new project window in the existing process
+- [x] `[hardening]` Per-project windows (`proj-<hash>`) plus a dedicated welcome window
+- [x] `[hardening]` Key Rust state by `(windowLabel, sessionId)` to prevent cross-window stream bleed
+- [x] `[hardening]` Second launch with a path opens/focuses the matching project window
+- [x] `[hardening]` In-app updater: `tauri-plugin-updater`, minisign keys, `latest.json`, install UX
+- [ ] `[hardening]` Clean Win11 install and `v0.x → v0.x+1` update drill
+- [x] `[hardening]` `THIRD-PARTY` rollup with `cargo-about` and a frontend license checker
+- [x] `[hardening]` Full settings completeness pass
+- [x] `[hardening]` Editable keybindings with persistence and `when` clauses
+- [x] `[hardening]` Unify editor/agent preferences with Rust settings and cross-window sync
+- [ ] `[hardening]` Manual fault drills: React render throw, Rust panic, forced recovery, orphan-process check
 
-### P0.2 Packaging
+## P1 — core editor and agent workflows
 
-- [ ] Enable Tauri bundling (`bundle.active`) with branded icons
-- [ ] NSIS installer (Windows) under size budget; portable exe as extra artifact
-- [ ] macOS / Linux package targets wired in CI matrix
-- [ ] `THIRD-PARTY` license rollup (`cargo-about` + frontend license-checker)
+### P1.1 Context and indexing `[agent]`
 
-### P0.3 Updater & release pipeline
+- [x] Repository-wide `@file`, `@folder` and bounded lightweight `@symbol` mentions
+- [x] Reuse `fileIndexStore.rankFiles/fuzzyScore` as the composer data source
+- [x] Discover `AGENTS.md`, `CLAUDE.md` and `.cursorrules` on project open
+- [x] Rules status UI, one-click open/edit, and optional live-content injection
 
-- [ ] minisign keypair (secret + offline backup); `latest.json` channel
-- [ ] In-app update check / install path
-- [ ] `.github/workflows/release.yml`: tag → three-platform build → draft GitHub Release
-- [ ] Clean Win11 VM install → update drill (v0.x → v0.x+1)
+### P1.2 Conversation and review `[agent]`
 
-### P0.4 Release UX polish
+- [x] Show checkpoint anchors in the chat timeline
+- [x] “Restore to before this message” using newest-to-oldest checkpoint replay
+- [x] Edit/resend user messages and retry failed assistant turns
+- [x] Queue or redirect follow-ups while an agent is busy
+- [x] Paste/drop bounded image input and honor advertised ACP vision capabilities
+- [x] Apply validated ReviewCommentCard unified diff → checkpoint write → review queue
+- [x] Inline CodeMirror hunk controls for undecided checkpoint changes
+- [x] Controlled audited `git_commit` IPC and generated commit message after the queue clears
 
-- [x] Keybinding cheatsheet + minimal remapping surface
-- [ ] Settings page completeness pass (personal / models / editor / agent / about)
-- [ ] Motion polish with `prefers-reduced-motion` already respected
-- [ ] Tighten smoke budgets toward plan exit criteria (interactive TTI / RSS where measurable)
+### P1.3 Harness and extension UX `[agent]`
 
----
+- [x] Surface harness-native slash commands such as `/compact` and `/init`
+- [x] Token and cost accumulation per conversation
+- [x] MCP settings UI with add/edit/remove/enable/disable operations
 
-## P1 — review becomes the primary workflow (R2–R3)
+### P1.4 Lightweight editor improvements `[editor]`
 
-Tracks [git-review-ux-plan.md](./git-review-ux-plan.md). R1 is largely done.
+- [x] Completion sources: current buffers, paths, snippets and language keywords
+- [x] Diagnostics store, editor gutter and Problems panel
+- [x] Build/terminal/agent diagnostic ingestion
+- [x] Trim trailing whitespace, final newline and optional format-on-save
 
-### P1.1 Selection → Agent (R2)
+## P2 — multi-session and platform maturity
 
-- [x] Floating `✦ Agent` capsule on editor selection + `Ctrl+L`
-- [x] Actions: review / explain / rewrite / add tests
-- [x] Composer reference chips (`@file:12-40`) mapped to ACP resource blocks
-- [x] `ReviewCommentCard` parser (severity markdown) with jump-to-line highlight
+- [x] `[agent]` Multiple/background conversations without stopping the active one
+- [x] `[editor]` Split/grid editors, tab drag reorder and preview tabs
+- [x] `[editor]` `Ctrl+Shift+O` symbol navigation
+- [x] `[editor]` Encoding detection/selection and non-UTF-8 conversion
+- [x] `[hardening]` Opt-in diagnostic bundle and user-visible crash-report location
+- [x] `[hardening]` Move synchronous checkpoint Git work to `spawn_blocking`
+- [x] `[hardening]` Expand fixture coverage for recovery, review keyboard flows and session edges
+- [x] `[hardening]` macOS/Linux native-feel pass
+- [x] `[editor]` Optional xterm WebGL renderer with DOM fallback on context loss
 
-### P1.2 Inline review & commit assist (R3)
+## P3 — post-release roadmap
 
-- [ ] Gutter side-bar for undecided hunks (agent vs manual colors)
-- [ ] Inline glass card: mini diff + accept/reject + “ask Agent”
-- [ ] Apply suggested diff from ReviewCommentCard → `ckpt_write_file` + review queue
-- [x] Status-bar branch + ahead/behind
-- [ ] Controlled `git_commit` IPC + “generate commit message” after queue cleared
+- [ ] `[editor]` Lazy-started LSP: completion, hover, navigation, references, rename, diagnostics
+- [x] `[editor]` VS Code theme JSON import
+- [x] `[editor]` Minimap, breadcrumbs, sticky scroll, bracket colors and indent guides
+- [x] `[editor]` Full EditorConfig support
+- [x] `[agent]` Ctrl+K inline edit and ghost-text completion
+- [ ] `[agent]` One-click apply diff from chat through checkpoints/review
+- [ ] `[agent]` Git-worktree multi-agent board
+- [ ] `[hardening]` End-to-end/component test layer and systematic accessibility pass
+- [ ] `[hardening]` SignPath Foundation code signing
 
----
+## Verification gates
 
-## P2 — quality & platform
+For every implementation batch:
 
-- [ ] Optional `@xterm/addon-webgl` with DOM fallback on context loss
-- [ ] Keep [ime-checklist.md](./ime-checklist.md) as merge gate on editor / decoration PRs
-- [ ] Expand fixture coverage for review keyboard flows and session restore edges
-- [ ] macOS / Linux native feel pass (beyond CI green)
-- [x] Editor disk sync for clean open tabs after FS / agent writes
-- [x] Search hit jump-to-line
-- [x] Ctrl+P fuzzy go-to-file (git ls-files index)
-- [x] ACP `terminal` client capability over pipe-backed command runner
+```powershell
+pnpm typecheck
+pnpm test
+pnpm exec vite build
+pnpm check:size
+pnpm check:bindings
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
+```
 
----
+Release-related work also runs:
 
-## P3 — post-v1 roadmap (do not start until M3 ships)
+```powershell
+pnpm check:version
+pnpm release:windows
+.\src-tauri\target\debug\glyphra.exe --smoke
+```
 
-- Basic LSP (hover / go-to / diagnostics), lazy-started
-- VS Code theme JSON → CSS variables + CM6 highlight
-- Gemini CLI / additional ACP backends
-- Native Codex `app-server` Rust client (drop Node for that path)
-- Git worktree multi-agent board
-- MCP manager UI
-- SignPath Foundation code signing (v0.x stays unsigned; document SmartScreen bypass)
-
----
-
-## How to pick work
-
-1. Prefer **P0** items that unblock a downloadable build over polish.
-2. **P1** may interleave with P0 when it does not block packaging (e.g. selection capsule is frontend-only).
-3. Do not start **P3** until a tagged pre-release exists.
-4. Any editor decoration change must pass the IME checklist before merge.
+Any editor decoration change must pass [ime-checklist.md](./ime-checklist.md).
+Agent protocol changes must pass `pnpm fixture:agent` plus a live smoke test
+against at least two supported harnesses.

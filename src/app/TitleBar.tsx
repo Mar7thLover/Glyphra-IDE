@@ -5,6 +5,7 @@ import { AppWindow, Copy, Minus, PanelRight, Search, Square, X } from "lucide-re
 import { useTranslation } from "react-i18next";
 
 import { openAgentsWindow } from "@/lib/agentWindow";
+import { formatShortcut } from "@/lib/platform";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
@@ -45,7 +46,7 @@ export function WindowControls() {
   const hostOs = useUiStore((s) => s.hostOs);
 
   useEffect(() => {
-    if (hostOs !== "windows") return;
+    if (hostOs === "macos") return;
     let unlisten: (() => void) | undefined;
     let disposed = false;
     void win.isMaximized().then(setMaximized);
@@ -63,7 +64,7 @@ export function WindowControls() {
     };
   }, [hostOs]);
 
-  if (hostOs !== "windows") return null;
+  if (hostOs === "macos" || !hostOs) return null;
 
   return (
     <div className="flex items-stretch">
@@ -87,6 +88,46 @@ export function WindowControls() {
   );
 }
 
+/** Native-feeling traffic-light controls for undecorated macOS windows. */
+export function MacWindowControls() {
+  const { t } = useTranslation();
+  const hostOs = useUiStore((s) => s.hostOs);
+  if (hostOs !== "macos") return null;
+  const dot =
+    "group grid size-3 place-items-center rounded-full border border-black/10 text-transparent transition-colors hover:text-black/65";
+  return (
+    <div className="flex items-center gap-2 pl-3 pr-1">
+      <button
+        type="button"
+        aria-label={t("titlebar.close")}
+        title={t("titlebar.close")}
+        onClick={() => void win.close()}
+        className={`${dot} bg-[#ff5f57]`}
+      >
+        <X className="size-2" strokeWidth={2.5} />
+      </button>
+      <button
+        type="button"
+        aria-label={t("titlebar.minimize")}
+        title={t("titlebar.minimize")}
+        onClick={() => void win.minimize()}
+        className={`${dot} bg-[#febc2e]`}
+      >
+        <Minus className="size-2" strokeWidth={2.5} />
+      </button>
+      <button
+        type="button"
+        aria-label={t("titlebar.maximize")}
+        title={t("titlebar.maximize")}
+        onClick={() => void win.toggleMaximize()}
+        className={`${dot} bg-[#28c840]`}
+      >
+        <span className="size-1.5 rounded-sm border border-current" />
+      </button>
+    </div>
+  );
+}
+
 export default function TitleBar() {
   const { t } = useTranslation();
   const agentOpen = useUiStore((s) => s.agentOpen);
@@ -96,6 +137,7 @@ export default function TitleBar() {
   const toggleAgent = useUiStore((s) => s.toggleAgent);
   const openPalette = usePaletteStore((s) => s.setOpen);
   const projectName = useProjectStore((s) => s.current?.name);
+  const hostOs = useUiStore((s) => s.hostOs);
 
   /** Titlebar is the sole quick entry for the right Agent panel. */
   const onAgentClick = () => {
@@ -113,6 +155,7 @@ export default function TitleBar() {
       data-tauri-drag-region
       className="glass-panel relative z-50 flex h-10 shrink-0 items-stretch border-b border-line"
     >
+      <MacWindowControls />
       <div data-tauri-drag-region className="flex items-center gap-2 pl-3.5 pr-2">
         <GlyphMark size={15} className="pointer-events-none" />
         <span className="pointer-events-none text-[11px] font-medium tracking-wide text-ink-2">
@@ -136,7 +179,7 @@ export default function TitleBar() {
           <span className="min-w-0 flex-1 truncate text-left">
             {settingsOpen ? t("panel.settings") : (projectName ?? t("titlebar.palette"))}
           </span>
-          <kbd className="shrink-0">Ctrl K</kbd>
+          <kbd className="shrink-0">{formatShortcut("Ctrl+K", hostOs)}</kbd>
         </button>
       </div>
 

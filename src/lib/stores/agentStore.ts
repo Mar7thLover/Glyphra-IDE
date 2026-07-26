@@ -5,12 +5,14 @@ import {
   listArchives,
   loadArchive,
   persistSession,
+  renameArchive,
   type SessionSummary,
 } from "@/lib/acp/archive";
-import { agentBus, type AgentSessionHandle } from "@/lib/acp/bus";
+import { AgentBus, type AgentSessionHandle } from "@/lib/acp/bus";
 import type {
   AgentPermissionMode,
   AgentApprovalReviewer,
+  AgentImageAttachment,
   AgentStartOptions,
   AgentSessionRestore,
   AgentTimelineItem,
@@ -24,14 +26,25 @@ import {
   type AgentHarnessCatalog,
 } from "@/lib/ipc/ipc";
 import { useHarnessStore } from "@/lib/stores/harnessStore";
+import { useMcpStore } from "@/lib/stores/mcpStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
+
+export interface AgentQueuedPrompt {
+  id: string;
+  text: string;
+  displayText: string;
+  images: AgentImageAttachment[];
+  queuedAt: number;
+}
 
 interface AgentState {
   backends: AgentDetectInfo[];
   detecting: boolean;
   session: AgentSessionHandle | null;
+  liveSessions: AgentSessionHandle[];
+  activeLiveId: string | null;
   items: AgentTimelineItem[];
   permission: PermissionPrompt | null;
   busy: boolean;
@@ -50,10 +63,14 @@ interface AgentState {
   stderrTail: string[];
   circuitOpen: boolean;
   archives: SessionSummary[];
+  /** Explicit renames by archive id; without one the title tracks the first message. */
+  sessionTitles: Record<string, string>;
+  queuedPrompts: AgentQueuedPrompt[];
   /** Recovery fallback: saved timeline is visible, but no agent process is attached yet. */
   viewingArchiveId: string | null;
   detect: () => Promise<void>;
   setMode: (mode: AgentPermissionMode) => void;
+  hydrateProviderId: (id: string | null) => void;
   setProviderId: (id: string | null) => void;
   setModel: (model: string | null) => void;
   setReasoningEffort: (effort: string | null) => void;
@@ -66,26 +83,49 @@ interface AgentState {
   clearError: () => void;
   clearCircuit: () => void;
   start: (cwd?: string, restore?: AgentSessionRestore) => Promise<void>;
-  prompt: (text: string) => Promise<void>;
+  prompt: (
+    text: string,
+    displayText?: string,
+    images?: AgentImageAttachment[],
+  ) => Promise<boolean>;
+  queuePrompt: (
+    text: string,
+    displayText?: string,
+    images?: AgentImageAttachment[],
+    front?: boolean,
+  ) => void;
+  redirectPrompt: (
+    text: string,
+    displayText?: string,
+    images?: AgentImageAttachment[],
+  ) => Promise<void>;
+  removeQueuedPrompt: (id: string) => void;
   cancel: () => Promise<void>;
   respondPermission: (optionId: string | "cancelled") => void;
   stop: () => Promise<void>;
+  switchLiveSession: (id: string) => void;
+  closeLiveSession: (id: string) => Promise<void>;
   newConversation: () => Promise<void>;
   restart: () => Promise<void>;
   refreshArchives: (projectPath: string) => Promise<void>;
   openArchive: (projectPath: string, id: string) => Promise<void>;
   clearArchiveView: () => void;
   removeArchive: (projectPath: string, id: string) => Promise<void>;
+  renameSession: (projectPath: string, id: string, title: string) => Promise<void>;
 }
 
-let subscribed = false;
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
+const liveBuses = new Map<string, AgentBus>();
+const liveUnsubscribers = new Map<string, () => void>();
+const pendingActiveBuses = new Set<AgentBus>();
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let catalogRequestId = 0;
 
 function schedulePersist(session: AgentSessionHandle | null) {
   if (!session || session.items.length === 0) return;
-  if (persistTimer) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
+  const existing = persistTimers.get(session.archiveId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    persistTimers.delete(session.archiveId);
     void persistSession({
       id: session.archiveId,
       projectPath: session.projectPath,
@@ -93,17 +133,36 @@ function schedulePersist(session: AgentSessionHandle | null) {
       acpSessionId: session.acpSessionId,
       createdAt: session.createdAt,
       items: session.items,
+      usage: session.usage,
+      cost: session.cost,
+      title: useAgentStore.getState().sessionTitles[session.archiveId],
     }).catch(() => {
       // Archive failures must not break the live session.
     });
   }, 400);
+  persistTimers.set(session.archiveId, timer);
 }
 
-function ensureBusSubscription(set: (partial: Partial<AgentState>) => void, get: () => AgentState) {
-  if (subscribed) return;
-  subscribed = true;
-  agentBus.subscribe((session) => {
-    set({
+function activeBus(): AgentBus | null {
+  const id = useAgentStore.getState().activeLiveId;
+  return id ? liveBuses.get(id) ?? null : null;
+}
+
+function publishLiveSession(bus: AgentBus, session: AgentSessionHandle) {
+  if (!liveBuses.has(session.archiveId)) {
+    liveBuses.set(session.archiveId, bus);
+  }
+  useAgentStore.setState((state) => {
+    const liveSessions = [
+      session,
+      ...state.liveSessions.filter((item) => item.archiveId !== session.archiveId),
+    ].sort((a, b) => b.createdAt - a.createdAt);
+    const makeActive = pendingActiveBuses.has(bus);
+    const activeLiveId = makeActive ? session.archiveId : state.activeLiveId;
+    if (activeLiveId !== session.archiveId) return { liveSessions, activeLiveId };
+    return {
+      liveSessions,
+      activeLiveId,
       session,
       items: session.items,
       permission: session.permission,
@@ -112,14 +171,78 @@ function ensureBusSubscription(set: (partial: Partial<AgentState>) => void, get:
       stderrTail: session.stderrTail,
       circuitOpen: session.circuitOpen,
       viewingArchiveId: null,
-    });
-    schedulePersist(session);
-    if (session.status === "exited" || session.status === "crashed") {
-      void get()
-        .refreshArchives(session.projectPath)
-        .catch(() => undefined);
-    }
+    };
   });
+  schedulePersist(session);
+  if (session.status === "exited" || session.status === "crashed") {
+    void useAgentStore
+      .getState()
+      .refreshArchives(session.projectPath)
+      .catch(() => undefined);
+  }
+}
+
+function attachBus(bus: AgentBus): () => void {
+  let archiveId: string | null = null;
+  const unsubscribe = bus.subscribe((session) => {
+    if (!archiveId) {
+      archiveId = session.archiveId;
+      liveUnsubscribers.set(archiveId, unsubscribe);
+    }
+    publishLiveSession(bus, session);
+  });
+  return () => {
+    unsubscribe();
+    if (archiveId) liveUnsubscribers.delete(archiveId);
+  };
+}
+
+function removeLiveSession(id: string) {
+  liveUnsubscribers.get(id)?.();
+  liveUnsubscribers.delete(id);
+  liveBuses.delete(id);
+  const timer = persistTimers.get(id);
+  if (timer) clearTimeout(timer);
+  persistTimers.delete(id);
+  useAgentStore.setState((state) => {
+    const liveSessions = state.liveSessions.filter((item) => item.archiveId !== id);
+    if (state.activeLiveId !== id) return { liveSessions };
+    const next = liveSessions[0] ?? null;
+    return {
+      liveSessions,
+      activeLiveId: next?.archiveId ?? null,
+      session: next,
+      items: next?.items ?? [],
+      permission: next?.permission ?? null,
+      busy: next ? next.status === "busy" || next.status === "starting" : false,
+      error: next?.error ?? null,
+      stderrTail: next?.stderrTail ?? [],
+      circuitOpen: next?.circuitOpen ?? false,
+      queuedPrompts: [],
+    };
+  });
+}
+
+async function stopLiveBus(id: string): Promise<AgentSessionHandle | null> {
+  const bus = liveBuses.get(id);
+  if (!bus) return null;
+  const live = bus.getSession();
+  if (live && live.items.length > 0) {
+    await persistSession({
+      id: live.archiveId,
+      projectPath: live.projectPath,
+      backend: live.backend,
+      acpSessionId: live.acpSessionId,
+      createdAt: live.createdAt,
+      items: live.items,
+      usage: live.usage,
+      cost: live.cost,
+      title: useAgentStore.getState().sessionTitles[live.archiveId],
+    });
+  }
+  await bus.stop();
+  removeLiveSession(id);
+  return live;
 }
 
 function pickReadyBackend(backends: AgentDetectInfo[], preferred: StartableBackend): StartableBackend {
@@ -139,6 +262,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   backends: [],
   detecting: false,
   session: null,
+  liveSessions: [],
+  activeLiveId: null,
   items: [],
   permission: null,
   busy: false,
@@ -157,6 +282,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   stderrTail: [],
   circuitOpen: false,
   archives: [],
+  sessionTitles: {},
+  queuedPrompts: [],
   viewingArchiveId: null,
 
   detect: async () => {
@@ -181,6 +308,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   setMode: (mode) => {
     set({ mode });
     usePrefsStore.getState().setPref("defaultMode", mode);
+  },
+
+  hydrateProviderId: (providerId) => {
+    if (get().providerId === providerId) return;
+    set({ providerId, catalog: null, catalogError: null });
   },
 
   setProviderId: (providerId) => {
@@ -221,7 +353,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   configureSession: async () => {
     try {
-      await agentBus.configure({
+      const bus = activeBus();
+      if (!bus) throw new Error("No running agent session");
+      await bus.configure({
         model: get().model,
         reasoningEffort: get().reasoningEffort,
         fastMode: get().fastMode,
@@ -287,21 +421,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   clearCircuit: () => {
-    agentBus.clearCircuit();
+    activeBus()?.clearCircuit();
     set({ circuitOpen: false, error: null });
   },
 
   start: async (cwd, restore) => {
-    ensureBusSubscription(set, get);
     if (get().backend === "auto" || get().backends.length === 0) {
       await get().detect();
     }
-    if (agentBus.isCircuitOpen()) {
-      set({
-        circuitOpen: true,
-        error:
-          "Circuit open: too many crashes. Reset the breaker, then start again.",
-      });
+    if (get().liveSessions.length >= 8) {
+      set({ error: "Close a live conversation before starting another (limit: 8)." });
       return;
     }
     const projectPath = cwd ?? useProjectStore.getState().current?.path;
@@ -328,8 +457,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       );
       if (!ok) return;
     }
-    set({ busy: true, error: null, stderrTail: [], viewingArchiveId: null });
+    set({
+      busy: true,
+      error: null,
+      stderrTail: [],
+      viewingArchiveId: null,
+      session: null,
+      items: restore?.items ?? [],
+      permission: null,
+      activeLiveId: null,
+      queuedPrompts: [],
+    });
+    const bus = new AgentBus();
+    pendingActiveBuses.add(bus);
+    const detach = attachBus(bus);
     try {
+      const mcpServers = await useMcpStore.getState().enabledForSession();
       const options: AgentStartOptions = {
         mode: get().mode,
         providerId: get().providerId,
@@ -340,6 +483,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         approvalReviewer: get().approvalReviewer,
         prewarmedSessionId: get().catalog?.prewarmedSessionId ?? null,
         restore,
+        mcpServers,
         harness: custom
           ? {
               protocol: custom.protocol,
@@ -357,8 +501,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               }
             : undefined,
       };
-      const session = await agentBus.start(get().backend, projectPath, options);
+      const session = await bus.start(get().backend, projectPath, options);
+      pendingActiveBuses.delete(bus);
       set({
+        activeLiveId: session.archiveId,
         session,
         items: session.items,
         permission: session.permission,
@@ -367,32 +513,69 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
       await get().refreshArchives(projectPath);
     } catch (error) {
+      pendingActiveBuses.delete(bus);
+      const failed = bus.getSession();
+      const failedId =
+        failed?.archiveId ??
+        [...liveBuses.entries()].find(([, candidate]) => candidate === bus)?.[0] ??
+        null;
+      detach();
+      if (failedId) {
+        liveBuses.delete(failedId);
+        liveUnsubscribers.delete(failedId);
+        set((state) => ({
+          liveSessions: state.liveSessions.filter(
+            (item) => item.archiveId !== failedId,
+          ),
+        }));
+      }
+      await bus.stop().catch(() => undefined);
       set({
         busy: false,
         error: error instanceof Error ? error.message : String(error),
-        stderrTail: agentBus.getSession()?.stderrTail ?? get().stderrTail,
+        stderrTail: failed?.stderrTail ?? get().stderrTail,
+        activeLiveId: null,
       });
     }
   },
 
-  prompt: async (text) => {
+  prompt: async (text, displayText, images = []) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && images.length === 0) return false;
+    const visibleText =
+      displayText?.trim() ||
+      trimmed ||
+      (images.length === 1 ? `Image: ${images[0].name}` : `${images.length} images`);
+    const bus = activeBus();
+    const liveId = get().activeLiveId;
+    if (!bus || !liveId) {
+      set({ error: "No running agent session — start one first." });
+      return false;
+    }
     set({ busy: true, error: null });
-    const projectPath = useProjectStore.getState().current?.path ?? null;
+    const projectPath =
+      bus.getSession()?.projectPath ??
+      useProjectStore.getState().current?.path ??
+      null;
     let turnId: string | null = null;
     if (projectPath) {
       try {
-        const turn = await ipc.ckptBeginTurn(projectPath, trimmed.slice(0, 48));
+        const turn = await ipc.ckptBeginTurn(projectPath, visibleText.slice(0, 48));
         turnId = turn.id;
       } catch {
         // Checkpoints are best-effort — continue the prompt without them.
       }
     }
+    let succeeded = false;
     try {
-      await agentBus.prompt(trimmed);
-      set({ busy: false });
-      const session = agentBus.getSession();
+      await bus.prompt(trimmed, {
+        displayText: visibleText,
+        checkpointId: turnId,
+        images,
+      });
+      succeeded = true;
+      if (get().activeLiveId === liveId) set({ busy: false });
+      const session = bus.getSession();
       if (session) {
         await persistSession({
           id: session.archiveId,
@@ -401,14 +584,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           acpSessionId: session.acpSessionId,
           createdAt: session.createdAt,
           items: session.items,
+          usage: session.usage,
+          cost: session.cost,
+          title: get().sessionTitles[session.archiveId],
         });
         await get().refreshArchives(session.projectPath);
       }
     } catch (error) {
-      set({
-        busy: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      if (get().activeLiveId === liveId) {
+        set({
+          busy: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     } finally {
       if (projectPath) {
         try {
@@ -418,38 +606,69 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           // ignore commit failures
         }
       }
+      const session = bus.getSession();
+      const next = get().queuedPrompts[0];
+      if (
+        get().activeLiveId === liveId &&
+        next &&
+        session &&
+        !["crashed", "exited"].includes(session.status)
+      ) {
+        set((state) => ({
+          queuedPrompts: state.queuedPrompts.filter((item) => item.id !== next.id),
+        }));
+        queueMicrotask(() => {
+          void get().prompt(next.text, next.displayText, next.images);
+        });
+      }
     }
+    return succeeded;
   },
 
+  queuePrompt: (text, displayText, images = [], front = false) => {
+    const trimmed = text.trim();
+    if (!trimmed && images.length === 0) return;
+    const item: AgentQueuedPrompt = {
+      id: globalThis.crypto?.randomUUID?.() ?? `queued-${Date.now()}-${Math.random()}`,
+      text: trimmed,
+      displayText:
+        displayText?.trim() ||
+        trimmed ||
+        (images.length === 1 ? `Image: ${images[0].name}` : `${images.length} images`),
+      images,
+      queuedAt: Date.now(),
+    };
+    set((state) => ({
+      queuedPrompts: front
+        ? [item, ...state.queuedPrompts]
+        : [...state.queuedPrompts, item],
+    }));
+  },
+
+  redirectPrompt: async (text, displayText, images = []) => {
+    get().queuePrompt(text, displayText, images, true);
+    await get().cancel();
+  },
+
+  removeQueuedPrompt: (id) =>
+    set((state) => ({
+      queuedPrompts: state.queuedPrompts.filter((item) => item.id !== id),
+    })),
+
   cancel: async () => {
-    await agentBus.cancel();
+    await activeBus()?.cancel();
   },
 
   respondPermission: (optionId) => {
-    agentBus.respondPermission(optionId);
+    activeBus()?.respondPermission(optionId);
   },
 
   stop: async () => {
+    const liveId = get().activeLiveId;
+    if (!liveId) return;
     set({ busy: true });
-    const live = agentBus.getSession();
     try {
-      if (live && live.items.length > 0) {
-        await persistSession({
-          id: live.archiveId,
-          projectPath: live.projectPath,
-          backend: live.backend,
-          acpSessionId: live.acpSessionId,
-          createdAt: live.createdAt,
-          items: live.items,
-        });
-      }
-      await agentBus.stop();
-      set({
-        busy: false,
-        session: null,
-        permission: null,
-        items: get().items,
-      });
+      const live = await stopLiveBus(liveId);
       if (live) await get().refreshArchives(live.projectPath);
     } catch (error) {
       set({
@@ -460,10 +679,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   newConversation: async () => {
-    if (agentBus.getSession() || get().session) {
-      await get().stop();
-    }
     set({
+      activeLiveId: null,
       session: null,
       items: [],
       permission: null,
@@ -471,11 +688,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       error: null,
       viewingArchiveId: null,
       stderrTail: [],
+      queuedPrompts: [],
     });
   },
 
+  switchLiveSession: (id) => {
+    const bus = liveBuses.get(id);
+    const session = bus?.getSession();
+    if (!session) return;
+    set({
+      activeLiveId: id,
+      session,
+      items: session.items,
+      permission: session.permission,
+      busy: session.status === "busy" || session.status === "starting",
+      error: session.error ?? null,
+      viewingArchiveId: null,
+      stderrTail: session.stderrTail,
+      circuitOpen: session.circuitOpen,
+      queuedPrompts: [],
+    });
+  },
+
+  closeLiveSession: async (id) => {
+    try {
+      const live = await stopLiveBus(id);
+      if (live) await get().refreshArchives(live.projectPath);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
   restart: async () => {
-    if (agentBus.isCircuitOpen() || get().circuitOpen) {
+    const bus = activeBus();
+    const live = bus?.getSession() ?? null;
+    if (!bus || !live) return;
+    if (bus.isCircuitOpen() || get().circuitOpen) {
       set({
         circuitOpen: true,
         error:
@@ -483,8 +731,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       });
       return;
     }
-    await get().stop();
-    await get().start();
+    const restore: AgentSessionRestore = {
+      archiveId: live.archiveId,
+      acpSessionId: live.acpSessionId,
+      createdAt: live.createdAt,
+      items: live.items,
+      usage: live.usage,
+      cost: live.cost,
+    };
+    await stopLiveBus(live.archiveId);
+    await get().start(live.projectPath, restore);
   },
 
   refreshArchives: async (projectPath) => {
@@ -502,9 +758,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   openArchive: async (projectPath, id) => {
     try {
-      if (get().session?.archiveId === id && get().session?.status === "running") return;
-      if (agentBus.getSession()) {
-        await get().stop();
+      if (liveBuses.has(id)) {
+        get().switchLiveSession(id);
+        return;
       }
       const { meta, items } = await loadArchive(projectPath, id);
       const archivedBackend = meta.backend as StartableBackend;
@@ -522,6 +778,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         acpSessionId: meta.acpSessionId,
         createdAt: meta.createdAt,
         items,
+        usage: meta.usage
+          ? {
+              totalTokens: meta.usage.totalTokens,
+              inputTokens: meta.usage.inputTokens,
+              outputTokens: meta.usage.outputTokens,
+              thoughtTokens: meta.usage.thoughtTokens ?? undefined,
+              cachedReadTokens: meta.usage.cachedReadTokens ?? undefined,
+              cachedWriteTokens: meta.usage.cachedWriteTokens ?? undefined,
+            }
+          : null,
+        cost: meta.cost ?? null,
       });
       const restored = get().session;
       if (restored?.archiveId !== id || restored.status !== "running") {
@@ -548,9 +815,42 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   removeArchive: async (projectPath, id) => {
+    if (liveBuses.has(id)) {
+      set({ error: "Stop the live conversation before deleting its archive." });
+      return;
+    }
     await deleteArchive(projectPath, id);
     if (get().viewingArchiveId === id) {
       set({ viewingArchiveId: null, items: [] });
+    }
+    set((state) => {
+      const { [id]: _dropped, ...rest } = state.sessionTitles;
+      return { sessionTitles: rest };
+    });
+    await get().refreshArchives(projectPath);
+  },
+
+  renameSession: async (projectPath, id, title) => {
+    const next = title.trim();
+    if (!next) return;
+    // Remember it first: a live conversation re-saves on a timer and would
+    // otherwise overwrite the rename with the first-message title.
+    set((state) => ({ sessionTitles: { ...state.sessionTitles, [id]: next } }));
+    const live = liveBuses.get(id)?.getSession();
+    if (live && live.items.length > 0) {
+      await persistSession({
+        id: live.archiveId,
+        projectPath: live.projectPath,
+        backend: live.backend,
+        acpSessionId: live.acpSessionId,
+        createdAt: live.createdAt,
+        items: live.items,
+        usage: live.usage,
+        cost: live.cost,
+        title: next,
+      });
+    } else {
+      await renameArchive(projectPath, id, next);
     }
     await get().refreshArchives(projectPath);
   },

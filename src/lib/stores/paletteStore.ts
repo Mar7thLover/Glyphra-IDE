@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type PaletteMode = "commands" | "files";
+export type PaletteMode = "commands" | "files" | "symbols";
 
 interface PaletteState {
   open: boolean;
@@ -10,6 +10,7 @@ interface PaletteState {
   toggle: () => void;
   openCommands: () => void;
   openFiles: () => void;
+  openSymbols: () => void;
 }
 
 export const usePaletteStore = create<PaletteState>((set, get) => ({
@@ -23,4 +24,5 @@ export const usePaletteStore = create<PaletteState>((set, get) => ({
   },
   openCommands: () => set({ open: true, mode: "commands" }),
   openFiles: () => set({ open: true, mode: "files" }),
+  openSymbols: () => set({ open: true, mode: "symbols" }),
 }));

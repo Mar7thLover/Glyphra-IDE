@@ -39,12 +39,21 @@ pub struct SearchBatch {
 #[derive(Default)]
 pub struct SearchManager {
     next_id: AtomicU32,
-    cancels: Mutex<std::collections::HashMap<u32, Arc<AtomicBool>>>,
+    cancels: Mutex<std::collections::HashMap<(String, u32), Arc<AtomicBool>>>,
 }
 
 impl SearchManager {
+    pub fn live_count(&self) -> Result<usize, String> {
+        Ok(self
+            .cancels
+            .lock()
+            .map_err(|_| "search lock poisoned")?
+            .len())
+    }
+
     pub fn start(
         self: &Arc<Self>,
+        window_label: &str,
         root: String,
         query: String,
         channel: Channel<SearchBatch>,
@@ -58,33 +67,60 @@ impl SearchManager {
         }
 
         let search_id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let search_key = (window_label.to_owned(), search_id);
         let cancel = Arc::new(AtomicBool::new(false));
         self.cancels
             .lock()
             .map_err(|_| "search lock poisoned")?
-            .insert(search_id, Arc::clone(&cancel));
+            .insert(search_key.clone(), Arc::clone(&cancel));
 
         let manager = Arc::clone(self);
+        let finished_key = search_key;
         thread::spawn(move || {
             let _ = run_search(search_id, root_path, query, channel, Arc::clone(&cancel));
             if let Ok(mut map) = manager.cancels.lock() {
-                map.remove(&search_id);
+                map.remove(&finished_key);
             }
         });
 
         Ok(search_id)
     }
 
-    pub fn cancel(&self, search_id: u32) -> Result<(), String> {
+    pub fn cancel(&self, window_label: &str, search_id: u32) -> Result<(), String> {
         if let Some(flag) = self
             .cancels
             .lock()
             .map_err(|_| "search lock poisoned")?
-            .get(&search_id)
+            .get(&(window_label.to_owned(), search_id))
         {
             flag.store(true, Ordering::Relaxed);
         }
         Ok(())
+    }
+
+    pub fn cancel_window(&self, window_label: &str) -> Result<usize, String> {
+        let mut cancels = self.cancels.lock().map_err(|_| "search lock poisoned")?;
+        let keys = cancels
+            .keys()
+            .filter(|(label, _)| label == window_label)
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in &keys {
+            if let Some(flag) = cancels.remove(key) {
+                flag.store(true, Ordering::Relaxed);
+            }
+        }
+        Ok(keys.len())
+    }
+
+    pub fn cancel_all(&self) -> Result<usize, String> {
+        let mut cancels = self.cancels.lock().map_err(|_| "search lock poisoned")?;
+        let count = cancels.len();
+        for flag in cancels.values() {
+            flag.store(true, Ordering::Relaxed);
+        }
+        cancels.clear();
+        Ok(count)
     }
 }
 
@@ -239,5 +275,37 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cancel_all_sets_every_flag_and_drains_registry() {
+        let manager = SearchManager::default();
+        let first = Arc::new(AtomicBool::new(false));
+        let second = Arc::new(AtomicBool::new(false));
+        manager.cancels.lock().unwrap().extend([
+            (("project-a".into(), 1), Arc::clone(&first)),
+            (("project-b".into(), 2), Arc::clone(&second)),
+        ]);
+
+        assert_eq!(manager.cancel_all().unwrap(), 2);
+        assert!(first.load(Ordering::Relaxed));
+        assert!(second.load(Ordering::Relaxed));
+        assert!(manager.cancels.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancel_window_only_drains_matching_searches() {
+        let manager = SearchManager::default();
+        let first = Arc::new(AtomicBool::new(false));
+        let second = Arc::new(AtomicBool::new(false));
+        manager.cancels.lock().unwrap().extend([
+            (("project-a".into(), 1), Arc::clone(&first)),
+            (("project-b".into(), 2), Arc::clone(&second)),
+        ]);
+
+        assert_eq!(manager.cancel_window("project-a").unwrap(), 1);
+        assert!(first.load(Ordering::Relaxed));
+        assert!(!second.load(Ordering::Relaxed));
+        assert_eq!(manager.live_count().unwrap(), 1);
     }
 }

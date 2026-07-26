@@ -204,7 +204,6 @@ impl CheckpointEngine {
         };
         write_meta(&dir, &meta)?;
 
-        let key = project.to_string_lossy().to_string();
         let mut preimaged = HashSet::new();
 
         // L3: snapshot currently dirty tracked/untracked files so restore works
@@ -225,7 +224,7 @@ impl CheckpointEngine {
             .lock()
             .map_err(|_| "ckpt lock poisoned")?
             .insert(
-                key,
+                id.clone(),
                 ActiveTurn {
                     id,
                     project,
@@ -247,18 +246,16 @@ impl CheckpointEngine {
         path: &str,
     ) -> Result<(), String> {
         let project = project_root(project_path)?;
-        let key = project.to_string_lossy().to_string();
         let mut guard = self.active.lock().map_err(|_| "ckpt lock poisoned")?;
-        let Some(turn) = guard.get_mut(&key) else {
-            return Ok(());
-        };
         let abs = PathBuf::from(path);
         let rel = rel_path(&project, &abs)?;
-        if turn.preimaged.contains(&rel) {
-            return Ok(());
+        for turn in guard.values_mut().filter(|turn| turn.project == project) {
+            if turn.preimaged.contains(&rel) {
+                continue;
+            }
+            capture_preimage(data_dir, &project, &turn.id, &abs, &rel)?;
+            turn.preimaged.insert(rel.clone());
         }
-        capture_preimage(data_dir, &project, &turn.id, &abs, &rel)?;
-        turn.preimaged.insert(rel);
         Ok(())
     }
 
@@ -267,18 +264,18 @@ impl CheckpointEngine {
         let abs = absolute_path
             .canonicalize()
             .unwrap_or_else(|_| absolute_path.to_path_buf());
-        let project_key = {
-            let guard = self.active.lock().map_err(|_| "ckpt lock poisoned")?;
-            guard.iter().find_map(|(key, turn)| {
-                if abs.starts_with(&turn.project) {
-                    Some(key.clone())
-                } else {
-                    None
-                }
-            })
-        };
-        if let Some(project_key) = project_key {
-            return self.preimage(app, &project_key, &abs.to_string_lossy());
+        let data_dir = app_data_dir(app)?;
+        let mut guard = self.active.lock().map_err(|_| "ckpt lock poisoned")?;
+        for turn in guard
+            .values_mut()
+            .filter(|turn| abs.starts_with(&turn.project))
+        {
+            let rel = rel_path(&turn.project, &abs)?;
+            if turn.preimaged.contains(&rel) {
+                continue;
+            }
+            capture_preimage(&data_dir, &turn.project, &turn.id, &abs, &rel)?;
+            turn.preimaged.insert(rel);
         }
         Ok(())
     }
@@ -299,16 +296,27 @@ impl CheckpointEngine {
         turn_id: Option<String>,
     ) -> Result<CkptTurnMeta, String> {
         let project = project_root(project_path)?;
-        let key = project.to_string_lossy().to_string();
         let mut guard = self.active.lock().map_err(|_| "ckpt lock poisoned")?;
         let turn = match turn_id {
-            Some(id) => guard
-                .remove(&key)
-                .filter(|t| t.id == id)
-                .ok_or_else(|| format!("turn `{id}` is not active"))?,
-            None => guard
-                .remove(&key)
-                .ok_or_else(|| "no active checkpoint turn".to_string())?,
+            Some(id) => {
+                let turn = guard
+                    .remove(&id)
+                    .ok_or_else(|| format!("turn `{id}` is not active"))?;
+                if turn.project != project {
+                    guard.insert(id.clone(), turn);
+                    return Err(format!("turn `{id}` belongs to another project"));
+                }
+                turn
+            }
+            None => {
+                let id = guard
+                    .iter()
+                    .find_map(|(id, turn)| (turn.project == project).then_some(id.clone()))
+                    .ok_or_else(|| "no active checkpoint turn".to_string())?;
+                guard
+                    .remove(&id)
+                    .ok_or_else(|| "no active checkpoint turn".to_string())?
+            }
         };
         drop(guard);
 
@@ -731,6 +739,36 @@ mod tests {
             .restore_file_at(&data, &project.to_string_lossy(), &meta.id, "only.bin")
             .unwrap();
         assert_eq!(fs::read(&target).unwrap(), vec![0u8, 1, 2, 3, 255]);
+
+        let _ = fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[test]
+    fn concurrent_turns_in_one_project_keep_independent_preimages() {
+        let (project, data) = temp_pair();
+        let engine = CheckpointEngine::default();
+        let target = project.join("shared.txt");
+        fs::write(&target, "before").unwrap();
+
+        let first = engine
+            .begin_turn_at(&data, &project.to_string_lossy(), Some("first".into()))
+            .unwrap();
+        let second = engine
+            .begin_turn_at(&data, &project.to_string_lossy(), Some("second".into()))
+            .unwrap();
+        engine
+            .preimage_at(&data, &project.to_string_lossy(), &target.to_string_lossy())
+            .unwrap();
+        fs::write(&target, "after").unwrap();
+
+        let first_meta = engine
+            .commit_turn_at(&data, &project.to_string_lossy(), Some(first.id))
+            .unwrap();
+        let second_meta = engine
+            .commit_turn_at(&data, &project.to_string_lossy(), Some(second.id))
+            .unwrap();
+        assert_eq!(first_meta.files.len(), 1);
+        assert_eq!(second_meta.files.len(), 1);
 
         let _ = fs::remove_dir_all(project.parent().unwrap());
     }

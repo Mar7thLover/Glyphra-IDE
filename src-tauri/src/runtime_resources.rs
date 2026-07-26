@@ -2,8 +2,15 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager};
 
+use crate::paths;
+
 const RUNTIME_DIR: &str = "runtime";
 
+/// Resolve a bundled runtime script.
+///
+/// The result is always a plain path: `resource_dir()` is extended-length on
+/// Windows, and Node cannot load a `\\?\`-prefixed main module — it fails in
+/// `realpathSync` and exits(1) before running anything.
 pub fn resolve(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     let packaged = app
         .path()
@@ -12,7 +19,7 @@ pub fn resolve(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
         .join(RUNTIME_DIR)
         .join(name);
     if packaged.is_file() {
-        return Ok(packaged);
+        return Ok(paths::simplified(&packaged));
     }
 
     // Development and Rust-only test builds run directly from src-tauri.
@@ -21,7 +28,7 @@ pub fn resolve(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
         .join(RUNTIME_DIR)
         .join(name);
     if development.is_file() {
-        return Ok(development);
+        return Ok(paths::simplified(&development));
     }
 
     Err(format!(

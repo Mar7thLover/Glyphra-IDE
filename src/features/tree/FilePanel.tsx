@@ -1,4 +1,3 @@
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ChevronRight, FileCode2, Folder, FolderOpen, Loader2 } from "lucide-react";
 import { useMemo } from "react";
 import { Virtuoso } from "react-virtuoso";
@@ -8,6 +7,7 @@ import type { DirEntryInfo } from "@/lib/ipc/ipc";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import { useGitStore } from "@/lib/stores/gitStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { pickProject } from "@/lib/workspaceActions";
 
 interface TreeRow {
   entry: DirEntryInfo;
@@ -38,7 +38,6 @@ export default function FilePanel() {
   const expandedList = useProjectStore((s) => s.expanded);
   const loading = useProjectStore((s) => s.loading);
   const error = useProjectStore((s) => s.error);
-  const openProject = useProjectStore((s) => s.openProject);
   const toggleDirectory = useProjectStore((s) => s.toggleDirectory);
   const openFile = useEditorStore((s) => s.openFile);
   const activePath = useEditorStore((s) => s.activePath);
@@ -50,17 +49,12 @@ export default function FilePanel() {
   // Touch statuses so badges re-render when git refresh completes.
   void statuses;
 
-  const pickFolder = async () => {
-    const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
-    if (typeof dir === "string") await openProject(dir);
-  };
-
   if (!current) {
     return (
       <div className="flex flex-1 flex-col px-3 py-2.5">
         <button
           type="button"
-          onClick={() => void pickFolder()}
+          onClick={() => void pickProject(t("empty.openFolder"), t("menu.unsavedProject"))}
           className="inline-flex items-center gap-1.5 px-1 py-1 text-left text-[11px] text-ink-2 transition-colors hover:text-ink"
         >
           <FolderOpen className="size-3.5 text-ink-3" strokeWidth={1.6} />
@@ -97,7 +91,10 @@ export default function FilePanel() {
               <button
                 onClick={() => {
                   if (isDirectory) void toggleDirectory(entry);
-                  else void openFile(entry.path);
+                  else void openFile(entry.path, { preview: true });
+                }}
+                onDoubleClick={() => {
+                  if (!isDirectory) void openFile(entry.path, { preview: false });
                 }}
                 className={`mx-1.5 flex h-[26px] w-[calc(100%-0.75rem)] items-center gap-1.5 rounded-md text-left text-xs transition-colors duration-100 ${
                   isActive ? "bg-active text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"

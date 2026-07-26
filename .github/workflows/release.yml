@@ -2,7 +2,7 @@ name: release
 
 # Build installers for Windows / macOS / Linux and publish a GitHub Release.
 # Triggers:
-#   - push of a version tag: v0.1.0-beta.1
+#   - push of a version tag: v0.2.0
 #   - manual workflow_dispatch (uses version from tauri.conf.json)
 
 on:
@@ -121,13 +121,15 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: Glyphra v__VERSION__
           releaseBody: |
-            ## Glyphra v__VERSION__ (test / pre-alpha)
+            ## Glyphra v__VERSION__
 
-            First packaged test builds. APIs and UI may still break between commits.
+            See [CHANGELOG.md](https://github.com/Mar7thLover/Glyphra-IDE/blob/main/CHANGELOG.md) for what changed in this release.
 
             ### Downloads
             | Platform | Installer |
@@ -149,6 +151,8 @@ jobs:
           args: ${{ matrix.args }}
           # Windows portable-style binary; macOS/Linux GUI apps still need their installers.
           uploadPlainBinary: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
           projectPath: .
 
       - name: Verify Windows installer artifacts
@@ -156,8 +160,37 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-windows-bundle.ps1
 
-  summarize:
+  publish-update-channel:
     needs: [version, publish-tauri]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download signed updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "v${{ needs.version.outputs.app_version }}" --pattern latest.json
+      - name: Validate updater manifest
+        run: |
+          jq -e '
+            (.version | length > 0) and
+            (.platforms | type == "object") and
+            ([.platforms[] | select((.url | length == 0) or (.signature | length == 0))] | length == 0)
+          ' latest.json >/dev/null
+      - name: Publish rolling updater channel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view updater >/dev/null 2>&1; then
+            gh release create updater \
+              --title "Glyphra updater channel" \
+              --notes "Machine-readable rolling channel for signed Glyphra updates." \
+              --prerelease
+          fi
+          gh release upload updater latest.json --clobber
+
+  summarize:
+    needs: [version, publish-tauri, publish-update-channel]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -166,4 +199,5 @@ jobs:
         run: |
           echo "Version: ${{ needs.version.outputs.app_version }}"
           echo "Publish job: ${{ needs.publish-tauri.result }}"
+          echo "Updater channel: ${{ needs.publish-update-channel.result }}"
           echo "Tag: v${{ needs.version.outputs.app_version }}"
