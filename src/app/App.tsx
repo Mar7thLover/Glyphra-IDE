@@ -4,10 +4,19 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import OnboardingOverlay from "@/features/onboarding/OnboardingOverlay";
 import UnsavedChangesDialog from "@/features/editor/UnsavedChangesDialog";
+import UpdateBanner from "@/components/UpdateBanner";
 import SettingsPage from "@/features/settings/SettingsPage";
-import { ipc, type LaunchRequest } from "@/lib/ipc/ipc";
+import {
+  EDITOR_RECOVERY_INTERVAL_MS,
+  persistEditorRecovery,
+  restoreEditorRecovery,
+} from "@/lib/editorRecovery";
+import { ipc, type AppSettings, type LaunchRequest } from "@/lib/ipc/ipc";
+import { commandMatches } from "@/lib/keybindings";
+import { useAgentStore } from "@/lib/stores/agentStore";
 import { useGitStore } from "@/lib/stores/gitStore";
-import { useEditorStore } from "@/lib/stores/editorStore";
+import { isEditorTabDirty, useEditorStore } from "@/lib/stores/editorStore";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
@@ -15,6 +24,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
+import { useUpdaterStore } from "@/lib/stores/updaterStore";
 import { openProjectPath, pickFile, pickProject } from "@/lib/workspaceActions";
 
 import ActivityRail from "./ActivityRail";
@@ -27,14 +37,18 @@ import TitleBar from "./TitleBar";
 const AgentWorkspace = lazy(() => import("@/features/agent/AgentWorkspace"));
 const CommandPalette = lazy(() => import("@/features/palette/CommandPalette"));
 const mainWindow = getCurrentWindow();
+const windowLabel = mainWindow.label;
 let launchQueue = Promise.resolve();
 
 function enqueueLaunchRequest(request: LaunchRequest) {
   launchQueue = launchQueue.then(async () => {
-    const opened = await openProjectPath(request.projectPath, i18n.t("menu.unsavedProject"));
-    if (opened && request.filePath) {
+    const current = useProjectStore.getState().current;
+    if (current?.path === request.projectPath && request.filePath) {
       await useEditorStore.getState().openFile(request.filePath);
+      return;
     }
+    const opened = await openProjectPath(request.projectPath, i18n.t("menu.unsavedProject"));
+    if (opened && request.filePath) await useEditorStore.getState().openFile(request.filePath);
   });
 }
 
@@ -87,14 +101,21 @@ export default function App() {
         try {
           const settings = await ipc.settingsGet();
           applyBootSettings(settings.theme, settings.language);
+          usePrefsStore.getState().hydrate(settings);
+          useAgentStore
+            .getState()
+            .hydrateProviderId(usePrefsStore.getState().defaultProviderId);
         } catch {
           // localStorage FOUC path in index.html already applied a theme
         }
         const env = await ipc.appReady();
         setMica(env.mica);
         setHostOs(env.os);
-        const launchRequest = await ipc.appTakeLaunchRequest();
-        if (launchRequest) enqueueLaunchRequest(launchRequest);
+        if (windowLabel === "main") {
+          const launchRequest = await ipc.appTakeLaunchRequest();
+          if (launchRequest) enqueueLaunchRequest(launchRequest);
+          void useUpdaterStore.getState().checkForUpdate(true);
+        }
         requestAnimationFrame(() => void ipc.perfMark("tti"));
         maybeAutoOpen();
       });
@@ -105,6 +126,44 @@ export default function App() {
   }, [maybeAutoOpen, setHostOs, setMica]);
 
   useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<AppSettings>("settings-changed", (event) => {
+      applyBootSettings(event.payload.theme, event.payload.language);
+      usePrefsStore.getState().hydrate(event.payload);
+      useAgentStore
+        .getState()
+        .hydrateProviderId(usePrefsStore.getState().defaultProviderId);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen("prepare-restart", async () => {
+      const currentProject = useProjectStore.getState().current?.path;
+      if (currentProject) await persistEditorRecovery(currentProject);
+      const agentState = useAgentStore.getState();
+      const ids = agentState.liveSessions.map((session) => session.archiveId);
+      await Promise.all(ids.map((id) => agentState.closeLiveSession(id)));
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     let disposed = false;
     void mainWindow
@@ -113,10 +172,18 @@ export default function App() {
         if (closing.current) return;
         const dirty = useEditorStore
           .getState()
-          .tabs.some((tab) => tab.content !== tab.savedContent);
-        if (dirty && !window.confirm(i18n.t("menu.unsavedExit"))) return;
+          .tabs.some(isEditorTabDirty);
+        const currentProject = useProjectStore.getState().current?.path;
+        const protectedByRecovery =
+          !dirty || (currentProject ? await persistEditorRecovery(currentProject) : false);
+        if (dirty && !protectedByRecovery && !window.confirm(i18n.t("menu.unsavedExit"))) return;
         closing.current = true;
-        await ipc.appExit();
+        const agentState = useAgentStore.getState();
+        const ids = agentState.liveSessions
+          .filter((session) => session.projectPath === currentProject)
+          .map((session) => session.archiveId);
+        await Promise.all(ids.map((id) => agentState.closeLiveSession(id)));
+        await mainWindow.destroy();
       })
       .then((fn) => {
         if (disposed) fn();
@@ -129,36 +196,77 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!projectPath) return;
+    let disposed = false;
+    let interval: number | undefined;
+    const flush = () => void persistEditorRecovery(projectPath);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+
+    void restoreEditorRecovery(
+      projectPath,
+      () => !disposed && useProjectStore.getState().current?.path === projectPath,
+    ).finally(() => {
+      if (disposed) return;
+      interval = window.setInterval(flush, EDITOR_RECOVERY_INTERVAL_MS);
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    });
+
+    return () => {
+      disposed = true;
+      if (interval !== undefined) window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      flush();
+    };
+  }, [projectPath]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
+      const activeElement = document.activeElement;
+      const context = {
+        editorFocus: activeElement instanceof Element && Boolean(activeElement.closest(".cm-editor")),
+        projectOpen: Boolean(useProjectStore.getState().current),
+        settingsOpen: useUiStore.getState().settingsOpen,
+        agentBusy: useAgentStore.getState().busy,
+      };
+      if (commandMatches(e, "workbench.openFolder", context)) {
         e.preventDefault();
-        if (e.shiftKey) {
-          void pickFile(i18n.t("menu.openFile"), i18n.t("menu.unsavedProject"));
-        } else {
-          void pickProject(i18n.t("empty.openFolder"), i18n.t("menu.unsavedProject"));
-        }
+        void pickProject(i18n.t("empty.openFolder"), i18n.t("menu.unsavedProject"));
+        return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+      if (commandMatches(e, "workbench.openFile", context)) {
+        e.preventDefault();
+        void pickFile(i18n.t("menu.openFile"), i18n.t("menu.unsavedProject"));
+        return;
+      }
+      if (commandMatches(e, "workbench.toggleAgent", context)) {
         e.preventDefault();
         const ui = useUiStore.getState();
         if (ui.settingsOpen) ui.closeSettings();
         ui.toggleAgent();
+        return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+      if (commandMatches(e, "workbench.settings", context)) {
         e.preventDefault();
         useUiStore.getState().toggleSettings();
+        return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === "`") {
+      if (commandMatches(e, "workbench.toggleTerminal", context)) {
         e.preventDefault();
+        useDiagnosticsStore.getState().setProblemsOpen(false);
         useTerminalStore.getState().toggle();
+        return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+      if (commandMatches(e, "workbench.search", context)) {
         e.preventDefault();
         useUiStore.getState().togglePanel("search");
+        return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+      if (commandMatches(e, "workbench.review", context)) {
         e.preventDefault();
         useReviewStore.getState().openReview(useProjectStore.getState().current?.path);
+        return;
       }
       if (e.key === "Escape") {
         if (usePaletteStore.getState().open) {
@@ -207,6 +315,7 @@ export default function App() {
       <StatusBar />
       <OnboardingOverlay />
       <UnsavedChangesDialog />
+      <UpdateBanner />
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>

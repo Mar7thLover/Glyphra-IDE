@@ -1,20 +1,24 @@
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
 };
-
-use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State, Window};
 use ts_rs::TS;
 
-use crate::perf::Launch;
+use crate::{
+    agent::supervisor::AgentSupervisor, agent_terminal::AgentTerminalManager, perf::Launch,
+    pty::PtyManager, search::SearchManager,
+};
 
 pub const AGENT_WINDOW_LABEL: &str = "agent";
+pub const WELCOME_WINDOW_LABEL: &str = "main";
 pub const LAUNCH_REQUEST_EVENT: &str = "launch-request";
+pub const PREPARE_RESTART_EVENT: &str = "prepare-restart";
 
 #[derive(Debug, Clone, Serialize, TS, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -140,20 +144,101 @@ fn workspace_project(descriptor_path: &Path) -> Option<PathBuf> {
 /// and terminal launches while Glyphra is already running.
 pub fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>, cwd: String) {
     if let Some(request) = launch_request_from_args(&args, &cwd) {
-        if let Some(state) = app.try_state::<LaunchState>() {
-            if state.is_main_ready() {
-                let _ = app.emit_to("main", LAUNCH_REQUEST_EVENT, request);
-            } else {
+        let main_exists = app.get_webview_window(WELCOME_WINDOW_LABEL).is_some();
+        let delivered = main_exists
+            && app
+                .try_state::<LaunchState>()
+                .is_some_and(|state| state.is_main_ready())
+            && app
+                .emit_to(WELCOME_WINDOW_LABEL, LAUNCH_REQUEST_EVENT, request.clone())
+                .is_ok();
+        if !delivered {
+            if let Some(state) = app.try_state::<LaunchState>() {
                 state.replace_pending(request);
             }
         }
+        let main = match app.get_webview_window(WELCOME_WINDOW_LABEL) {
+            Some(main) => Ok(main),
+            None => open_welcome_window_impl(app),
+        };
+        match main {
+            Ok(main) => {
+                let _ = main.show();
+                let _ = main.unminimize();
+                let _ = main.set_focus();
+            }
+            Err(error) => tracing::warn!(target: "window", %error, "failed to open IDE window"),
+        }
+        return;
     }
 
-    if let Some(main) = app.get_webview_window("main") {
+    if let Some(main) = app.get_webview_window(WELCOME_WINDOW_LABEL) {
         let _ = main.show();
         let _ = main.unminimize();
         let _ = main.set_focus();
     }
+}
+
+fn open_welcome_window_impl(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
+    if let Some(existing) = app.get_webview_window(WELCOME_WINDOW_LABEL) {
+        return Ok(existing);
+    }
+
+    let builder = tauri::WebviewWindowBuilder::new(
+        app,
+        WELCOME_WINDOW_LABEL,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("Glyphra")
+    .inner_size(1280.0, 800.0)
+    .min_inner_size(720.0, 480.0)
+    .center()
+    .visible(false);
+
+    #[cfg(windows)]
+    let builder = builder.decorations(false).transparent(true);
+    #[cfg(not(windows))]
+    let builder = builder.decorations(true);
+    #[cfg(windows)]
+    let builder = if mica_supported() {
+        builder.effects(tauri::utils::config::WindowEffectsConfig {
+            effects: vec![tauri::utils::WindowEffect::Mica],
+            state: None,
+            radius: None,
+            color: None,
+        })
+    } else {
+        builder
+    };
+    builder.build().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn window_open_project(
+    app: tauri::AppHandle,
+    project_path: String,
+    file_path: Option<String>,
+) -> Result<String, String> {
+    let request = LaunchRequest {
+        project_path,
+        file_path,
+    };
+    let main_exists = app.get_webview_window(WELCOME_WINDOW_LABEL).is_some();
+    let main = open_welcome_window_impl(&app)?;
+    let delivered = main_exists
+        && app
+            .try_state::<LaunchState>()
+            .is_some_and(|state| state.is_main_ready())
+        && main.emit(LAUNCH_REQUEST_EVENT, request.clone()).is_ok();
+    if !delivered {
+        if let Some(state) = app.try_state::<LaunchState>() {
+            state.replace_pending(request);
+        }
+    }
+    let _ = main.show();
+    let _ = main.unminimize();
+    let _ = main.set_focus();
+    Ok(WELCOME_WINDOW_LABEL.into())
 }
 
 #[derive(Serialize, Clone, TS)]
@@ -189,10 +274,9 @@ pub fn app_ready(
 
     let _ = window.show();
     let _ = window.set_focus();
-    if window.label() == "main" {
+    if window.label() == WELCOME_WINDOW_LABEL {
         launch_state.mark_main_ready();
     }
-
     EnvInfo {
         os: std::env::consts::OS.into(),
         mica,
@@ -204,6 +288,16 @@ pub fn app_ready(
 #[tauri::command]
 pub fn app_take_launch_request(state: State<'_, LaunchState>) -> Option<LaunchRequest> {
     state.take_pending()
+}
+
+/// Gives every window a short, bounded opportunity to persist recovery state
+/// and session archives before the updater replaces and restarts the process.
+#[tauri::command]
+pub async fn app_prepare_restart(app: tauri::AppHandle) -> Result<(), String> {
+    app.emit(PREPARE_RESTART_EVENT, ())
+        .map_err(|error| error.to_string())?;
+    tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+    Ok(())
 }
 
 /// Open (or focus) the standalone Agents window. The frontend routes on the
@@ -255,16 +349,33 @@ pub async fn window_open_agent(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Quit the whole application, including auxiliary windows.
 #[tauri::command]
-pub fn app_exit(app: tauri::AppHandle) {
+pub async fn app_exit(
+    app: tauri::AppHandle,
+    supervisor: State<'_, Arc<AgentSupervisor>>,
+    agent_terminals: State<'_, Arc<AgentTerminalManager>>,
+    ptys: State<'_, Arc<PtyManager>>,
+    searches: State<'_, Arc<SearchManager>>,
+) -> Result<(), String> {
+    let agents = supervisor.kill_all().await;
+    let agent_terminals = agent_terminals.kill_all().unwrap_or_default();
+    let ptys = ptys.close_all().unwrap_or_default();
+    let searches = searches.cancel_all().unwrap_or_default();
+    tracing::info!(
+        target: "shutdown",
+        agents,
+        agent_terminals,
+        ptys,
+        searches,
+        "child resources stopped before application exit"
+    );
     app.exit(0);
+    Ok(())
 }
 
 /// Focus the main IDE window from the Agents window.
 #[tauri::command]
 pub fn window_focus_main(app: tauri::AppHandle) -> Result<(), String> {
-    let main = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window not found".to_string())?;
+    let main = open_welcome_window_impl(&app)?;
     let _ = main.show();
     let _ = main.unminimize();
     let _ = main.set_focus();
@@ -307,6 +418,30 @@ mod tests {
             cwd.canonicalize().unwrap().to_string_lossy()
         );
         assert_eq!(request.file_path, None);
+    }
+
+    #[test]
+    fn launch_state_retains_the_latest_request_until_main_is_ready() {
+        let state = LaunchState::new(None);
+        assert!(!state.is_main_ready());
+        state.replace_pending(LaunchRequest {
+            project_path: "/projects/first".into(),
+            file_path: None,
+        });
+        state.replace_pending(LaunchRequest {
+            project_path: "/projects/second".into(),
+            file_path: Some("/projects/second/main.rs".into()),
+        });
+        state.mark_main_ready();
+
+        assert!(state.is_main_ready());
+        assert_eq!(
+            state.take_pending(),
+            Some(LaunchRequest {
+                project_path: "/projects/second".into(),
+                file_path: Some("/projects/second/main.rs".into()),
+            })
+        );
     }
 
     #[test]

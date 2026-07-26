@@ -47,11 +47,7 @@ mod windows_impl {
         }
     }
 
-    pub fn attach(child: &Child) -> Result<JobGuard, String> {
-        let pid = child
-            .id()
-            .ok_or_else(|| "agent child has no pid".to_string())?;
-
+    fn attach_pid(pid: u32) -> Result<JobGuard, String> {
         let job = Job::create().map_err(|err| format!("create job object: {err}"))?;
         let mut info = job
             .query_extended_limit_info()
@@ -76,10 +72,21 @@ mod windows_impl {
             process: Some(OwnedProcessHandle(process)),
         })
     }
+
+    pub fn attach(child: &Child) -> Result<JobGuard, String> {
+        let pid = child
+            .id()
+            .ok_or_else(|| "agent child has no pid".to_string())?;
+        attach_pid(pid)
+    }
+
+    pub fn attach_std(child: &std::process::Child) -> Result<JobGuard, String> {
+        attach_pid(child.id())
+    }
 }
 
 #[cfg(windows)]
-pub use windows_impl::{attach, JobGuard};
+pub use windows_impl::{attach, attach_std, JobGuard};
 
 #[cfg(not(windows))]
 pub struct JobGuard;
@@ -93,5 +100,10 @@ impl JobGuard {
 
 #[cfg(not(windows))]
 pub fn attach(_child: &Child) -> Result<JobGuard, String> {
+    Ok(JobGuard)
+}
+
+#[cfg(not(windows))]
+pub fn attach_std(_child: &std::process::Child) -> Result<JobGuard, String> {
     Ok(JobGuard)
 }

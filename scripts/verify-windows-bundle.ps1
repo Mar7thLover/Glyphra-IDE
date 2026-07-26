@@ -24,6 +24,16 @@ if ($nsis.Count -eq 0) {
 if ($msi.Count -eq 0) {
   throw "No MSI installer found under $bundleRoot\msi"
 }
+$updaterArtifacts = $nsis + $msi
+foreach ($artifact in $updaterArtifacts) {
+  $signature = "$($artifact.FullName).sig"
+  if (-not (Test-Path -LiteralPath $signature -PathType Leaf)) {
+    throw "Missing minisign signature for updater artifact: $signature"
+  }
+  if ((Get-Item -LiteralPath $signature).Length -lt 100) {
+    throw "Updater signature is unexpectedly small: $signature"
+  }
+}
 
 $nsisManifest = Join-Path $releaseRoot "nsis\x64\installer.nsi"
 $wixManifest = Join-Path $releaseRoot "wix\x64\main.wxs"
@@ -44,9 +54,15 @@ foreach ($name in $runtimeNames) {
   }
 }
 
+foreach ($manifest in @($nsisManifest, $wixManifest)) {
+  if (-not (Select-String -LiteralPath $manifest -SimpleMatch "THIRD-PARTY.md" -Quiet)) {
+    throw "Installer manifest does not include THIRD-PARTY.md: $manifest"
+  }
+}
+
 $nsisShellMarkers = @(
   "SystemFileAssociations\text\shell\Glyphra.OpenFile",
-  "SystemFileAssociations\.rs\shell\Glyphra.OpenFile",
+  '!insertmacro REGISTER_GLYPHRA_TEXT_EXTENSION "rs"',
   "Applications\Glyphra.exe\SupportedTypes"
 )
 foreach ($marker in $nsisShellMarkers) {
@@ -84,6 +100,10 @@ foreach ($artifact in $artifacts) {
   }
   $hash = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash
   Write-Host ("OK {0} ({1:N2} MiB) SHA256={2}" -f $artifact.FullName, ($artifact.Length / 1MB), $hash)
+}
+
+foreach ($artifact in $updaterArtifacts) {
+  Write-Host "OK signed updater $($artifact.FullName)"
 }
 
 Write-Host "Windows beta bundle verification passed."

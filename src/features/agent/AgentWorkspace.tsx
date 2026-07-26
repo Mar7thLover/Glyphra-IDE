@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import GlyphMark from "@/app/GlyphMark";
+import { sessionLabel } from "@/lib/acp/archive";
 import { openAgentsWindow } from "@/lib/agentWindow";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { useComposerDraft } from "@/lib/stores/composerStore";
@@ -72,6 +73,7 @@ export default function AgentWorkspace() {
 
   const current = useProjectStore((s) => s.current);
   const session = useAgentStore((s) => s.session);
+  const liveSessions = useAgentStore((s) => s.liveSessions);
   const items = useAgentStore((s) => s.items);
   const permission = useAgentStore((s) => s.permission);
   const busy = useAgentStore((s) => s.busy);
@@ -83,10 +85,10 @@ export default function AgentWorkspace() {
   const stderrTail = useAgentStore((s) => s.stderrTail);
   const circuitOpen = useAgentStore((s) => s.circuitOpen);
   const archives = useAgentStore((s) => s.archives);
+  const sessionTitles = useAgentStore((s) => s.sessionTitles);
   const viewingArchiveId = useAgentStore((s) => s.viewingArchiveId);
   const detect = useAgentStore((s) => s.detect);
   const setMode = useAgentStore((s) => s.setMode);
-  const setProviderId = useAgentStore((s) => s.setProviderId);
   const clearError = useAgentStore((s) => s.clearError);
   const clearCircuit = useAgentStore((s) => s.clearCircuit);
   const start = useAgentStore((s) => s.start);
@@ -97,6 +99,9 @@ export default function AgentWorkspace() {
   const openArchive = useAgentStore((s) => s.openArchive);
   const clearArchiveView = useAgentStore((s) => s.clearArchiveView);
   const removeArchive = useAgentStore((s) => s.removeArchive);
+  const renameSession = useAgentStore((s) => s.renameSession);
+  const switchLiveSession = useAgentStore((s) => s.switchLiveSession);
+  const closeLiveSession = useAgentStore((s) => s.closeLiveSession);
   const refreshProviders = useProviderStore((s) => s.refresh);
   const customHarnesses = useHarnessStore((s) => s.harnesses);
   const resetComposer = useComposerDraft((s) => s.reset);
@@ -109,12 +114,20 @@ export default function AgentWorkspace() {
     void refreshProviders();
     const prefs = usePrefsStore.getState();
     setMode(prefs.defaultMode);
-    setProviderId(prefs.defaultProviderId);
-  }, [detect, refreshProviders, setMode, setProviderId]);
+  }, [detect, refreshProviders, setMode]);
 
   useEffect(() => {
-    if (current?.path) void refreshArchives(current.path);
+    if (!current?.path) return;
+    void refreshArchives(current.path);
+    const active = useAgentStore.getState().session;
+    if (active && active.projectPath !== current.path) {
+      void useAgentStore.getState().newConversation();
+    }
   }, [current?.path, refreshArchives]);
+
+  const projectLiveSessions = liveSessions.filter(
+    (live) => live.projectPath === current?.path,
+  );
 
   const backendInfo = backends.find((b) => b.backend === backend);
   const backendReady =
@@ -148,10 +161,14 @@ export default function AgentWorkspace() {
               ? t("agent.ready")
               : t("agent.missing");
 
-  const sessionLabel = readOnly
+  const headerLabel = readOnly
     ? (archives.find((entry) => entry.id === viewingArchiveId)?.title ?? t("agent.sessionArchive"))
-    : (session?.agentName ??
-      (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent")));
+    : sessionLabel(
+        items,
+        session ? sessionTitles[session.archiveId] : null,
+        session?.agentName ??
+          (session?.acpSessionId ? session.acpSessionId.slice(0, 8) : t("agent.newAgent")),
+      );
 
   const iconBtn =
     "grid size-6 place-items-center rounded-md text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-30";
@@ -167,6 +184,7 @@ export default function AgentWorkspace() {
         <header className="flex h-10 shrink-0 items-center gap-1.5 px-2">
           <SessionList
             archives={archives}
+            liveSessions={projectLiveSessions}
             activeId={session?.archiveId ?? null}
             viewingId={viewingArchiveId}
             onOpen={(id) => {
@@ -177,8 +195,19 @@ export default function AgentWorkspace() {
               if (!current) return;
               void removeArchive(current.path, id);
             }}
+            onSwitchLive={switchLiveSession}
+            onCloseLive={(id) => {
+              if (!window.confirm(t("agent.stopBackgroundConfirm"))) return;
+              void closeLiveSession(id);
+            }}
+            onRename={(id, title) => {
+              if (!current) return;
+              void renameSession(current.path, id, title);
+            }}
           />
-          <span className="min-w-0 truncate text-[12px] font-medium text-ink">{sessionLabel}</span>
+          <span className="min-w-0 truncate text-[12px] font-medium text-ink" title={headerLabel}>
+            {headerLabel}
+          </span>
           <span
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] ${
               statusTone === "live"
@@ -220,11 +249,10 @@ export default function AgentWorkspace() {
           ) : hasConversation ? (
             <button
               type="button"
-              disabled={busy}
               onClick={() => {
                 void newConversation().then(() => resetComposer());
               }}
-              title={busy ? t("agent.newConversationBusy") : t("agent.newConversationHint")}
+              title={t("agent.newConversationHint")}
               className={iconBtn}
             >
               <MessageSquarePlus className="size-3.5" strokeWidth={1.6} />

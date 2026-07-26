@@ -2,19 +2,29 @@ import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { AgentPermissionMode, CustomAgentProtocol, StartableBackend } from "@/lib/acp/types";
+import type {
+  AgentApprovalReviewer,
+  AgentPermissionMode,
+  CustomAgentProtocol,
+  StartableBackend,
+} from "@/lib/acp/types";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { useHarnessStore } from "@/lib/stores/harnessStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useProviderStore } from "@/lib/stores/providerStore";
 
-import { SettingsField, SettingsInput, SettingsSelect } from "./SettingsField";
+import { SettingsField, SettingsInput, SettingsSelect, ToggleRow } from "./SettingsField";
 
 export default function AgentSection() {
   const { t } = useTranslation();
   const defaultMode = usePrefsStore((s) => s.defaultMode);
   const defaultBackend = usePrefsStore((s) => s.defaultBackend);
   const defaultProviderId = usePrefsStore((s) => s.defaultProviderId);
+  const defaultAgentModel = usePrefsStore((s) => s.defaultAgentModel);
+  const defaultReasoningEffort = usePrefsStore((s) => s.defaultReasoningEffort);
+  const defaultContextWindow = usePrefsStore((s) => s.defaultContextWindow);
+  const defaultFastMode = usePrefsStore((s) => s.defaultFastMode);
+  const defaultApprovalReviewer = usePrefsStore((s) => s.defaultApprovalReviewer);
   const setPref = usePrefsStore((s) => s.setPref);
   const setAgentProviderId = useAgentStore((s) => s.setProviderId);
   const providers = useProviderStore((s) => s.providers);
@@ -164,6 +174,72 @@ export default function AgentSection() {
           ))}
         </SettingsSelect>
       </SettingsField>
+
+      <SettingsField
+        label={t("settings.defaultAgentModel")}
+        hint={t("settings.defaultAgentModelHint")}
+      >
+        <SettingsInput
+          value={defaultAgentModel ?? ""}
+          onChange={(event) =>
+            setPref("defaultAgentModel", event.target.value.trim() || null)
+          }
+          placeholder={t("settings.defaultAgentModelPlaceholder")}
+        />
+      </SettingsField>
+
+      <SettingsField label={t("settings.defaultReasoningEffort")}>
+        <SettingsSelect
+          value={defaultReasoningEffort ?? ""}
+          onChange={(value) => setPref("defaultReasoningEffort", value || null)}
+        >
+          <option value="">{t("settings.harnessDefault")}</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
+        </SettingsSelect>
+      </SettingsField>
+
+      <SettingsField
+        label={t("settings.defaultContextWindow")}
+        hint={t("settings.defaultContextWindowHint")}
+      >
+        <SettingsInput
+          type="number"
+          min={1024}
+          max={4_000_000}
+          step={1024}
+          value={defaultContextWindow ?? ""}
+          onChange={(event) => {
+            const value = Number(event.target.value);
+            setPref(
+              "defaultContextWindow",
+              Number.isFinite(value) && value > 0 ? Math.round(value) : null,
+            );
+          }}
+          placeholder={t("settings.harnessDefault")}
+        />
+      </SettingsField>
+
+      <SettingsField label={t("settings.defaultApprovalReviewer")}>
+        <SettingsSelect
+          value={defaultApprovalReviewer}
+          onChange={(value) =>
+            setPref("defaultApprovalReviewer", value as AgentApprovalReviewer)
+          }
+        >
+          <option value="user">{t("settings.approvalUser")}</option>
+          <option value="auto">{t("settings.approvalAuto")}</option>
+        </SettingsSelect>
+      </SettingsField>
+
+      <ToggleRow
+        label={t("settings.defaultFastMode")}
+        hint={t("settings.defaultFastModeHint")}
+        checked={defaultFastMode}
+        onChange={(checked) => setPref("defaultFastMode", checked)}
+      />
     </div>
   );
 }

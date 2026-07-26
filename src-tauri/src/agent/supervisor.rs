@@ -61,15 +61,32 @@ struct LiveAgent {
     /// Windows Job Object (KILL_ON_JOB_CLOSE); no-op guard elsewhere.
     _job: JobGuard,
     recorder: Option<Arc<SessionRecorder>>,
+    session_id: u32,
+}
+
+impl Drop for LiveAgent {
+    fn drop(&mut self) {
+        // `kill_on_drop` terminates the child here. A dropped entry is the one
+        // agent death that leaves no other trace, so name it in the log.
+        tracing::info!(
+            target: "agent",
+            session_id = self.session_id,
+            "live agent dropped (child terminated)"
+        );
+    }
 }
 
 #[derive(Default)]
 pub struct AgentSupervisor {
     next_id: std::sync::atomic::AtomicU32,
-    agents: Mutex<HashMap<u32, LiveAgent>>,
+    agents: Mutex<HashMap<(String, u32), LiveAgent>>,
 }
 
 impl AgentSupervisor {
+    pub async fn live_count(&self) -> usize {
+        self.agents.lock().await.len()
+    }
+
     pub fn next_session_id(&self) -> u32 {
         self.next_id
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -79,16 +96,23 @@ impl AgentSupervisor {
     pub async fn spawn(
         self: &Arc<Self>,
         app: &AppHandle,
+        window_label: &str,
         request: AgentSpawnRequest,
         channel: Channel<AgentIoEvent>,
     ) -> Result<u32, String> {
         let (program, args) = resolve_command(app, &request)?;
         let session_id = self.next_session_id();
+        let session_key = (window_label.to_owned(), session_id);
+
+        // Harnesses (and anything they launch) inherit this directory, so it
+        // must be a plain path even when the project was opened through a
+        // canonicalized `\\?\` path.
+        let cwd = crate::paths::simplified_str(&request.cwd);
 
         let mut command = tokio_command(&program);
         command
             .args(&args)
-            .current_dir(&request.cwd)
+            .current_dir(&cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -141,16 +165,29 @@ impl AgentSupervisor {
 
         {
             let mut agents = self.agents.lock().await;
-            agents.insert(
-                session_id,
+            let replaced = agents.insert(
+                session_key.clone(),
                 LiveAgent {
                     child,
                     stdin,
                     _job: job_guard,
                     recorder: recorder.clone(),
+                    session_id,
                 },
             );
+            debug_assert!(replaced.is_none(), "agent session key reused");
         }
+
+        tracing::info!(
+            target: "agent",
+            session_id,
+            window_label,
+            backend = %request.backend,
+            program = %program,
+            args = ?args,
+            cwd = %cwd,
+            "agent spawned"
+        );
 
         let supervisor = Arc::clone(self);
         let out_channel = channel.clone();
@@ -159,21 +196,26 @@ impl AgentSupervisor {
             pump_stdout(session_id, stdout, out_channel, out_recorder).await;
         });
 
+        // Mirrored here (not only in the webview) so a crash still has a
+        // readable cause in the log file when the UI missed the events.
+        let stderr_tail = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let err_channel = channel.clone();
         let err_recorder = recorder;
+        let err_tail = Arc::clone(&stderr_tail);
         tokio::spawn(async move {
-            pump_stderr(session_id, stderr, err_channel, err_recorder).await;
+            pump_stderr(session_id, stderr, err_channel, err_recorder, err_tail).await;
         });
 
         let wait_supervisor = Arc::clone(&supervisor);
         let wait_channel = channel;
+        let wait_key = session_key;
         tokio::spawn(async move {
             // Never await child exit while holding the agents map lock. Writes and
             // kills need the same lock, so doing so deadlocks every live session.
             let code = loop {
                 let poll = {
                     let mut agents = wait_supervisor.agents.lock().await;
-                    match agents.get_mut(&session_id) {
+                    match agents.get_mut(&wait_key) {
                         Some(agent) => agent.child.try_wait(),
                         None => break "missing".into(),
                     }
@@ -190,21 +232,41 @@ impl AgentSupervisor {
                     Err(err) => break format!("wait-error:{err}"),
                 }
             };
+            let tail = stderr_tail
+                .lock()
+                .map(|lines| lines.join("\n"))
+                .unwrap_or_default();
+            if code == "0" {
+                tracing::info!(target: "agent", session_id, "agent exited cleanly");
+            } else {
+                tracing::warn!(
+                    target: "agent",
+                    session_id,
+                    code = %code,
+                    stderr_tail = %tail,
+                    "agent exited"
+                );
+            }
             let _ = wait_channel.send(AgentIoEvent {
                 session_id,
                 kind: "exit".into(),
                 data: code,
             });
-            wait_supervisor.agents.lock().await.remove(&session_id);
+            wait_supervisor.agents.lock().await.remove(&wait_key);
         });
 
         Ok(session_id)
     }
 
-    pub async fn write_line(&self, session_id: u32, line: String) -> Result<(), String> {
+    pub async fn write_line(
+        &self,
+        window_label: &str,
+        session_id: u32,
+        line: String,
+    ) -> Result<(), String> {
         let mut agents = self.agents.lock().await;
         let agent = agents
-            .get_mut(&session_id)
+            .get_mut(&(window_label.to_owned(), session_id))
             .ok_or_else(|| format!("unknown agent session {session_id}"))?;
         let payload = if line.ends_with('\n') {
             line
@@ -227,13 +289,48 @@ impl AgentSupervisor {
         Ok(())
     }
 
-    pub async fn kill(&self, session_id: u32) -> Result<(), String> {
+    pub async fn kill(&self, window_label: &str, session_id: u32) -> Result<(), String> {
         let mut agents = self.agents.lock().await;
-        let Some(mut agent) = agents.remove(&session_id) else {
+        let Some(mut agent) = agents.remove(&(window_label.to_owned(), session_id)) else {
             return Ok(());
         };
+        tracing::info!(target: "agent", session_id, window_label, "agent killed on request");
         let _ = agent.child.start_kill();
         Ok(())
+    }
+
+    /// Stop only the agents owned by one webview window.
+    pub async fn kill_window(&self, window_label: &str) -> usize {
+        let mut agents = self.agents.lock().await;
+        let keys = agents
+            .keys()
+            .filter(|(label, _)| label == window_label)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut stopped = Vec::with_capacity(keys.len());
+        for key in keys {
+            if let Some(agent) = agents.remove(&key) {
+                stopped.push(agent);
+            }
+        }
+        drop(agents);
+        for agent in &mut stopped {
+            let _ = agent.child.start_kill();
+        }
+        stopped.len()
+    }
+
+    /// Stop every live agent and drop all Job Object guards immediately.
+    pub async fn kill_all(&self) -> usize {
+        let agents = {
+            let mut live = self.agents.lock().await;
+            std::mem::take(&mut *live)
+        };
+        let count = agents.len();
+        for (_, mut agent) in agents {
+            let _ = agent.child.start_kill();
+        }
+        count
     }
 }
 
@@ -362,7 +459,9 @@ async fn pump_stderr(
     stderr: impl tokio::io::AsyncRead + Unpin,
     channel: Channel<AgentIoEvent>,
     recorder: Option<Arc<SessionRecorder>>,
+    tail: Arc<std::sync::Mutex<Vec<String>>>,
 ) {
+    const TAIL_LINES: usize = 20;
     let mut reader = BufReader::new(stderr);
     let mut line = String::new();
     loop {
@@ -377,6 +476,12 @@ async fn pump_stderr(
                 if let Some(recorder) = &recorder {
                     recorder.record(Direction::Err, &data);
                 }
+                if let Ok(mut lines) = tail.lock() {
+                    if lines.len() == TAIL_LINES {
+                        lines.remove(0);
+                    }
+                    lines.push(data.clone());
+                }
                 let _ = channel.send(AgentIoEvent {
                     session_id,
                     kind: "stderr".into(),
@@ -385,5 +490,90 @@ async fn pump_stderr(
             }
             Err(_) => break,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn kill_all_drains_live_agents() {
+        let supervisor = AgentSupervisor::default();
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = tokio_command("cmd");
+            command.args(["/C", "ping 127.0.0.1 -n 30 > nul"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = tokio_command("sh");
+            command.args(["-c", "sleep 30"]);
+            command
+        };
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut child = command.spawn().expect("spawn test child");
+        let stdin = child.stdin.take().expect("test child stdin");
+        supervisor.agents.lock().await.insert(
+            ("test-window".into(), 1),
+            LiveAgent {
+                child,
+                stdin,
+                _job: JobGuard::detached(),
+                recorder: None,
+                session_id: 1,
+            },
+        );
+
+        assert_eq!(supervisor.kill_all().await, 1);
+        assert!(supervisor.agents.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn kill_window_only_drains_matching_agents() {
+        let supervisor = AgentSupervisor::default();
+        for (label, id) in [("project-a", 1_u32), ("project-b", 2_u32)] {
+            #[cfg(windows)]
+            let mut command = {
+                let mut command = tokio_command("cmd");
+                command.args(["/C", "ping 127.0.0.1 -n 30 > nul"]);
+                command
+            };
+            #[cfg(not(windows))]
+            let mut command = {
+                let mut command = tokio_command("sh");
+                command.args(["-c", "sleep 30"]);
+                command
+            };
+            command
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .kill_on_drop(true);
+            let mut child = command.spawn().expect("spawn test child");
+            let stdin = child.stdin.take().expect("test child stdin");
+            supervisor.agents.lock().await.insert(
+                (label.into(), id),
+                LiveAgent {
+                    child,
+                    stdin,
+                    _job: JobGuard::detached(),
+                    recorder: None,
+                    session_id: id,
+                },
+            );
+        }
+
+        assert_eq!(supervisor.kill_window("project-a").await, 1);
+        let agents = supervisor.agents.lock().await;
+        assert!(!agents.contains_key(&("project-a".into(), 1)));
+        assert!(agents.contains_key(&("project-b".into(), 2)));
+        drop(agents);
+        assert_eq!(supervisor.kill_all().await, 1);
     }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::{ipc::Channel, AppHandle, State};
+use tauri::{ipc::Channel, AppHandle, State, Window};
 
 use crate::agent::{
     catalog::{self, AgentCatalogRequest, AgentHarnessCatalog},
@@ -30,26 +30,33 @@ pub fn runtime_detect() -> RuntimeDetectInfo {
 #[tauri::command]
 pub async fn agent_spawn(
     app: AppHandle,
+    window: Window,
     supervisor: State<'_, Arc<AgentSupervisor>>,
     request: AgentSpawnRequest,
     channel: Channel<AgentIoEvent>,
 ) -> Result<u32, String> {
-    supervisor.spawn(&app, request, channel).await
+    supervisor
+        .spawn(&app, window.label(), request, channel)
+        .await
 }
 
 #[tauri::command]
 pub async fn agent_write(
+    window: Window,
     supervisor: State<'_, Arc<AgentSupervisor>>,
     session_id: u32,
     line: String,
 ) -> Result<(), String> {
-    supervisor.write_line(session_id, line).await
+    supervisor
+        .write_line(window.label(), session_id, line)
+        .await
 }
 
 #[tauri::command]
 pub async fn agent_kill(
+    window: Window,
     supervisor: State<'_, Arc<AgentSupervisor>>,
     session_id: u32,
 ) -> Result<(), String> {
-    supervisor.kill(session_id).await
+    supervisor.kill(window.label(), session_id).await
 }

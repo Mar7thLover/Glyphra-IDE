@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, Code2, Info, KeyRound, Palette } from "lucide-react";
+import { ArrowLeft, Bot, Code2, Info, Keyboard, KeyRound, Palette, Server } from "lucide-react";
 import { type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -7,6 +7,8 @@ import { useUiStore, type SettingsSection } from "@/lib/stores/uiStore";
 import AboutSection from "./AboutSection";
 import AgentSection from "./AgentSection";
 import EditorSection from "./EditorSection";
+import KeybindingsSection from "./KeybindingsSection";
+import McpSection from "./McpSection";
 import PersonalSection from "./PersonalSection";
 import ProvidersSection from "./ProvidersSection";
 
@@ -17,7 +19,9 @@ const sections: {
   { id: "personal", icon: Palette },
   { id: "models", icon: KeyRound },
   { id: "editor", icon: Code2 },
+  { id: "keybindings", icon: Keyboard },
   { id: "agent", icon: Bot },
+  { id: "mcp", icon: Server },
   { id: "about", icon: Info },
 ];
 
@@ -71,7 +75,9 @@ export default function SettingsPage() {
               {section === "personal" && <PersonalSection />}
               {section === "models" && <ProvidersSection />}
               {section === "editor" && <EditorSection />}
+              {section === "keybindings" && <KeybindingsSection />}
               {section === "agent" && <AgentSection />}
+              {section === "mcp" && <McpSection />}
               {section === "about" && <AboutSection />}
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { continuationContext, titleFromItems } from "./archive";
+import { continuationContext, sessionLabel, titleFromItems } from "./archive";
 import type { AgentTimelineItem } from "./types";
 
 describe("titleFromItems", () => {
@@ -22,6 +22,28 @@ describe("titleFromItems", () => {
 
   it("falls back when empty", () => {
     expect(titleFromItems([])).toBe("Untitled session");
+  });
+});
+
+describe("sessionLabel", () => {
+  const asked: AgentTimelineItem[] = [
+    { id: "s1", kind: "system", text: "Connected", at: 1 },
+    { id: "u1", kind: "user", text: "Tidy the agent timeline", at: 2 },
+  ];
+
+  it("prefers an explicit rename over the derived title", () => {
+    expect(sessionLabel(asked, "  Timeline work  ", "Claude Code")).toBe("Timeline work");
+  });
+
+  it("derives from the first user message when there is no rename", () => {
+    expect(sessionLabel(asked, null, "Claude Code")).toBe("Tidy the agent timeline");
+  });
+
+  it("uses the agent name only until something has been said", () => {
+    expect(sessionLabel([], null, "Claude Code")).toBe("Claude Code");
+    expect(sessionLabel([{ id: "s1", kind: "system", text: "Connected", at: 1 }], "", "Codex")).toBe(
+      "Codex",
+    );
   });
 });
 

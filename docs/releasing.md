@@ -21,14 +21,25 @@ Keep these three equal (enforced by `pnpm check:version`):
 2. `src-tauri/tauri.conf.json` → `version`
 3. `src-tauri/Cargo.toml` → `package.version`
 
-Current first test line: **`0.1.0-beta.1`**.
+Current line: **`0.2.0`** — the first stable release. The previous test line was
+`0.1.0-beta.1`.
 
-Semver with a pre-release suffix (`-beta.N`, `-rc.N`) is marked as a GitHub **prerelease** automatically.
+Semver with a pre-release suffix (`-beta.N`, `-rc.N`) is marked as a GitHub
+**prerelease** automatically; a bare `X.Y.Z` publishes as a normal release.
 
-WiX/MSI only accepts numeric product versions. For a prerelease, also advance
-`bundle.windows.wix.version` in `tauri.conf.json` using
-`major.minor.patch.prereleaseNumber` (for example, `0.1.0-beta.1` maps to
-`0.1.0.1`). Keep the committed `upgradeCode` unchanged for every release.
+WiX/MSI only accepts numeric product versions, so `bundle.windows.wix.version`
+in `tauri.conf.json` must move with every release (`pnpm check:version` enforces
+the mapping):
+
+| App version | WiX version |
+| --- | --- |
+| `X.Y.Z-beta.N` / `X.Y.Z-rc.N` | `X.Y.Z.N` |
+| `X.Y.Z` | `X.Y.Z.0` |
+
+Because the stable `X.Y.Z` takes `.0`, it sorts **below** any prerelease of the
+same `X.Y.Z`. Never publish `X.Y.Z-beta.N` and then `X.Y.Z` — MSI would refuse
+the upgrade. Cut prereleases under the *next* version instead. Keep the
+committed `upgradeCode` unchanged for every release.
 
 ## Cut a release
 
@@ -50,8 +61,8 @@ CI (`ci.yml`) must be green.
 ```sh
 git checkout main
 git pull origin main
-git tag -a "v0.1.0-beta.1" -m "Glyphra v0.1.0-beta.1"
-git push origin "v0.1.0-beta.1"
+git tag -a "v0.2.0" -m "Glyphra v0.2.0"
+git push origin "v0.2.0"
 ```
 
 Pushing `v*` triggers `release.yml`. The action creates/updates the GitHub Release and uploads installers from every matrix leg.
@@ -75,7 +86,7 @@ pnpm check:version
 pnpm tauri build
 ```
 
-On Windows, the beta release gate builds both installer formats and verifies
+On Windows, the release gate builds both installer formats and verifies
 their presence, SHA-256 hashes, and 30 MiB size budget:
 
 ```powershell
@@ -103,7 +114,7 @@ The NSIS installer can install for the current user or all users. It registers:
 
 The MSI receives the standard Tauri shortcuts, uninstall registration, and
 `.glyphra-workspace` association. Its stable WiX UpgradeCode is committed in
-`src-tauri/tauri.conf.json`, so later beta installers upgrade the same product.
+`src-tauri/tauri.conf.json`, so later installers upgrade the same product.
 
 Both formats use the system WebView2 runtime and download the Microsoft
 bootstrapper only when WebView2 is missing. The NSIS installer supports silent
@@ -128,22 +139,38 @@ instance. You can also launch an unpacked build as `glyphra.exe <folder-or-file>
 Inside Glyphra, `File > Open File…` (`Ctrl+Shift+O`) opens one text/source file
 and uses its parent directory as a temporary project workspace.
 
-## Signing (not yet)
+## Signing
 
-v0.x ships **unsigned**:
+v0.x application binaries currently ship **without Authenticode/notarization**:
 
 - Windows: expect SmartScreen; document “More info → Run anyway”.
 - macOS: Gatekeeper — right-click → Open on first launch.
-- Code signing / notarization / SignPath are post-beta (see [TODO.md](./TODO.md)).
+- Authenticode, notarization, and SignPath are tracked in [TODO.md](./TODO.md).
 
-In-app updater (`tauri-plugin-updater` + minisign) is intentionally **not** wired for the first beta; GitHub Releases are the distribution channel.
+In-app updates are signed independently with minisign. The release workflow
+publishes `latest.json`, update artifacts, and `.sig` files. Configure repository
+secrets `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; the corresponding public key is committed
+in `src-tauri/tauri.conf.json`. Local Windows packaging reads the same
+environment variables or the restricted files under `%USERPROFILE%\.tauri`.
+After every version release, the workflow copies the validated manifest to the
+stable `updater` release. This rolling URL also supports beta/prerelease updates,
+which GitHub's `/releases/latest` route intentionally omits.
+
+Dependency notices are generated with `pnpm licenses:generate`, committed as
+[`THIRD-PARTY.md`](../THIRD-PARTY.md), checked by `pnpm licenses:check`, and
+bundled into each installer.
 
 ## Verify a build
 
 1. Install from the Release asset for your OS.
 2. Launch Glyphra; window reveals after the frontend calls `app_ready`.
-3. Settings → About should reflect the tagged version once UI wiring lands; until then check the installer filename / Release title.
+3. Settings → About shows the running version — confirm it matches the tag.
 4. Optional: onboarding detects git / Node / agent CLIs.
+
+Complete and record the clean-install, update, signature-tamper, recovery, and
+fault checks in [release-drills.md](./release-drills.md) before promoting a
+release candidate.
 
 ## Troubleshooting
 

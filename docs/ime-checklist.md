@@ -24,12 +24,23 @@ fixed gate before each milestone that ships editor changes.
 6. Dark theme + light theme; IME candidate window still tracks the caret.
 7. Save (`Ctrl+S`) while not composing; dirty marker clears.
 
+## Inline edit / ghost text
+
+8. Press `Ctrl+K` over a selection and type the instruction with 微软拼音 —
+   candidates track the input field and Enter commits the phrase instead of
+   submitting the instruction.
+9. Enable **Settings → Editor → Inline completion**, then compose a CJK phrase
+   in the buffer. No ghost text may appear while composing; a suggestion may
+   only arrive after the phrase is committed and typing pauses.
+10. With ghost text visible, start a composition — the suggestion disappears
+    before the first preedit character lands.
+
 ## Agent / review (smoke)
 
-8. With composition active in the editor, open Agent and type ASCII there —
-   editor composition should not steal focus incorrectly.
-9. Review merge view: type with IME in the center editor after accepting a
-   hunk; no decoration flicker during composition.
+11. With composition active in the editor, open Agent and type ASCII there —
+    editor composition should not steal focus incorrectly.
+12. Review merge view: type with IME in the center editor after accepting a
+    hunk; no decoration flicker during composition.
 
 ## Pass criteria
 
@@ -40,4 +51,5 @@ fixed gate before each milestone that ships editor changes.
 ## Fail → block merge
 
 Any fail on steps 2–4 blocks shipping editor/theme/decoration changes until
-fixed. File a note in the PR with IME name + OS build.
+fixed. A fail on step 9 or 10 blocks inline-completion changes. File a note in
+the PR with IME name + OS build.

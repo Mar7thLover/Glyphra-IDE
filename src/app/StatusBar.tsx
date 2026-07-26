@@ -1,30 +1,52 @@
-import { GitBranch, GitPullRequestArrow, Languages, Moon, Sun, TerminalSquare } from "lucide-react";
+import {
+  CircleX,
+  GitBranch,
+  GitPullRequestArrow,
+  Languages,
+  Moon,
+  Sun,
+  TerminalSquare,
+  TriangleAlert,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { ipc } from "@/lib/ipc/ipc";
+import { diagnosticCounts } from "@/lib/diagnostics";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
+import { TEXT_ENCODINGS, useEditorStore } from "@/lib/stores/editorStore";
 import { useGitStore } from "@/lib/stores/gitStore";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { unresolvedReviewGroupCount, useReviewStore } from "@/lib/stores/reviewStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
-import { useUiStore, type Theme } from "@/lib/stores/uiStore";
-
-function persist(theme: Theme, language: string) {
-  if (language !== "en" && language !== "zh-CN") return;
-  void ipc.settingsSet({ theme, language });
-}
+import { useUiStore } from "@/lib/stores/uiStore";
 
 export default function StatusBar() {
   const { t, i18n } = useTranslation();
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
   const toggleTerminal = useTerminalStore((s) => s.toggle);
+  const setTerminalOpen = useTerminalStore((s) => s.setOpen);
+  const diagnostics = useDiagnosticsStore((s) => s.diagnostics);
+  const problemsOpen = useDiagnosticsStore((s) => s.problemsOpen);
+  const setProblemsOpen = useDiagnosticsStore((s) => s.setProblemsOpen);
   const openReview = useReviewStore((s) => s.openReview);
   const turns = useReviewStore((s) => s.turns);
   const workingTree = useReviewStore((s) => s.workingTree);
   const decisions = useReviewStore((s) => s.decisions);
   const projectPath = useProjectStore((s) => s.current?.path);
   const branch = useGitStore((s) => s.branch);
+  const activePath = useEditorStore((s) => s.activePath);
+  const cursor = useEditorStore((s) => s.cursor);
+  const docInfo = useEditorStore((s) => s.docInfo);
+  const activeTab = useEditorStore((s) => s.tabs.find((tab) => tab.path === s.activePath) ?? null);
+  const setLineEnding = useEditorStore((s) => s.setLineEnding);
+  const setEncoding = useEditorStore((s) => s.setEncoding);
+  const reopenWithEncoding = useEditorStore((s) => s.reopenWithEncoding);
+  const tabSize = usePrefsStore((s) => s.tabSize);
+  const setPref = usePrefsStore((s) => s.setPref);
+  const persist = usePrefsStore((s) => s.persist);
   const unresolved = unresolvedReviewGroupCount({ turns, workingTree, decisions });
+  const problemCounts = diagnosticCounts(diagnostics);
 
   const toggleLang = () => {
     const next = i18n.language === "zh-CN" ? "en" : "zh-CN";
@@ -35,8 +57,20 @@ export default function StatusBar() {
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
+    setPref("customTheme", null);
     setTheme(next);
     persist(next, i18n.language);
+  };
+
+  const cycleIndent = () => {
+    if (docInfo?.editorConfigIndent) return;
+    const size = docInfo?.indentSize ?? tabSize;
+    setPref("tabSize", size === 2 ? 4 : size === 4 ? 8 : 2);
+  };
+
+  const toggleLineEnding = () => {
+    if (!activePath || !docInfo || activeTab?.readOnly) return;
+    setLineEnding(activePath, docInfo.eol === "LF" ? "CRLF" : "LF");
   };
 
   const item =
@@ -63,8 +97,86 @@ export default function StatusBar() {
           )}
         </span>
       )}
-      <span className="text-ink-3/60">{t("app.prealpha")}</span>
+      <span className="text-ink-3/60">{t("app.stage")}</span>
       <div className="flex-1" />
+      {activePath && (
+        <>
+          {cursor && (
+            <span
+              className="px-1.5 font-mono text-[10.5px] text-ink-2"
+              title={t("status.lineColHint")}
+            >
+              {t("status.lineCol", { line: cursor.line, col: cursor.col })}
+              {cursor.selChars > 0 && ` ${t("status.selected", { n: cursor.selChars })}`}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={cycleIndent}
+            disabled={docInfo?.editorConfigIndent}
+            title={
+              docInfo?.editorConfigIndent
+                ? t("status.editorConfigIndentHint")
+                : t("status.indentHint")
+            }
+            className={item}
+          >
+            {t(docInfo?.indentStyle === "tab" ? "status.indentTabs" : "status.indentSpaces", {
+              size: docInfo?.indentSize ?? tabSize,
+            })}
+          </button>
+          {activeTab && !activeTab.preview && (
+            <select
+              value={`convert:${activeTab.encoding}`}
+              onChange={(event) => {
+                const [action, encoding] = event.target.value.split(":", 2);
+                if (!encoding) return;
+                if (action === "reopen") {
+                  void reopenWithEncoding(activeTab.path, encoding);
+                } else {
+                  setEncoding(activeTab.path, encoding);
+                }
+              }}
+              disabled={activeTab.readOnly}
+              title={t("status.encodingHint")}
+              aria-label={t("status.encodingHint")}
+              className="h-5 max-w-28 rounded border-0 bg-transparent px-1 text-[10.5px] text-ink-3 outline-none hover:bg-hover disabled:opacity-50"
+            >
+              <optgroup label={t("status.saveEncoding")}>
+                {TEXT_ENCODINGS.map((encoding) => (
+                  <option key={`convert:${encoding}`} value={`convert:${encoding}`}>
+                    {encoding}
+                    {encoding === activeTab.encoding && activeTab.bom ? " BOM" : ""}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={t("status.reopenEncoding")}>
+                {TEXT_ENCODINGS.map((encoding) => (
+                  <option key={`reopen:${encoding}`} value={`reopen:${encoding}`}>
+                    {encoding}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          )}
+          {docInfo && (
+            <button
+              type="button"
+              onClick={toggleLineEnding}
+              disabled={activeTab?.readOnly}
+              title={t("status.eolHint")}
+              className={`${item} font-mono text-[10.5px] disabled:cursor-default disabled:opacity-50`}
+            >
+              {docInfo.eol}
+            </button>
+          )}
+          {docInfo && (
+            <span className="px-1 text-[10.5px] text-ink-2">
+              {docInfo.languageName ?? t("status.plainText")}
+            </span>
+          )}
+        </>
+      )}
       <button
         type="button"
         onClick={() => openReview(projectPath)}
@@ -83,7 +195,25 @@ export default function StatusBar() {
       </button>
       <button
         type="button"
-        onClick={() => toggleTerminal()}
+        onClick={() => {
+          const next = !problemsOpen;
+          setProblemsOpen(next);
+          if (next) setTerminalOpen(false);
+        }}
+        title={t("problems.title")}
+        className={item}
+      >
+        <CircleX className={`size-3 ${problemCounts.error ? "text-danger" : ""}`} />
+        {problemCounts.error}
+        <TriangleAlert className={`ml-0.5 size-3 ${problemCounts.warning ? "text-[#c58a22]" : ""}`} />
+        {problemCounts.warning}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setProblemsOpen(false);
+          toggleTerminal();
+        }}
         title={t("terminal.title")}
         className={item}
       >

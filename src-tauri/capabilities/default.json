@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Baseline permissions for Glyphra windows (IDE + Agents)",
-  "windows": ["main", "agent"],
+  "windows": ["main", "agent", "proj-*"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -13,6 +13,8 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-start-dragging",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

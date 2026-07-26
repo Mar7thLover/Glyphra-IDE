@@ -15,7 +15,9 @@ vi.mock("@/lib/ipc/ipc", () => ({
 
 import { ipc } from "@/lib/ipc/ipc";
 import {
+  generateCommitMessage,
   reviewFileKey,
+  turnsToRestoreBefore,
   unresolvedReviewCount,
   unresolvedReviewGroupCount,
   useReviewStore,
@@ -120,5 +122,55 @@ describe("reviewStore R1 queue", () => {
     expect(useReviewStore.getState().decisions[reviewFileKey("turn-1", "src/a.ts")]).toBe(
       "rejected",
     );
+  });
+
+  it("restores every later turn newest-first to reach the target preimage", async () => {
+    const newest = { ...turn, id: "turn-3", createdAt: 3 };
+    const middle = { ...turn, id: "turn-2", createdAt: 2 };
+    const oldest = { ...turn, id: "turn-1", createdAt: 1 };
+    useReviewStore.setState({
+      turns: [newest, middle, oldest],
+      projectPath: "/repo",
+    });
+    vi.mocked(ipc.ckptRestoreTurn).mockResolvedValue(newest);
+    vi.mocked(ipc.ckptListTurns).mockResolvedValue([]);
+    vi.mocked(ipc.gitStatus).mockResolvedValue([]);
+
+    expect(turnsToRestoreBefore([newest, middle, oldest], "turn-2")).toEqual([
+      newest,
+      middle,
+    ]);
+    await useReviewStore.getState().restoreBeforeTurn("/repo", "turn-2");
+
+    expect(vi.mocked(ipc.ckptRestoreTurn).mock.calls).toEqual([
+      ["/repo", "turn-3"],
+      ["/repo", "turn-2"],
+    ]);
+    expect(
+      useReviewStore.getState().decisions[reviewFileKey("turn-3", "src/a.ts")],
+    ).toBe("rejected");
+  });
+
+  it("generates a bounded deterministic commit message from reviewed files", () => {
+    const file = {
+      path: "docs/README.md",
+      status: "modified",
+      before: "old",
+      after: "new",
+      summary: {
+        additions: 1,
+        deletions: 1,
+        hunks: 1,
+        binary: false,
+        available: true,
+      },
+    };
+    expect(generateCommitMessage([file])).toBe("docs: update project documentation");
+    expect(
+      generateCommitMessage([
+        { ...file, path: "src/a.ts" },
+        { ...file, path: "src/b.ts" },
+      ]),
+    ).toBe("chore: update 2 files");
   });
 });

@@ -3,15 +3,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { openAgentsWindow } from "@/lib/agentWindow";
-import { ipc } from "@/lib/ipc/ipc";
+import { commandMatches } from "@/lib/keybindings";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import {
   absoluteFromIndex,
   rankFiles,
+  rankSymbols,
   useFileIndexStore,
 } from "@/lib/stores/fileIndexStore";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useSearchStore } from "@/lib/stores/searchStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
@@ -30,18 +32,33 @@ export default function CommandPalette() {
   const hasProject = useProjectStore((s) => !!s.current);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
   const files = useFileIndexStore((s) => s.files);
+  const symbols = useFileIndexStore((s) => s.symbols);
   const indexing = useFileIndexStore((s) => s.loading);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      const context = {
+        editorFocus:
+          document.activeElement instanceof Element &&
+          Boolean(document.activeElement.closest(".cm-editor")),
+        projectOpen: Boolean(useProjectStore.getState().current),
+        settingsOpen: useUiStore.getState().settingsOpen,
+        agentBusy: false,
+      };
+      if (commandMatches(event, "workbench.commands", context)) {
         event.preventDefault();
         usePaletteStore.getState().openCommands();
+        return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+      if (commandMatches(event, "workbench.quickOpen", context)) {
         event.preventDefault();
         usePaletteStore.getState().openFiles();
+        return;
+      }
+      if (commandMatches(event, "editor.goToSymbol", context)) {
+        event.preventDefault();
+        usePaletteStore.getState().openSymbols();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -53,7 +70,7 @@ export default function CommandPalette() {
       setQuery("");
       return;
     }
-    if (mode === "files" && projectPath) {
+    if ((mode === "files" || mode === "symbols") && projectPath) {
       void useFileIndexStore.getState().ensureIndexed(projectPath);
     }
   }, [open, mode, projectPath]);
@@ -62,6 +79,10 @@ export default function CommandPalette() {
     if (mode !== "files") return [];
     return rankFiles(files, query, 50);
   }, [mode, files, query]);
+  const symbolMatches = useMemo(() => {
+    if (mode !== "symbols") return [];
+    return rankSymbols(symbols, query, 80);
+  }, [mode, symbols, query]);
 
   if (!open) return null;
 
@@ -75,16 +96,26 @@ export default function CommandPalette() {
     const next = ui.theme === "dark" ? "light" : "dark";
     ui.setTheme(next);
     const lang = i18n.language === "zh-CN" ? "zh-CN" : "en";
-    void ipc.settingsSet({ theme: next, language: lang });
+    usePrefsStore.getState().persist(next, lang);
   };
 
   const placeholder =
-    mode === "files" ? t("palette.filePlaceholder") : t("palette.placeholder");
+    mode === "files"
+      ? t("palette.filePlaceholder")
+      : mode === "symbols"
+        ? t("palette.symbolPlaceholder")
+        : t("palette.placeholder");
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-start bg-app/40 px-4 pt-[12vh] backdrop-blur-[2px]">
       <Command
-        label={mode === "files" ? t("palette.filesTitle") : t("palette.title")}
+        label={
+          mode === "files"
+            ? t("palette.filesTitle")
+            : mode === "symbols"
+              ? t("palette.symbolsTitle")
+              : t("palette.title")
+        }
         shouldFilter={mode === "commands"}
         className="glass-float pop-in mx-auto w-full max-w-xl overflow-hidden rounded-2xl"
         onKeyDown={(event) => {
@@ -100,10 +131,12 @@ export default function CommandPalette() {
         />
         <Command.List className="max-h-72 overflow-y-auto p-1.5">
           <Command.Empty className="px-3 py-4 text-[12px] text-ink-3">
-            {mode === "files"
+            {mode === "files" || mode === "symbols"
               ? indexing
                 ? t("palette.indexing")
-                : t("palette.fileEmpty")
+                : mode === "symbols"
+                  ? t("palette.symbolEmpty")
+                  : t("palette.fileEmpty")
               : t("palette.empty")}
           </Command.Empty>
 
@@ -136,6 +169,40 @@ export default function CommandPalette() {
                 </Command.Item>
               )}
             </Command.Group>
+          ) : mode === "symbols" ? (
+            <Command.Group heading={t("palette.groupSymbols")} className={groupClass}>
+              {symbolMatches.map((symbol) => (
+                <Command.Item
+                  key={`${symbol.path}:${symbol.line}:${symbol.name}`}
+                  value={`${symbol.name} ${symbol.kind} ${symbol.path}`}
+                  onSelect={() =>
+                    run(() => {
+                      if (!projectPath) return;
+                      void useEditorStore.getState().openFile(
+                        absoluteFromIndex(projectPath, symbol.path),
+                        { line: symbol.line },
+                      );
+                    })
+                  }
+                  className={`${itemClass} flex items-center gap-2`}
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">{symbol.name}</span>
+                  <span className="shrink-0 text-[10px] text-ink-3">{symbol.kind}</span>
+                  <span className="max-w-[45%] shrink-0 truncate font-mono text-[10px] text-ink-3">
+                    {symbol.path}:{symbol.line}
+                  </span>
+                </Command.Item>
+              ))}
+              {hasProject && (
+                <Command.Item
+                  value="switch to commands"
+                  onSelect={() => setMode("commands")}
+                  className={itemClass}
+                >
+                  {t("palette.switchCommands")}
+                </Command.Item>
+              )}
+            </Command.Group>
           ) : (
             <>
               <Command.Group heading={t("palette.groupNav")} className={groupClass}>
@@ -147,6 +214,16 @@ export default function CommandPalette() {
                   >
                     <span>{t("palette.goToFile")}</span>
                     <span className="ml-auto text-[10px] text-ink-3">Ctrl P</span>
+                  </Command.Item>
+                )}
+                {hasProject && (
+                  <Command.Item
+                    value="go to symbol outline"
+                    onSelect={() => setMode("symbols")}
+                    className={`${itemClass} flex items-center`}
+                  >
+                    <span>{t("palette.goToSymbol")}</span>
+                    <span className="ml-auto text-[10px] text-ink-3">Ctrl Shift O</span>
                   </Command.Item>
                 )}
                 <Command.Item

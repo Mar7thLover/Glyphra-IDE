@@ -1,9 +1,14 @@
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags as t } from "@lezer/highlight";
+import {
+  HighlightStyle,
+  syntaxHighlighting,
+  type TagStyle,
+} from "@codemirror/language";
+import { Tag, tags as t } from "@lezer/highlight";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
 import type { Theme } from "@/lib/stores/uiStore";
+import type { ImportedTheme } from "@/lib/ipc/ipc";
 
 const chromeTheme = (dark: boolean) =>
   EditorView.theme(
@@ -77,7 +82,65 @@ const darkHighlight = HighlightStyle.define([
   { tag: t.invalid, color: "#f87171" },
 ]);
 
-export function editorThemeExtensions(theme: Theme): Extension[] {
+function scopeTags(scope: string): Tag[] {
+  const value = scope.toLowerCase();
+  if (value.includes("invalid")) return [t.invalid];
+  if (value.includes("comment")) return [t.comment];
+  if (value.includes("regexp")) return [t.regexp];
+  if (value.includes("string")) return [t.string];
+  if (value.includes("keyword") || value.includes("storage")) return [t.keyword];
+  if (value.includes("entity.name.function") || value.includes("support.function")) {
+    return [t.function(t.variableName)];
+  }
+  if (
+    value.includes("entity.name.type") ||
+    value.includes("entity.name.class") ||
+    value.includes("support.type") ||
+    value.includes("support.class")
+  ) {
+    return [t.typeName, t.className];
+  }
+  if (value.includes("entity.name.tag")) return [t.tagName];
+  if (value.includes("attribute")) return [t.attributeName];
+  if (value.includes("constant.numeric")) return [t.number];
+  if (value.includes("constant.language")) return [t.bool, t.atom];
+  if (value.includes("constant")) return [t.constant(t.name)];
+  if (value.includes("variable") || value.includes("parameter")) return [t.variableName];
+  if (value.includes("operator")) return [t.operator];
+  if (value.includes("punctuation")) return [t.punctuation];
+  if (value.includes("entity.name")) return [t.definition(t.name)];
+  return [];
+}
+
+function importedHighlightStyle(theme: ImportedTheme) {
+  const styles = theme.tokenColors.flatMap<TagStyle>((rule) => {
+    const tags = [...new Set(rule.scopes.flatMap(scopeTags))];
+    if (tags.length === 0) return [];
+    const style: TagStyle = { tag: tags };
+    if (rule.foreground) style.color = rule.foreground;
+    if (rule.background) style.backgroundColor = rule.background;
+    const fontStyles = new Set((rule.fontStyle ?? "").toLowerCase().split(/\s+/));
+    if (fontStyles.has("bold")) style.fontWeight = "bold";
+    if (fontStyles.has("italic")) style.fontStyle = "italic";
+    const decorations = [
+      fontStyles.has("underline") ? "underline" : "",
+      fontStyles.has("strikethrough") ? "line-through" : "",
+    ].filter(Boolean);
+    if (decorations.length > 0) style.textDecoration = decorations.join(" ");
+    return [style];
+  });
+  return styles.length > 0 ? HighlightStyle.define(styles) : null;
+}
+
+export function editorThemeExtensions(
+  theme: Theme,
+  importedTheme: ImportedTheme | null = null,
+): Extension[] {
   const dark = theme === "dark";
-  return [chromeTheme(dark), syntaxHighlighting(dark ? darkHighlight : lightHighlight)];
+  const imported = importedTheme ? importedHighlightStyle(importedTheme) : null;
+  return [
+    chromeTheme(dark),
+    syntaxHighlighting(dark ? darkHighlight : lightHighlight),
+    imported ? syntaxHighlighting(imported) : [],
+  ];
 }

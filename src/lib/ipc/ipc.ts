@@ -6,20 +6,35 @@ export type { AgentHarnessCatalog } from "./gen/AgentHarnessCatalog";
 export type { AgentIoEvent } from "./gen/AgentIoEvent";
 export type { AgentSpawnRequest } from "./gen/AgentSpawnRequest";
 export type { AppSettings } from "./gen/AppSettings";
+export type { KeybindingSetting } from "./gen/KeybindingSetting";
 export type { CkptFileContents } from "./gen/CkptFileContents";
 export type { CkptFileDiff } from "./gen/CkptFileDiff";
 export type { CkptHunkSummary } from "./gen/CkptHunkSummary";
 export type { CkptTurnMeta } from "./gen/CkptTurnMeta";
 export type { DiffSummary } from "./gen/DiffSummary";
+export type { DiagnosticBundle } from "./gen/DiagnosticBundle";
+export type { DiagnosticInfo } from "./gen/DiagnosticInfo";
 export type { DirEntryInfo } from "./gen/DirEntryInfo";
 export type { EnvInfo } from "./gen/EnvInfo";
+export type { EditorRecoverySnapshot } from "./gen/EditorRecoverySnapshot";
+export type { EditorRecoveryTab } from "./gen/EditorRecoveryTab";
+export type { EditorConfigSettings } from "./gen/EditorConfigSettings";
+export type { ImportedTheme } from "./gen/ImportedTheme";
+export type { ThemeColorSetting } from "./gen/ThemeColorSetting";
+export type { ThemeTokenSetting } from "./gen/ThemeTokenSetting";
 export type { LaunchRequest } from "./gen/LaunchRequest";
+export type { MediaPreviewResult } from "./gen/MediaPreviewResult";
+export type { McpServerRecord } from "./gen/McpServerRecord";
+export type { McpServerUpsert } from "./gen/McpServerUpsert";
+export type { McpTransport } from "./gen/McpTransport";
 export type { FileReadResult } from "./gen/FileReadResult";
 export type { FileWriteResult } from "./gen/FileWriteResult";
 export type { FsEvent } from "./gen/FsEvent";
 export type { GitFileStatus } from "./gen/GitFileStatus";
+export type { GitCommitResult } from "./gen/GitCommitResult";
 export type { GitFileDiff } from "./gen/GitFileDiff";
 export type { ProjectInfo } from "./gen/ProjectInfo";
+export type { ProjectSymbol } from "./gen/ProjectSymbol";
 export type { ProviderKind } from "./gen/ProviderKind";
 export type { ProviderRecord } from "./gen/ProviderRecord";
 export type { ProviderTestResult } from "./gen/ProviderTestResult";
@@ -28,10 +43,13 @@ export type { ProviderUpsert } from "./gen/ProviderUpsert";
 export type { PtyEvent } from "./gen/PtyEvent";
 export type { RecentProject } from "./gen/RecentProject";
 export type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
+export type { ResourceCounts } from "./gen/ResourceCounts";
 export type { SearchBatch } from "./gen/SearchBatch";
 export type { SearchHit } from "./gen/SearchHit";
 export type { SessionArchive } from "./gen/SessionArchive";
+export type { SessionCost } from "./gen/SessionCost";
 export type { SessionSummary } from "./gen/SessionSummary";
+export type { SessionUsage } from "./gen/SessionUsage";
 export type { ToolStatus } from "./gen/ToolStatus";
 
 import type { AgentDetectInfo } from "./gen/AgentDetectInfo";
@@ -44,14 +62,24 @@ import type { CkptFileContents } from "./gen/CkptFileContents";
 import type { CkptHunkSummary } from "./gen/CkptHunkSummary";
 import type { CkptTurnMeta } from "./gen/CkptTurnMeta";
 import type { DirEntryInfo } from "./gen/DirEntryInfo";
+import type { DiagnosticBundle } from "./gen/DiagnosticBundle";
+import type { DiagnosticInfo } from "./gen/DiagnosticInfo";
 import type { EnvInfo } from "./gen/EnvInfo";
+import type { EditorRecoverySnapshot } from "./gen/EditorRecoverySnapshot";
+import type { EditorConfigSettings } from "./gen/EditorConfigSettings";
+import type { ImportedTheme } from "./gen/ImportedTheme";
 import type { LaunchRequest } from "./gen/LaunchRequest";
+import type { MediaPreviewResult } from "./gen/MediaPreviewResult";
+import type { McpServerRecord } from "./gen/McpServerRecord";
+import type { McpServerUpsert } from "./gen/McpServerUpsert";
 import type { FileReadResult } from "./gen/FileReadResult";
 import type { FileWriteResult } from "./gen/FileWriteResult";
 import type { FsEvent } from "./gen/FsEvent";
 import type { GitFileStatus } from "./gen/GitFileStatus";
+import type { GitCommitResult } from "./gen/GitCommitResult";
 import type { GitFileDiff } from "./gen/GitFileDiff";
 import type { ProjectInfo } from "./gen/ProjectInfo";
+import type { ProjectSymbol } from "./gen/ProjectSymbol";
 import type { ProviderRecord } from "./gen/ProviderRecord";
 import type { ProviderTestResult } from "./gen/ProviderTestResult";
 import type { ProviderUsageSnapshot } from "./gen/ProviderUsageSnapshot";
@@ -59,6 +87,7 @@ import type { ProviderUpsert } from "./gen/ProviderUpsert";
 import type { PtyEvent } from "./gen/PtyEvent";
 import type { RecentProject } from "./gen/RecentProject";
 import type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
+import type { ResourceCounts } from "./gen/ResourceCounts";
 import type { SearchBatch } from "./gen/SearchBatch";
 import type { SessionArchive } from "./gen/SessionArchive";
 import type { SessionSummary } from "./gen/SessionSummary";
@@ -66,23 +95,55 @@ import type { SessionSummary } from "./gen/SessionSummary";
 export const ipc = {
   appReady: () => invoke<EnvInfo>("app_ready"),
   appTakeLaunchRequest: () => invoke<LaunchRequest | null>("app_take_launch_request"),
+  appPrepareRestart: () => invoke<void>("app_prepare_restart"),
   perfMark: (name: string) => invoke<void>("perf_mark", { name }),
   windowOpenAgent: () => invoke<void>("window_open_agent"),
   windowFocusMain: () => invoke<void>("window_focus_main"),
   appExit: () => invoke<void>("app_exit"),
+  diagnosticsInfo: () => invoke<DiagnosticInfo>("diagnostics_info"),
+  diagnosticsCreateBundle: () =>
+    invoke<DiagnosticBundle>("diagnostics_create_bundle"),
+  diagnosticsRevealLogs: () => invoke<void>("diagnostics_reveal_logs"),
+  diagnosticsResourceCounts: () =>
+    invoke<ResourceCounts>("diagnostics_resource_counts"),
+  diagnosticsFaultPanic: (token: string) =>
+    invoke<void>("diagnostics_fault_panic", { token }),
   projectOpen: (path: string) => invoke<ProjectInfo>("project_open", { path }),
+  projectSymbols: (projectPath: string, paths: string[]) =>
+    invoke<ProjectSymbol[]>("project_symbols", { projectPath, paths }),
   projectRecent: () => invoke<RecentProject[]>("project_recent"),
   fsList: (path: string) => invoke<DirEntryInfo[]>("fs_list", { path }),
-  fsRead: (path: string) => invoke<FileReadResult>("fs_read", { path }),
-  fsWrite: (path: string, content: string, expectedHash?: string) =>
-    invoke<FileWriteResult>("fs_write", { path, content, expectedHash }),
+  fsMediaPreview: (path: string) =>
+    invoke<MediaPreviewResult | null>("fs_media_preview", { path }),
+  fsRead: (path: string, encoding?: string) =>
+    encoding
+      ? invoke<FileReadResult>("fs_read_with_encoding", { path, encoding })
+      : invoke<FileReadResult>("fs_read", { path }),
+  fsWrite: (
+    path: string,
+    content: string,
+    expectedHash?: string,
+    encoding?: string,
+    bom?: boolean,
+  ) =>
+    invoke<FileWriteResult>("fs_write", { path, content, expectedHash, encoding, bom }),
   fsWatchStart: (path: string, onEvent: (event: FsEvent) => void) => {
     const channel = new Channel<FsEvent>(onEvent);
     return invoke<number>("fs_watch_start", { path, channel });
   },
   fsWatchStop: (watcherId: number) => invoke<void>("fs_watch_stop", { watcherId }),
+  editorRecoverySave: (snapshot: EditorRecoverySnapshot) =>
+    invoke<void>("editor_recovery_save", { snapshot }),
+  editorRecoveryLoad: (projectPath: string) =>
+    invoke<EditorRecoverySnapshot | null>("editor_recovery_load", { projectPath }),
+  editorRecoveryClear: (projectPath: string) =>
+    invoke<void>("editor_recovery_clear", { projectPath }),
+  editorConfigResolve: (path: string) =>
+    invoke<EditorConfigSettings>("editor_config_resolve", { path }),
   settingsGet: () => invoke<AppSettings>("settings_get"),
   settingsSet: (settings: AppSettings) => invoke<void>("settings_set", { settings }),
+  themeImportVsCode: (path: string) =>
+    invoke<ImportedTheme>("theme_import_vscode", { path }),
   agentDetect: () => invoke<AgentDetectInfo[]>("agent_detect"),
   agentCatalog: (request: AgentCatalogRequest) =>
     invoke<AgentHarnessCatalog>("agent_catalog", { request }),
@@ -102,11 +163,17 @@ export const ipc = {
   vaultClear: (id: string) => invoke<void>("vault_clear", { id }),
   providerTest: (id: string) => invoke<ProviderTestResult>("provider_test", { id }),
   providerUsage: (id: string) => invoke<ProviderUsageSnapshot>("provider_usage", { id }),
+  mcpServersList: () => invoke<McpServerRecord[]>("mcp_servers_list"),
+  mcpServersUpsert: (server: McpServerUpsert) =>
+    invoke<McpServerRecord>("mcp_servers_upsert", { server }),
+  mcpServersRemove: (id: string) => invoke<void>("mcp_servers_remove", { id }),
   gitStatus: (projectPath: string) => invoke<GitFileStatus[]>("git_status", { projectPath }),
   gitExecReadonly: (projectPath: string, args: string[]) =>
     invoke<string>("git_exec_readonly", { projectPath, args }),
   gitDiffFile: (projectPath: string, path: string, base = "HEAD") =>
     invoke<GitFileDiff>("git_diff_file", { projectPath, path, base }),
+  gitCommit: (projectPath: string, message: string) =>
+    invoke<GitCommitResult>("git_commit", { projectPath, message }),
   ckptBeginTurn: (projectPath: string, label?: string) =>
     invoke<CkptTurnMeta>("ckpt_begin_turn", { projectPath, label }),
   ckptPreimage: (projectPath: string, path: string) =>
@@ -181,6 +248,8 @@ export const ipc = {
     invoke<SessionSummary>("session_save", { archive }),
   sessionLoad: (projectPath: string, id: string) =>
     invoke<SessionArchive>("session_load", { projectPath, id }),
+  sessionRename: (projectPath: string, id: string, title: string) =>
+    invoke<SessionSummary>("session_rename", { projectPath, id, title }),
   sessionDelete: (projectPath: string, id: string) =>
     invoke<void>("session_delete", { projectPath, id }),
 };

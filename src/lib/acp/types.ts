@@ -1,3 +1,5 @@
+import type { McpServer } from "@agentclientprotocol/sdk";
+
 export type AgentBackendKind =
   | "codex-acp"
   | "claude-acp"
@@ -20,6 +22,8 @@ export interface AgentStartOptions {
   fastMode?: boolean;
   approvalReviewer?: AgentApprovalReviewer;
   prewarmedSessionId?: string | null;
+  /** Enabled app-managed MCP servers passed through ACP session setup. */
+  mcpServers?: McpServer[];
   /** Reattach a persisted conversation instead of creating an empty one. */
   restore?: AgentSessionRestore;
 }
@@ -29,6 +33,28 @@ export interface AgentSessionRestore {
   acpSessionId: string | null;
   createdAt: number;
   items: AgentTimelineItem[];
+  usage?: AgentConversationUsage | null;
+  cost?: AgentConversationCost | null;
+}
+
+export interface AgentAvailableCommand {
+  name: string;
+  description: string;
+  inputHint?: string;
+}
+
+export interface AgentConversationUsage {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  thoughtTokens?: number;
+  cachedReadTokens?: number;
+  cachedWriteTokens?: number;
+}
+
+export interface AgentConversationCost {
+  amount: number;
+  currency: string;
 }
 
 export type AgentApprovalReviewer = "user" | "auto_review";
@@ -101,10 +127,45 @@ export const builtinAgentBackends: AgentBackendDescriptor[] = [
 
 export type ToolCallStatus = "pending" | "in_progress" | "completed" | "failed";
 
+export type AgentToolContent =
+  | { kind: "text"; text: string }
+  | { kind: "diff"; path: string; oldText: string | null; newText: string }
+  | { kind: "terminal"; terminalId: string };
+
+export interface AgentImageAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  /** Base64 payload without a data-URL prefix. */
+  data: string;
+}
+
 export type AgentTimelineItem =
-  | { id: string; kind: "user"; text: string; at: number }
+  | {
+      id: string;
+      kind: "user";
+      /** User-facing text; large inlined context stays in promptText. */
+      text: string;
+      /** Exact text sent to the harness, retained for deterministic retry. */
+      promptText?: string;
+      checkpointId?: string;
+      images?: AgentImageAttachment[];
+      at: number;
+    }
   | { id: string; kind: "assistant"; text: string; at: number }
-  | { id: string; kind: "system"; text: string; at: number }
+  | {
+      id: string;
+      kind: "system";
+      text: string;
+      /**
+       * Why this note exists. `config` marks a switch the user made (provider,
+       * model, effort, permissions); `alert` marks a genuine failure. Untagged
+       * notes are session bookkeeping and stay out of the timeline.
+       */
+      note?: "config" | "alert";
+      at: number;
+    }
+  | { id: string; kind: "thought"; text: string; at: number }
   | {
       id: string;
       kind: "tool";
@@ -113,6 +174,7 @@ export type AgentTimelineItem =
       status: ToolCallStatus | string;
       toolKind?: string;
       detail?: string;
+      content?: AgentToolContent[];
       at: number;
     }
   | {

@@ -29,6 +29,15 @@ const switchModel = option("switch-model");
 const switchReasoningEffort = option("switch-reasoning-effort");
 const switchFastMode = option("switch-fast-mode");
 const holdMs = Number(option("hold-ms", "0")) || 0;
+const mcpStdioCommand = option("mcp-stdio-command");
+const mcpServers = mcpStdioCommand
+  ? [{
+      name: option("mcp-name", "smoke-mcp"),
+      command: mcpStdioCommand,
+      args: [],
+      env: [],
+    }]
+  : [];
 if (!command) throw new Error("--command is required");
 
 const bridge = new URL("./harness-bridge.mjs", import.meta.url).pathname.replace(/^\/(.:\/)/, "$1");
@@ -61,6 +70,8 @@ child.stderr.on("data", (chunk) => {
 
 const stream = ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout));
 let latestContextUsage = null;
+let availableCommands = [];
+let latestCost = null;
 const connection = client({ name: "glyphra-smoke" })
   .onNotification(methods.client.session.update, (ctx) => {
     if (ctx.params.update.sessionUpdate === "usage_update") {
@@ -68,6 +79,9 @@ const connection = client({ name: "glyphra-smoke" })
         used: ctx.params.update.used,
         size: ctx.params.update.size,
       };
+      latestCost = ctx.params.update.cost ?? latestCost;
+    } else if (ctx.params.update.sessionUpdate === "available_commands_update") {
+      availableCommands = ctx.params.update.availableCommands.map((command) => command.name);
     }
   })
   .connect(stream);
@@ -81,7 +95,9 @@ try {
     },
     clientInfo: { name: "glyphra-smoke", title: "Glyphra harness smoke", version: "0.1.0" },
   });
-  const session = await connection.agent.buildSession(cwd).start();
+  const session = await connection.agent
+    .buildSession({ cwd, mcpServers })
+    .start();
   const runPrompt = async (text) => {
     let reply = "";
     let contextUsage = null;
@@ -97,6 +113,8 @@ try {
           contextUsage: contextUsage ?? latestContextUsage ?? (
             context?.size > 0 ? { used: context.used, size: context.size } : null
           ),
+          usage: message.response.usage ?? null,
+          cost: latestCost,
         };
       }
       if (
@@ -147,6 +165,10 @@ try {
     stopReason: finalTurn?.stopReason ?? null,
     reply: finalTurn?.reply ?? null,
     contextUsage: finalTurn?.contextUsage ?? null,
+    usage: finalTurn?.usage ?? null,
+    cost: finalTurn?.cost ?? null,
+    availableCommands,
+    mcpServerCount: mcpServers.length,
     configUpdates,
   })}\n`);
   if (holdMs > 0) await new Promise((resolve) => setTimeout(resolve, holdMs));

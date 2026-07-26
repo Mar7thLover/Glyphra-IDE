@@ -1,17 +1,20 @@
 import { lazy, Suspense } from "react";
 
-import EditorWorkbench from "@/features/editor/EditorWorkbench";
 import WelcomeHome from "@/features/home/WelcomeHome";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
+const EditorWorkbench = lazy(() => import("@/features/editor/EditorWorkbench"));
 const ReviewPanel = lazy(() => import("@/features/review/ReviewPanel"));
 const TerminalPanel = lazy(() => import("@/features/terminal/TerminalPanel"));
+const ProblemsPanel = lazy(() => import("@/features/problems/ProblemsPanel"));
 
 export default function EditorArea() {
   const current = useProjectStore((s) => s.current);
   const terminalOpen = useTerminalStore((s) => s.open);
+  const problemsOpen = useDiagnosticsStore((s) => s.problemsOpen);
   const workspaceView = useUiStore((s) => s.workspaceView);
 
   if (current) {
@@ -25,7 +28,9 @@ export default function EditorArea() {
           ) : (
             <>
               <div className="flex min-w-0 flex-1 flex-col">
-                <EditorWorkbench />
+                <Suspense fallback={<div className="min-h-0 flex-1 bg-editor" />}>
+                  <EditorWorkbench />
+                </Suspense>
               </div>
               <Suspense fallback={null}>
                 <ReviewPanel />
@@ -33,7 +38,11 @@ export default function EditorArea() {
             </>
           )}
         </div>
-        {terminalOpen ? (
+        {problemsOpen ? (
+          <Suspense fallback={<div className="h-[220px] border-t border-line bg-panel" />}>
+            <ProblemsPanel />
+          </Suspense>
+        ) : terminalOpen ? (
           <Suspense fallback={<div className="h-[220px] border-t border-line bg-panel" />}>
             <TerminalPanel />
           </Suspense>

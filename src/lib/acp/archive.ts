@@ -1,6 +1,11 @@
 import { ipc, type SessionArchive, type SessionSummary } from "@/lib/ipc/ipc";
 
-import type { AgentTimelineItem, StartableBackend } from "./types";
+import type {
+  AgentConversationCost,
+  AgentConversationUsage,
+  AgentTimelineItem,
+  StartableBackend,
+} from "./types";
 
 export type { SessionArchive, SessionSummary };
 
@@ -11,6 +16,10 @@ export interface PersistSessionInput {
   acpSessionId: string | null;
   createdAt: number;
   items: AgentTimelineItem[];
+  usage?: AgentConversationUsage | null;
+  cost?: AgentConversationCost | null;
+  /** Explicit rename; without it the title is re-derived on every save. */
+  title?: string | null;
 }
 
 /**
@@ -42,13 +51,39 @@ export function continuationContext(items: AgentTimelineItem[]): string {
   ].join("\n");
 }
 
+export const UNTITLED_SESSION = "Untitled session";
+
 /** Derive a short title from the first user message. */
 export function titleFromItems(items: AgentTimelineItem[]): string {
   const user = items.find((item) => item.kind === "user");
-  if (!user || user.kind !== "user") return "Untitled session";
+  if (!user || user.kind !== "user") return UNTITLED_SESSION;
   const text = user.text.trim().replace(/\s+/g, " ");
-  if (!text) return "Untitled session";
+  if (!text) return UNTITLED_SESSION;
   return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+}
+
+/**
+ * Label for a session anywhere it is listed. An explicit rename wins, then the
+ * first user message; only a conversation with nothing said in it falls back to
+ * the agent/backend name.
+ */
+export function sessionLabel(
+  items: AgentTimelineItem[],
+  custom: string | null | undefined,
+  fallback: string,
+): string {
+  const renamed = custom?.trim();
+  if (renamed) return renamed;
+  const derived = titleFromItems(items);
+  return derived === UNTITLED_SESSION ? fallback : derived;
+}
+
+export async function renameArchive(
+  projectPath: string,
+  id: string,
+  title: string,
+): Promise<void> {
+  await ipc.sessionRename(projectPath, id, title);
 }
 
 export function newArchiveId(): string {
@@ -83,11 +118,22 @@ export async function persistSession(input: PersistSessionInput): Promise<Sessio
   const archive: SessionArchive = {
     id: input.id,
     projectPath: input.projectPath,
-    title: titleFromItems(input.items),
+    title: input.title?.trim() || titleFromItems(input.items),
     backend: input.backend,
     createdAt: input.createdAt,
     updatedAt: now,
     acpSessionId: input.acpSessionId,
+    usage: input.usage
+      ? {
+          totalTokens: input.usage.totalTokens,
+          inputTokens: input.usage.inputTokens,
+          outputTokens: input.usage.outputTokens,
+          thoughtTokens: input.usage.thoughtTokens ?? null,
+          cachedReadTokens: input.usage.cachedReadTokens ?? null,
+          cachedWriteTokens: input.usage.cachedWriteTokens ?? null,
+        }
+      : null,
+    cost: input.cost ?? null,
     items: input.items,
   };
   return ipc.sessionSave(archive);

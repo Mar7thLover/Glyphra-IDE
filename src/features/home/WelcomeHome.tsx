@@ -1,8 +1,8 @@
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   AppWindow,
   ArrowUpRight,
   Download,
+  FileText,
   FolderOpen,
   Terminal,
   type LucideIcon,
@@ -15,6 +15,7 @@ import { openAgentsWindow } from "@/lib/agentWindow";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useUiStore } from "@/lib/stores/uiStore";
+import { openProjectPath, pickFile, pickProject } from "@/lib/workspaceActions";
 
 function ActionCard({
   icon: Icon,
@@ -68,7 +69,6 @@ const prettyPath = (path: string) => path.replace(/^\\\\\?\\/, "");
 export default function WelcomeHome() {
   const { t } = useTranslation();
   const recents = useProjectStore((s) => s.recents);
-  const openProject = useProjectStore((s) => s.openProject);
   const loadRecents = useProjectStore((s) => s.loadRecents);
   const openOnboarding = useOnboardingStore((s) => s.openOnboarding);
   const refreshEnv = useOnboardingStore((s) => s.refresh);
@@ -80,24 +80,7 @@ export default function WelcomeHome() {
     void refreshEnv();
   }, [loadRecents, refreshEnv]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "o") {
-        e.preventDefault();
-        void (async () => {
-          const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
-          if (typeof dir === "string") await openProject(dir);
-        })();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openProject, t]);
-
-  const pickFolder = async () => {
-    const dir = await openDialog({ directory: true, title: t("empty.openFolder") });
-    if (typeof dir === "string") await openProject(dir);
-  };
+  const unsavedPrompt = t("menu.unsavedProject");
 
   const envChips: { name: string; ok: boolean }[] = [
     { name: "Node", ok: !!runtime?.node.installed },
@@ -139,7 +122,13 @@ export default function WelcomeHome() {
             label={t("home.openProject")}
             hint={`${t("home.openProjectHint")} · Ctrl+O`}
             accent
-            onClick={() => void pickFolder()}
+            onClick={() => void pickProject(t("empty.openFolder"), unsavedPrompt)}
+          />
+          <ActionCard
+            icon={FileText}
+            label={t("menu.openFile")}
+            hint="Ctrl+Shift+O"
+            onClick={() => void pickFile(t("menu.openFile"), unsavedPrompt)}
           />
           <ActionCard
             icon={AppWindow}
@@ -184,7 +173,7 @@ export default function WelcomeHome() {
                 <li key={project.path}>
                   <button
                     type="button"
-                    onClick={() => void openProject(project.path)}
+                    onClick={() => void openProjectPath(project.path, unsavedPrompt)}
                     className="group flex w-full items-baseline gap-2.5 px-3.5 py-[7px] text-left transition-colors hover:bg-hover"
                   >
                     <span className="min-w-0 shrink-0 truncate text-[12px] text-ink">

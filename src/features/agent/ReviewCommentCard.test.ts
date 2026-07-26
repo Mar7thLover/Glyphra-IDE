@@ -36,4 +36,20 @@ describe("parseReviewComments", () => {
       },
     ]);
   });
+
+  it("associates fenced unified diffs with review comments", () => {
+    const text = [
+      "- [warn] `src/a.ts`:2 — stale value",
+      "```diff",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -2 +2 @@",
+      "-const value = 1;",
+      "+const value = 2;",
+      "```",
+    ].join("\n");
+    const [comment] = parseReviewComments(text);
+    expect(comment.path).toBe("src/a.ts");
+    expect(comment.diff).toContain("@@ -2 +2 @@");
+  });
 });

@@ -32,6 +32,11 @@ export async function openAgentTransport(request: AgentSpawnRequest): Promise<Ac
   });
 
   let sessionId = 0;
+  // A harness that dies during startup emits its diagnostics before the caller
+  // can subscribe. Replaying the backlog on subscribe is what keeps a crash
+  // banner from reading "exit 1" with no explanation.
+  const pendingStderr: string[] = [];
+  let pendingExit: string | null = null;
 
   const writable = new WritableStream<Uint8Array>({
     async write(chunk) {
@@ -47,6 +52,7 @@ export async function openAgentTransport(request: AgentSpawnRequest): Promise<Ac
       // Channel delivers one complete line without the trailing newline.
       bytesController.enqueue(encoder.encode(`${event.data}\n`));
     } else if (event.kind === "stderr") {
+      if (stderrListeners.size === 0) pendingStderr.push(event.data);
       for (const listener of stderrListeners) listener(event.data);
     } else if (event.kind === "exit") {
       try {
@@ -55,6 +61,7 @@ export async function openAgentTransport(request: AgentSpawnRequest): Promise<Ac
         // already closed
       }
       bytesController = null;
+      if (exitListeners.size === 0) pendingExit = event.data;
       for (const listener of exitListeners) listener(event.data);
     }
   });
@@ -65,12 +72,18 @@ export async function openAgentTransport(request: AgentSpawnRequest): Promise<Ac
     kill: () => ipc.agentKill(sessionId),
     onStderr: (listener) => {
       stderrListeners.add(listener);
+      for (const line of pendingStderr.splice(0)) listener(line);
       return () => {
         stderrListeners.delete(listener);
       };
     },
     onExit: (listener) => {
       exitListeners.add(listener);
+      if (pendingExit !== null) {
+        const code = pendingExit;
+        pendingExit = null;
+        listener(code);
+      }
       return () => {
         exitListeners.delete(listener);
       };

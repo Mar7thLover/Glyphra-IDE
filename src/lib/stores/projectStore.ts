@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { ipc, type DirEntryInfo, type FsEvent, type ProjectInfo, type RecentProject } from "@/lib/ipc/ipc";
 import { useGitStore } from "@/lib/stores/gitStore";
 import { useEditorStore } from "@/lib/stores/editorStore";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { useFileIndexStore } from "@/lib/stores/fileIndexStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 
@@ -85,7 +86,21 @@ function enqueueRefresh(event: FsEvent) {
 }
 
 function clearProjectScopedStores() {
-  useEditorStore.setState({ tabs: [], activePath: null, loading: false, error: null, reveal: null });
+  useDiagnosticsStore.getState().clearAll();
+  useDiagnosticsStore.getState().setProblemsOpen(false);
+  useEditorStore.setState({
+    tabs: [],
+    activePath: null,
+    primaryPath: null,
+    secondaryPath: null,
+    focusedPane: "primary",
+    loading: false,
+    error: null,
+    reveal: null,
+    cursor: null,
+    docInfo: null,
+    recoveryNotice: null,
+  });
   useGitStore.setState({ statuses: {}, branch: null });
   useFileIndexStore.getState().clear();
   useReviewStore.setState({
@@ -174,6 +189,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (previousPath && previousPath !== current.path) clearProjectScopedStores();
       set({ current, loading: false });
       await Promise.all([get().listCurrentRoot(), get().loadRecents()]);
+      // Warm the shared Ctrl+P/composer index on every project open so rules
+      // and repository-wide mentions are ready before the first agent prompt.
+      void useFileIndexStore.getState().refresh(current.path);
+      // Hydrate pending checkpoint/worktree review state for status and inline
+      // editor controls without requiring the Review panel to be opened first.
+      void useReviewStore.getState().refresh(current.path);
 
       const watcherId = await ipc.fsWatchStart(current.path, (event) => {
         const relevant = relevantEvent(event, current.path);

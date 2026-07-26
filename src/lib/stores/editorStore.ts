@@ -1,6 +1,13 @@
 import { create } from "zustand";
 
-import { ipc } from "@/lib/ipc/ipc";
+import {
+  ipc,
+  type EditorConfigSettings,
+  type MediaPreviewResult,
+} from "@/lib/ipc/ipc";
+import { prepareContentForSave } from "@/lib/saveHygiene";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { requestUnsavedDecision } from "@/lib/unsavedChanges";
 
 export interface EditorTab {
@@ -12,6 +19,58 @@ export interface EditorTab {
   truncated: boolean;
   longLines: boolean;
   readOnly: boolean;
+  encoding: string;
+  savedEncoding: string;
+  bom: boolean;
+  savedBom: boolean;
+  editorConfig?: EditorConfigSettings | null;
+  /** Single-click explorer tabs are replaced until edited, pinned, or double-clicked. */
+  ephemeral?: boolean;
+  preview?: MediaPreviewResult | null;
+}
+
+export const TEXT_ENCODINGS = [
+  "UTF-8",
+  "UTF-16LE",
+  "UTF-16BE",
+  "windows-1252",
+  "GBK",
+  "Big5",
+  "Shift_JIS",
+  "EUC-KR",
+  "ISO-8859-2",
+] as const;
+
+export function isEditorTabDirty(tab: EditorTab): boolean {
+  return (
+    tab.content !== tab.savedContent ||
+    tab.encoding !== tab.savedEncoding ||
+    tab.bom !== tab.savedBom
+  );
+}
+
+/** Live caret of the active editor, surfaced in the status bar. */
+export interface EditorCursor {
+  line: number;
+  col: number;
+  selChars: number;
+}
+
+/** Per-document info the editor reports so the status bar avoids pulling in
+ * the heavy language-data bundle itself. */
+export interface EditorDocInfo {
+  languageName: string | null;
+  eol: "LF" | "CRLF";
+  indentStyle: "space" | "tab";
+  indentSize: number;
+  /** True when the effective indentation comes from one or more .editorconfig files. */
+  editorConfigIndent: boolean;
+}
+
+export interface EditorRecoveryNotice {
+  count: number;
+  conflicts: number;
+  savedAt: number;
 }
 
 export interface OpenFileOptions {
@@ -21,6 +80,8 @@ export interface OpenFileOptions {
   column?: number;
   /** Force re-read from disk even if the tab is already open (clean tabs only). */
   reload?: boolean;
+  /** Open as a replaceable preview tab. */
+  preview?: boolean;
 }
 
 export interface EditorReveal {
@@ -33,19 +94,38 @@ export interface EditorReveal {
 interface EditorState {
   tabs: EditorTab[];
   activePath: string | null;
+  primaryPath: string | null;
+  secondaryPath: string | null;
+  focusedPane: "primary" | "secondary";
   loading: boolean;
   error: string | null;
   reveal: EditorReveal | null;
+  cursor: EditorCursor | null;
+  docInfo: EditorDocInfo | null;
+  recoveryNotice: EditorRecoveryNotice | null;
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>;
   confirmLeaveActive: () => Promise<boolean>;
   activateTab: (path: string) => Promise<void>;
+  focusPane: (pane: "primary" | "secondary") => void;
+  splitActive: () => void;
+  closeSplit: () => void;
+  reorderTabs: (sourcePath: string, targetPath: string) => void;
+  pinTab: (path: string) => void;
   closeTab: (path: string) => Promise<void>;
   setContent: (path: string, content: string) => void;
+  setLineEnding: (path: string, eol: EditorDocInfo["eol"]) => void;
+  setEncoding: (path: string, encoding: string) => void;
+  reopenWithEncoding: (path: string, encoding: string) => Promise<void>;
   saveTab: (path: string) => Promise<boolean>;
   saveActive: () => Promise<void>;
   /** Reload clean open tabs whose paths appear in `paths` (absolute). */
   syncFromDisk: (paths: string[]) => Promise<void>;
+  /** Replace one open tab from disk after a controlled checkpoint write. */
+  refreshTabFromDisk: (path: string) => Promise<void>;
   clearReveal: (token?: number) => void;
+  setCursor: (cursor: EditorCursor | null) => void;
+  setDocInfo: (info: EditorDocInfo | null) => void;
+  dismissRecoveryNotice: () => void;
 }
 
 function basename(path: string) {
@@ -60,7 +140,14 @@ function normalizePath(path: string) {
   return path.replace(/\\/g, "/");
 }
 
-function tabFromRead(file: Awaited<ReturnType<typeof ipc.fsRead>>): EditorTab {
+export function convertLineEndings(content: string, eol: EditorDocInfo["eol"]): string {
+  return content.replace(/\r\n|\r|\n/g, eol === "CRLF" ? "\r\n" : "\n");
+}
+
+function tabFromRead(
+  file: Awaited<ReturnType<typeof ipc.fsRead>>,
+  editorConfig: EditorConfigSettings | null = null,
+): EditorTab {
   const degrade = file.truncated || file.longLines;
   return {
     path: file.path,
@@ -71,12 +158,72 @@ function tabFromRead(file: Awaited<ReturnType<typeof ipc.fsRead>>): EditorTab {
     truncated: file.truncated,
     longLines: file.longLines,
     readOnly: file.readOnly || degrade,
+    encoding: file.encoding,
+    savedEncoding: file.encoding,
+    bom: file.bom,
+    savedBom: file.bom,
+    editorConfig,
+    preview: null,
   };
+}
+
+function tabFromPreview(preview: MediaPreviewResult): EditorTab {
+  return {
+    path: preview.path,
+    name: basename(preview.path),
+    content: "",
+    savedContent: "",
+    hash: "",
+    truncated: false,
+    longLines: false,
+    readOnly: true,
+    encoding: "UTF-8",
+    savedEncoding: "UTF-8",
+    bom: false,
+    savedBom: false,
+    preview,
+  };
+}
+
+async function readEditorTab(path: string, encoding?: string): Promise<EditorTab> {
+  const preview = await ipc.fsMediaPreview(path);
+  if (preview) return tabFromPreview(preview);
+  const editorConfig = await ipc.editorConfigResolve(path).catch(() => null);
+  const configuredEncoding = encoding ?? encodingFromEditorConfig(editorConfig);
+  const file = configuredEncoding
+    ? await ipc.fsRead(path, configuredEncoding)
+    : await ipc.fsRead(path);
+  const tab = tabFromRead(file, editorConfig);
+  if (!encoding && editorConfig?.charset) {
+    tab.encoding = configuredEncoding ?? tab.encoding;
+    tab.savedEncoding = tab.encoding;
+    if (editorConfig.charset === "utf-8-bom" || editorConfig.charset.startsWith("utf-16")) {
+      tab.bom = true;
+      tab.savedBom = true;
+    }
+  }
+  return tab;
+}
+
+function encodingFromEditorConfig(config: EditorConfigSettings | null): string | undefined {
+  switch (config?.charset) {
+    case "latin1":
+      return "windows-1252";
+    case "utf-8":
+    case "utf-8-bom":
+      return "UTF-8";
+    case "utf-16le":
+      return "UTF-16LE";
+    case "utf-16be":
+      return "UTF-16BE";
+    default:
+      return undefined;
+  }
 }
 
 async function prepareToLeave(path: string): Promise<boolean> {
   const tab = useEditorStore.getState().tabs.find((item) => item.path === path);
-  if (!tab || tab.content === tab.savedContent) return true;
+  if (!tab || !isEditorTabDirty(tab)) return true;
 
   const decision = await requestUnsavedDecision(tab.name);
   if (decision === "cancel") return false;
@@ -84,7 +231,14 @@ async function prepareToLeave(path: string): Promise<boolean> {
 
   useEditorStore.setState((state) => ({
     tabs: state.tabs.map((item) =>
-      item.path === path ? { ...item, content: item.savedContent } : item,
+      item.path === path
+        ? {
+            ...item,
+            content: item.savedContent,
+            encoding: item.savedEncoding,
+            bom: item.savedBom,
+          }
+        : item,
     ),
   }));
   return true;
@@ -95,9 +249,15 @@ let revealToken = 0;
 export const useEditorStore = create<EditorState>((set, get) => ({
   tabs: [],
   activePath: null,
+  primaryPath: null,
+  secondaryPath: null,
+  focusedPane: "primary",
   loading: false,
   error: null,
   reveal: null,
+  cursor: null,
+  docInfo: null,
+  recoveryNotice: null,
 
   openFile: async (path, options) => {
     const existing = get().tabs.find((tab) => tab.path === path);
@@ -115,15 +275,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (existing) {
       if (options?.reload && existing.content === existing.savedContent) {
         try {
-          const file = await ipc.fsRead(path);
-          if (file.hash !== existing.hash || file.content !== existing.savedContent) {
+          const next = await readEditorTab(path);
+          if (
+            next.hash !== existing.hash ||
+            next.content !== existing.savedContent ||
+            next.preview?.dataUrl !== existing.preview?.dataUrl ||
+            next.preview?.size !== existing.preview?.size
+          ) {
             set((state) => ({
-              tabs: state.tabs.map((tab) => (tab.path === path ? tabFromRead(file) : tab)),
+              tabs: state.tabs.map((tab) => (tab.path === path ? next : tab)),
             }));
           }
         } catch (error) {
           set({ error: asMessage(error) });
         }
+      }
+      if (options?.preview === false && existing.ephemeral) {
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.path === path ? { ...tab, ephemeral: false } : tab,
+          ),
+        }));
       }
       await get().activateTab(path);
       queueReveal();
@@ -135,9 +307,36 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     set({ loading: true, error: null });
     try {
-      const file = await ipc.fsRead(path);
-      const tab = tabFromRead(file);
-      set((state) => ({ tabs: [...state.tabs, tab], activePath: tab.path, loading: false }));
+      const tab = {
+        ...(await readEditorTab(path)),
+        ephemeral: options?.preview === true,
+      };
+      set((state) => {
+        const replaceable = options?.preview
+          ? state.tabs.find(
+              (item) =>
+                item.ephemeral &&
+                !isEditorTabDirty(item) &&
+                item.path !== state.secondaryPath,
+            )
+          : null;
+        const tabs = replaceable
+          ? state.tabs.map((item) => (item.path === replaceable.path ? tab : item))
+          : [...state.tabs, tab];
+        return {
+          tabs,
+          activePath: tab.path,
+          primaryPath:
+            state.focusedPane === "primary" || !state.secondaryPath
+              ? tab.path
+              : state.primaryPath,
+          secondaryPath:
+            state.focusedPane === "secondary" && state.secondaryPath
+              ? tab.path
+              : state.secondaryPath,
+          loading: false,
+        };
+      });
       queueReveal();
     } catch (error) {
       set({ loading: false, error: asMessage(error) });
@@ -148,8 +347,84 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const activePath = get().activePath;
     if (activePath === path) return;
     if (activePath && !(await prepareToLeave(activePath))) return;
-    if (get().tabs.some((tab) => tab.path === path)) set({ activePath: path, error: null });
+    if (get().tabs.some((tab) => tab.path === path)) {
+      set((state) => ({
+        activePath: path,
+        primaryPath:
+          state.focusedPane === "primary" || !state.secondaryPath
+            ? path
+            : path === state.primaryPath
+              ? state.secondaryPath
+              : state.primaryPath,
+        secondaryPath:
+          state.focusedPane === "secondary" && state.secondaryPath
+            ? path
+            : path === state.secondaryPath
+              ? state.primaryPath
+              : state.secondaryPath,
+        error: null,
+      }));
+    }
   },
+
+  focusPane: (focusedPane) => {
+    const state = get();
+    const activePath =
+      focusedPane === "secondary" && state.secondaryPath
+        ? state.secondaryPath
+        : state.primaryPath;
+    set({
+      focusedPane: focusedPane === "secondary" && state.secondaryPath ? "secondary" : "primary",
+      activePath: activePath ?? state.activePath,
+    });
+  },
+
+  splitActive: () => {
+    const state = get();
+    if (state.secondaryPath || state.tabs.length < 2) return;
+    const primaryPath = state.activePath ?? state.tabs[0]?.path ?? null;
+    const activeIndex = state.tabs.findIndex((tab) => tab.path === primaryPath);
+    const secondaryPath =
+      state.tabs[(activeIndex + 1) % state.tabs.length]?.path ?? null;
+    if (!primaryPath || !secondaryPath || primaryPath === secondaryPath) return;
+    set({
+      primaryPath,
+      secondaryPath,
+      focusedPane: "secondary",
+      activePath: secondaryPath,
+    });
+  },
+
+  closeSplit: () => {
+    const state = get();
+    const primaryPath = state.primaryPath ?? state.activePath ?? state.tabs[0]?.path ?? null;
+    set({
+      primaryPath,
+      secondaryPath: null,
+      focusedPane: "primary",
+      activePath: primaryPath,
+    });
+  },
+
+  reorderTabs: (sourcePath, targetPath) => {
+    if (sourcePath === targetPath) return;
+    set((state) => {
+      const source = state.tabs.findIndex((tab) => tab.path === sourcePath);
+      const target = state.tabs.findIndex((tab) => tab.path === targetPath);
+      if (source < 0 || target < 0) return state;
+      const tabs = [...state.tabs];
+      const [moved] = tabs.splice(source, 1);
+      tabs.splice(target, 0, moved);
+      return { tabs };
+    });
+  },
+
+  pinTab: (path) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.path === path ? { ...tab, ephemeral: false } : tab,
+      ),
+    })),
 
   confirmLeaveActive: async () => {
     const activePath = get().activePath;
@@ -160,29 +435,138 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!(await prepareToLeave(path))) return;
     set((state) => {
       const tabs = state.tabs.filter((tab) => tab.path !== path);
-      const activePath = state.activePath === path ? tabs.at(-1)?.path ?? null : state.activePath;
-      return { tabs, activePath };
+      let primaryPath = state.primaryPath;
+      let secondaryPath = state.secondaryPath;
+      let focusedPane = state.focusedPane;
+      if (secondaryPath === path) {
+        secondaryPath = null;
+        focusedPane = "primary";
+      }
+      if (primaryPath === path) {
+        if (secondaryPath) {
+          primaryPath = secondaryPath;
+          secondaryPath = null;
+        } else {
+          primaryPath = tabs.at(-1)?.path ?? null;
+        }
+        focusedPane = "primary";
+      }
+      const activePath =
+        focusedPane === "secondary" && secondaryPath ? secondaryPath : primaryPath;
+      return { tabs, activePath, primaryPath, secondaryPath, focusedPane };
     });
+    useDiagnosticsStore.getState().clearFile(path);
   },
 
   setContent: (path, content) => {
     set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.path === path ? { ...tab, content } : tab)),
+      // Editing pins an explorer preview so it cannot be replaced.
+      tabs: state.tabs.map((tab) =>
+        tab.path === path ? { ...tab, content, ephemeral: false } : tab,
+      ),
     }));
+  },
+
+  setLineEnding: (path, eol) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.path === path && !tab.readOnly
+          ? { ...tab, content: convertLineEndings(tab.content, eol) }
+          : tab,
+      ),
+      docInfo: state.activePath === path && state.docInfo ? { ...state.docInfo, eol } : state.docInfo,
+    }));
+  },
+
+  setEncoding: (path, encoding) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.path === path && !tab.readOnly
+          ? {
+              ...tab,
+              encoding,
+              bom: encoding.startsWith("UTF-16") ? true : tab.bom,
+            }
+          : tab,
+      ),
+    }));
+  },
+
+  reopenWithEncoding: async (path, encoding) => {
+    const current = get().tabs.find((tab) => tab.path === path);
+    if (!current) return;
+    if (isEditorTabDirty(current) && !(await prepareToLeave(path))) return;
+    set({ loading: true, error: null });
+    try {
+      const next = await readEditorTab(path, encoding);
+      set((state) => ({
+        loading: false,
+        tabs: state.tabs.map((tab) => (tab.path === path ? next : tab)),
+      }));
+    } catch (error) {
+      set({ loading: false, error: asMessage(error) });
+    }
   },
 
   saveTab: async (path) => {
     const active = get().tabs.find((tab) => tab.path === path);
-    if (!active || active.readOnly || active.content === active.savedContent) return true;
+    if (!active || active.readOnly) return true;
+    const prefs = usePrefsStore.getState();
+    const editorConfig = await ipc
+      .editorConfigResolve(active.path)
+      .catch(() => active.editorConfig ?? null);
+    const configuredEncoding = encodingFromEditorConfig(editorConfig);
+    const encoding = configuredEncoding ?? active.encoding;
+    const bom = editorConfig?.charset
+      ? editorConfig.charset === "utf-8-bom" || editorConfig.charset.startsWith("utf-16")
+      : active.bom;
+    const prepared = prepareContentForSave(active.path, active.content, {
+      trimTrailingWhitespace:
+        editorConfig?.trimTrailingWhitespace ?? prefs.trimTrailingWhitespace,
+      insertFinalNewline:
+        editorConfig?.insertFinalNewline ?? prefs.insertFinalNewline,
+      removeFinalNewline: editorConfig?.insertFinalNewline === false,
+      formatOnSave: prefs.formatOnSave,
+      tabSize: editorConfig?.indentSize ?? prefs.tabSize,
+      endOfLine:
+        editorConfig?.endOfLine === "lf" ||
+        editorConfig?.endOfLine === "cr" ||
+        editorConfig?.endOfLine === "crlf"
+          ? editorConfig.endOfLine
+          : undefined,
+    });
+    if (
+      prepared === active.savedContent &&
+      encoding === active.savedEncoding &&
+      bom === active.savedBom
+    ) {
+      return true;
+    }
 
     set({ loading: true, error: null });
     try {
-      const result = await ipc.fsWrite(active.path, active.content, active.hash);
+      const result = await ipc.fsWrite(
+        active.path,
+        prepared,
+        active.hash,
+        encoding,
+        bom,
+      );
       set((state) => ({
         loading: false,
         tabs: state.tabs.map((tab) =>
           tab.path === active.path
-            ? { ...tab, hash: result.hash, savedContent: active.content }
+            ? {
+                ...tab,
+                hash: result.hash,
+                savedContent: prepared,
+                encoding,
+                savedEncoding: encoding,
+                bom,
+                savedBom: bom,
+                editorConfig,
+                content: tab.content === active.content ? prepared : tab.content,
+              }
             : tab,
         ),
       }));
@@ -204,38 +588,62 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const candidates = get().tabs.filter(
       (tab) =>
-        wanted.has(normalizePath(tab.path)) && tab.content === tab.savedContent && !tab.readOnly,
+        wanted.has(normalizePath(tab.path)) && !isEditorTabDirty(tab) && !tab.readOnly,
     );
     if (candidates.length === 0) return;
 
     await Promise.all(
       candidates.map(async (tab) => {
         try {
-          const file = await ipc.fsRead(tab.path);
-          if (file.hash === tab.hash && file.content === tab.savedContent) return;
+          const next = await readEditorTab(tab.path);
+          if (next.hash === tab.hash && next.content === tab.savedContent) return;
           set((state) => ({
             tabs: state.tabs.map((item) => {
               if (item.path !== tab.path) return item;
               // Skip if the user dirtied the tab while we were reading.
-              if (item.content !== item.savedContent) return item;
-              return tabFromRead(file);
+              if (isEditorTabDirty(item)) return item;
+              return next;
             }),
           }));
         } catch {
           // File disappeared — close the tab only when it was still clean.
           set((state) => {
             const current = state.tabs.find((item) => item.path === tab.path);
-            if (!current || current.content !== current.savedContent) return state;
+            if (!current || isEditorTabDirty(current)) return state;
             const tabs = state.tabs.filter((item) => item.path !== tab.path);
+            const primaryPath =
+              state.primaryPath === tab.path ? tabs.at(-1)?.path ?? null : state.primaryPath;
+            const secondaryPath =
+              state.secondaryPath === tab.path ? null : state.secondaryPath;
             return {
               tabs,
+              primaryPath,
+              secondaryPath,
+              focusedPane: secondaryPath ? state.focusedPane : "primary",
               activePath:
-                state.activePath === tab.path ? tabs.at(-1)?.path ?? null : state.activePath,
+                state.activePath === tab.path
+                  ? secondaryPath ?? primaryPath
+                  : state.activePath,
             };
           });
         }
       }),
     );
+  },
+
+  refreshTabFromDisk: async (path) => {
+    if (!get().tabs.some((tab) => normalizePath(tab.path) === normalizePath(path))) return;
+    try {
+      const next = await readEditorTab(path);
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          normalizePath(tab.path) === normalizePath(path) ? next : tab,
+        ),
+        error: null,
+      }));
+    } catch (error) {
+      set({ error: asMessage(error) });
+    }
   },
 
   clearReveal: (token) => {
@@ -244,4 +652,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return { reveal: null };
     });
   },
+
+  setCursor: (cursor) => set({ cursor }),
+  setDocInfo: (info) => set({ docInfo: info }),
+  dismissRecoveryNotice: () => set({ recoveryNotice: null }),
 }));

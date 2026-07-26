@@ -49,9 +49,39 @@ pub struct SessionArchive {
     #[ts(type = "number")]
     pub updated_at: u64,
     pub acp_session_id: Option<String>,
-    /// Timeline items as JSON values (shape owned by the frontend).
+    #[serde(default)]
+    pub usage: Option<SessionUsage>,
+    #[serde(default)]
+    pub cost: Option<SessionCost>,
+    // Timeline items as JSON values (shape owned by the frontend).
     #[ts(type = "Array<unknown>")]
     pub items: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/ipc/gen/SessionUsage.ts")]
+pub struct SessionUsage {
+    #[ts(type = "number")]
+    pub total_tokens: u64,
+    #[ts(type = "number")]
+    pub input_tokens: u64,
+    #[ts(type = "number")]
+    pub output_tokens: u64,
+    #[ts(type = "number | null")]
+    pub thought_tokens: Option<u64>,
+    #[ts(type = "number | null")]
+    pub cached_read_tokens: Option<u64>,
+    #[ts(type = "number | null")]
+    pub cached_write_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/ipc/gen/SessionCost.ts")]
+pub struct SessionCost {
+    pub amount: f64,
+    pub currency: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +96,10 @@ struct MetaLine {
     created_at: u64,
     updated_at: u64,
     acp_session_id: Option<String>,
+    #[serde(default)]
+    usage: Option<SessionUsage>,
+    #[serde(default)]
+    cost: Option<SessionCost>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +180,8 @@ fn write_jsonl(path: &Path, archive: &SessionArchive) -> Result<(), String> {
         created_at: archive.created_at,
         updated_at: archive.updated_at,
         acp_session_id: archive.acp_session_id.clone(),
+        usage: archive.usage.clone(),
+        cost: archive.cost.clone(),
     };
     let mut out = String::new();
     out.push_str(&serde_json::to_string(&meta).map_err(|err| format!("serialize meta: {err}"))?);
@@ -206,6 +242,8 @@ fn read_jsonl(path: &Path) -> Result<SessionArchive, String> {
         created_at: meta.created_at,
         updated_at: meta.updated_at,
         acp_session_id: meta.acp_session_id,
+        usage: meta.usage,
+        cost: meta.cost,
         items,
     })
 }
@@ -272,6 +310,59 @@ pub fn session_load(
     read_jsonl(&path)
 }
 
+/// Retitle an archive in place: rewrites the meta line and the index entry, and
+/// leaves the timeline and `updated_at` ordering untouched.
+fn rename_in_dir(dir: &Path, id: &str, title: &str) -> Result<SessionSummary, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("session title is empty".into());
+    }
+    let path = archive_path(dir, id);
+    if !path.exists() {
+        return Err(format!("session `{id}` not found"));
+    }
+
+    let mut archive = read_jsonl(&path)?;
+    archive.title = title.to_string();
+    write_jsonl(&path, &archive)?;
+
+    let mut index = read_index(dir);
+    let summary = match index.iter_mut().find(|entry| entry.id == id) {
+        Some(entry) => {
+            entry.title = title.to_string();
+            entry.clone()
+        }
+        None => {
+            // Index lost or never written — rebuild this entry from the archive.
+            let summary = SessionSummary {
+                id: archive.id.clone(),
+                title: archive.title.clone(),
+                backend: archive.backend.clone(),
+                created_at: archive.created_at,
+                updated_at: archive.updated_at,
+                item_count: archive.items.len() as u32,
+                acp_session_id: archive.acp_session_id.clone(),
+            };
+            index.push(summary.clone());
+            index.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at));
+            summary
+        }
+    };
+    write_index(dir, &index)?;
+    Ok(summary)
+}
+
+#[tauri::command]
+pub fn session_rename(
+    app: AppHandle,
+    project_path: String,
+    id: String,
+    title: String,
+) -> Result<SessionSummary, String> {
+    let dir = project_dir(&app, &project_path)?;
+    rename_in_dir(&dir, &id, &title)
+}
+
 #[tauri::command]
 pub fn session_delete(app: AppHandle, project_path: String, id: String) -> Result<(), String> {
     let dir = project_dir(&app, &project_path)?;
@@ -312,6 +403,18 @@ mod tests {
             created_at: 1,
             updated_at: 2,
             acp_session_id: Some("acp-1".into()),
+            usage: Some(SessionUsage {
+                total_tokens: 30,
+                input_tokens: 20,
+                output_tokens: 10,
+                thought_tokens: None,
+                cached_read_tokens: Some(4),
+                cached_write_tokens: None,
+            }),
+            cost: Some(SessionCost {
+                amount: 0.01,
+                currency: "USD".into(),
+            }),
             items: vec![
                 serde_json::json!({"id":"u1","kind":"user","text":"hi","at":1}),
                 serde_json::json!({"id":"a1","kind":"assistant","text":"yo","at":2}),
@@ -322,6 +425,87 @@ mod tests {
         assert_eq!(loaded.id, "sess-1");
         assert_eq!(loaded.items.len(), 2);
         assert_eq!(loaded.title, "Hello");
+        assert_eq!(loaded.usage.unwrap().total_tokens, 30);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn sample_archive(id: &str, title: &str) -> SessionArchive {
+        SessionArchive {
+            id: id.into(),
+            project_path: "/tmp/demo".into(),
+            title: title.into(),
+            backend: "fixture".into(),
+            created_at: 1,
+            updated_at: 2,
+            acp_session_id: None,
+            usage: None,
+            cost: None,
+            items: vec![serde_json::json!({"id":"u1","kind":"user","text":"hi","at":1})],
+        }
+    }
+
+    #[test]
+    fn rename_updates_archive_and_index() {
+        let dir = tmp_dir();
+        let archive = sample_archive("sess-1", "hi");
+        write_jsonl(&archive_path(&dir, "sess-1"), &archive).unwrap();
+        write_index(
+            &dir,
+            &[SessionSummary {
+                id: "sess-1".into(),
+                title: "hi".into(),
+                backend: "fixture".into(),
+                created_at: 1,
+                updated_at: 2,
+                item_count: 1,
+                acp_session_id: None,
+            }],
+        )
+        .unwrap();
+
+        let summary = rename_in_dir(&dir, "sess-1", "  Agent UI polish  ").unwrap();
+        assert_eq!(summary.title, "Agent UI polish");
+        // The timeline and ordering survive the retitle.
+        let loaded = read_jsonl(&archive_path(&dir, "sess-1")).unwrap();
+        assert_eq!(loaded.title, "Agent UI polish");
+        assert_eq!(loaded.items.len(), 1);
+        assert_eq!(loaded.updated_at, 2);
+        assert_eq!(read_index(&dir)[0].title, "Agent UI polish");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rename_rebuilds_a_missing_index_entry() {
+        let dir = tmp_dir();
+        write_jsonl(
+            &archive_path(&dir, "sess-2"),
+            &sample_archive("sess-2", "hi"),
+        )
+        .unwrap();
+
+        rename_in_dir(&dir, "sess-2", "Recovered").unwrap();
+        let index = read_index(&dir);
+        assert_eq!(index.len(), 1);
+        assert_eq!(index[0].id, "sess-2");
+        assert_eq!(index[0].title, "Recovered");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn rename_rejects_blank_titles_and_unknown_sessions() {
+        let dir = tmp_dir();
+        write_jsonl(
+            &archive_path(&dir, "sess-3"),
+            &sample_archive("sess-3", "hi"),
+        )
+        .unwrap();
+
+        assert!(rename_in_dir(&dir, "sess-3", "   ").is_err());
+        assert!(rename_in_dir(&dir, "nope", "Title").is_err());
+        assert_eq!(
+            read_jsonl(&archive_path(&dir, "sess-3")).unwrap().title,
+            "hi"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }

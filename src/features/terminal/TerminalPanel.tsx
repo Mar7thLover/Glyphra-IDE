@@ -9,6 +9,8 @@ import { ipc } from "@/lib/ipc/ipc";
 import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
 import { copyText, readClipboardText } from "@/lib/clipboard";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
+import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
@@ -40,10 +42,12 @@ export default function TerminalPanel() {
   const setOpen = useTerminalStore((s) => s.setOpen);
   const current = useProjectStore((s) => s.current);
   const theme = useUiStore((s) => s.theme);
+  const terminalWebgl = usePrefsStore((s) => s.terminalWebgl);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [booting, setBooting] = useState(false);
+  const [renderer, setRenderer] = useState<"dom" | "webgl">("dom");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -58,10 +62,24 @@ export default function TerminalPanel() {
     let fit: FitAddon | null = null;
     let ptyId: number | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let webglAddon: { dispose: () => void } | null = null;
+    let diagnosticChunk = "";
+    let diagnosticTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushDiagnostics = () => {
+      if (diagnosticTimer) clearTimeout(diagnosticTimer);
+      diagnosticTimer = null;
+      if (!diagnosticChunk) return;
+      useDiagnosticsStore
+        .getState()
+        .ingestText("terminal", diagnosticChunk, current.path);
+      diagnosticChunk = "";
+    };
 
     const boot = async () => {
       setBooting(true);
       setError(null);
+      useDiagnosticsStore.getState().clearSource("terminal");
+      useDiagnosticsStore.getState().clearSource("build");
       term = new Terminal({
         allowProposedApi: false,
         cursorBlink: true,
@@ -94,13 +112,39 @@ export default function TerminalPanel() {
       await document.fonts.ready;
       if (disposed || !hostRef.current) return;
       term.open(hostRef.current);
+      setRenderer("dom");
+      if (terminalWebgl) {
+        try {
+          const { WebglAddon } = await import("@xterm/addon-webgl");
+          if (disposed || !term) return;
+          const addon = new WebglAddon();
+          webglAddon = addon;
+          term.loadAddon(addon);
+          addon.onContextLoss(() => {
+            addon.dispose();
+            if (webglAddon === addon) webglAddon = null;
+            setRenderer("dom");
+          });
+          setRenderer("webgl");
+        } catch {
+          webglAddon?.dispose();
+          webglAddon = null;
+          setRenderer("dom");
+        }
+      }
       fit.fit();
       const cols = term.cols;
       const rows = term.rows;
       try {
         ptyId = await ipc.ptyOpen(current.path, cols, rows, (event) => {
-          if (event.kind === "data") term?.write(event.data);
+          if (event.kind === "data") {
+            term?.write(event.data);
+            diagnosticChunk += event.data;
+            if (diagnosticTimer) clearTimeout(diagnosticTimer);
+            diagnosticTimer = setTimeout(flushDiagnostics, 180);
+          }
           if (event.kind === "exit") {
+            flushDiagnostics();
             term?.writeln("\r\n[process exited]");
           }
         });
@@ -124,12 +168,14 @@ export default function TerminalPanel() {
 
     return () => {
       disposed = true;
+      flushDiagnostics();
       resizeObserver?.disconnect();
+      webglAddon?.dispose();
       if (ptyId != null) void ipc.ptyClose(ptyId);
       term?.dispose();
       if (terminalRef.current === term) terminalRef.current = null;
     };
-  }, [open, current?.path, theme]);
+  }, [open, current?.path, terminalWebgl, theme]);
 
   if (!open) return null;
 
@@ -178,6 +224,11 @@ export default function TerminalPanel() {
       <header className="flex h-8 shrink-0 items-center gap-2 border-b border-line px-2">
         <TerminalSquare className="size-3.5 text-ink-3" strokeWidth={1.6} />
         <span className="text-[11px] font-medium text-ink-2">{t("terminal.title")}</span>
+        {terminalWebgl && (
+          <span className="rounded bg-raised px-1.5 py-0.5 text-[9px] uppercase text-ink-3">
+            {renderer}
+          </span>
+        )}
         <div className="flex-1" />
         {booting && <Loader2 className="size-3 animate-spin text-ink-3" />}
         <button

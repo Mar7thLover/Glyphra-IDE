@@ -1,47 +1,77 @@
-import { Copy, FileText, Loader2, Save, X } from "lucide-react";
+import {
+  Columns2,
+  Copy,
+  FileText,
+  Loader2,
+  PanelRightClose,
+  Pin,
+  Save,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import GlyphMark from "@/app/GlyphMark";
 import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
 import { copyText } from "@/lib/clipboard";
-import { useEditorStore } from "@/lib/stores/editorStore";
+import { commandMatches } from "@/lib/keybindings";
+import { isEditorTabDirty, useEditorStore } from "@/lib/stores/editorStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 
 import CodeEditor from "./CodeEditor";
+import MediaPreview from "./MediaPreview";
 
 export default function EditorWorkbench() {
   const { t } = useTranslation();
   const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const tabs = useEditorStore((s) => s.tabs);
   const activePath = useEditorStore((s) => s.activePath);
+  const primaryPath = useEditorStore((s) => s.primaryPath);
+  const secondaryPath = useEditorStore((s) => s.secondaryPath);
+  const focusedPane = useEditorStore((s) => s.focusedPane);
   const loading = useEditorStore((s) => s.loading);
   const error = useEditorStore((s) => s.error);
+  const recoveryNotice = useEditorStore((s) => s.recoveryNotice);
+  const dismissRecoveryNotice = useEditorStore((s) => s.dismissRecoveryNotice);
   const closeTab = useEditorStore((s) => s.closeTab);
   const activateTab = useEditorStore((s) => s.activateTab);
+  const focusPane = useEditorStore((s) => s.focusPane);
+  const splitActive = useEditorStore((s) => s.splitActive);
+  const closeSplit = useEditorStore((s) => s.closeSplit);
+  const reorderTabs = useEditorStore((s) => s.reorderTabs);
+  const pinTab = useEditorStore((s) => s.pinTab);
   const setContent = useEditorStore((s) => s.setContent);
   const saveActive = useEditorStore((s) => s.saveActive);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
 
   const active = tabs.find((tab) => tab.path === activePath) ?? null;
+  const primary =
+    tabs.find((tab) => tab.path === (primaryPath ?? activePath)) ?? active;
+  const secondary = tabs.find((tab) => tab.path === secondaryPath) ?? null;
   const setActivePath = useCallback((path: string) => {
     void activateTab(path);
   }, [activateTab]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      const editorFocus =
+        document.activeElement instanceof Element &&
+        Boolean(document.activeElement.closest(".cm-editor"));
+      const context = { editorFocus, projectOpen: Boolean(projectPath) };
+      if (commandMatches(event, "editor.save", context)) {
         event.preventDefault();
         void saveActive();
+        return;
       }
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "w") {
+      if (commandMatches(event, "editor.close", context)) {
         const path = useEditorStore.getState().activePath;
         if (path) {
           event.preventDefault();
           void useEditorStore.getState().closeTab(path);
         }
+        return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key === "Tab") {
+      if (commandMatches(event, "editor.nextTab", context)) {
         const state = useEditorStore.getState();
         if (state.tabs.length < 2 || !state.activePath) return;
         event.preventDefault();
@@ -53,7 +83,7 @@ export default function EditorWorkbench() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [saveActive]);
+  }, [projectPath, saveActive]);
 
   if (!active) {
     return (
@@ -97,6 +127,20 @@ export default function EditorWorkbench() {
         },
         { id: "tab-separator", separator: true },
         {
+          id: "pin-tab",
+          label: t("editor.pinTab"),
+          icon: <Pin className="size-3.5" />,
+          disabled: !menuTab.ephemeral,
+          action: () => pinTab(menuTab.path),
+        },
+        {
+          id: "split-right",
+          label: t("editor.splitRight"),
+          icon: <Columns2 className="size-3.5" />,
+          disabled: tabs.length < 2 || Boolean(secondaryPath),
+          action: splitActive,
+        },
+        {
           id: "close-tab",
           label: t("editor.closeTab"),
           shortcut: "Ctrl+W",
@@ -131,17 +175,71 @@ export default function EditorWorkbench() {
       ]
     : [];
 
+  const renderPane = (
+    tab: NonNullable<typeof active>,
+    pane: "primary" | "secondary",
+  ) => (
+    <div
+      key={`${pane}:${tab.path}`}
+      className={`flex min-h-0 min-w-0 flex-1 flex-col ${
+        pane === "secondary" ? "border-l border-line" : ""
+      }`}
+      onPointerDown={() => focusPane(pane)}
+    >
+      {secondary && (
+        <div
+          className={`flex h-6 shrink-0 items-center px-2 font-mono text-[10px] ${
+            focusedPane === pane
+              ? "border-b border-accent/50 bg-active text-ink-2"
+              : "border-b border-line bg-panel text-ink-3"
+          }`}
+        >
+          <span className="truncate">{tab.name}</span>
+          {tab.ephemeral && <span className="ml-1 opacity-70">{t("editor.previewTab")}</span>}
+        </div>
+      )}
+      {tab.preview ? (
+        <MediaPreview tab={tab} />
+      ) : (
+        <CodeEditor
+          tab={tab}
+          focused={focusedPane === pane}
+          onFocus={() => focusPane(pane)}
+          onChange={(content) => setContent(tab.path, content)}
+          onSave={() => void useEditorStore.getState().saveTab(tab.path)}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-editor">
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-line px-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           {tabs.map((tab) => {
-            const dirty = tab.content !== tab.savedContent;
+            const dirty = isEditorTabDirty(tab);
             const selected = tab.path === activePath;
             return (
               <button
                 key={tab.path}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/glyphra-tab", tab.path);
+                }}
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes("text/glyphra-tab")) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const source = event.dataTransfer.getData("text/glyphra-tab");
+                  if (source) reorderTabs(source, tab.path);
+                }}
                 onClick={() => setActivePath(tab.path)}
+                onDoubleClick={() => pinTab(tab.path)}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -154,7 +252,7 @@ export default function EditorWorkbench() {
                 }`}
                 title={tab.path}
               >
-                <span className="truncate">{tab.name}</span>
+                <span className={`truncate ${tab.ephemeral ? "italic" : ""}`}>{tab.name}</span>
                 <span
                   onClick={(event) => {
                     event.stopPropagation();
@@ -172,23 +270,60 @@ export default function EditorWorkbench() {
           })}
         </div>
         <button
-          disabled={active.readOnly || active.content === active.savedContent}
+          disabled={active.readOnly || !isEditorTabDirty(active)}
           onClick={() => void saveActive()}
           title={`${t("editor.save")} · Ctrl+S`}
           className="grid size-7 shrink-0 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
         >
           {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
         </button>
+        {secondary ? (
+          <button
+            type="button"
+            onClick={closeSplit}
+            title={t("editor.closeSplit")}
+            className="grid size-7 shrink-0 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-hover hover:text-ink"
+          >
+            <PanelRightClose className="size-3.5" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={tabs.length < 2}
+            onClick={splitActive}
+            title={t("editor.splitRight")}
+            className="grid size-7 shrink-0 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-hover hover:text-ink disabled:opacity-35"
+          >
+            <Columns2 className="size-3.5" />
+          </button>
+        )}
       </div>
       {error && <div className="border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+      {recoveryNotice && (
+        <div className="flex items-center gap-2 border-b border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">
+          <span className="flex-1">
+            {t("editor.recovered", { count: recoveryNotice.count })}
+            {recoveryNotice.conflicts > 0
+              ? ` ${t("editor.recoveredConflicts", { count: recoveryNotice.conflicts })}`
+              : ""}
+          </span>
+          <button
+            type="button"
+            onClick={dismissRecoveryNotice}
+            title={t("editor.dismissRecovery")}
+            className="grid size-5 place-items-center rounded hover:bg-hover"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       {degradeReason && (
         <div className="border-b border-line bg-accent/10 px-3 py-2 text-xs text-accent">{degradeReason}</div>
       )}
-      <CodeEditor
-        tab={active}
-        onChange={(content) => setContent(active.path, content)}
-        onSave={() => void saveActive()}
-      />
+      <div className="flex min-h-0 flex-1">
+        {primary ? renderPane(primary, "primary") : null}
+        {secondary ? renderPane(secondary, "secondary") : null}
+      </div>
       {tabMenu && menuTab && (
         <ContextMenu
           x={tabMenu.x}
