@@ -5,7 +5,9 @@ All notable changes to Glyphra are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/) with pre-release tags for test builds.
 
-## [Unreleased]
+## [0.3.0] — 2026-07-26
+
+Language servers, parallel worktrees, and a monochrome tone system.
 
 ### Added
 
@@ -55,6 +57,20 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
 - Permission prompts, the command palette, and onboarding expose dialog
   semantics, and the agent error dismissals have accessible names. A static
   accessibility suite keeps all four checks from regressing.
+- An LSP rename reached the store but not a mounted CodeMirror view, because the
+  view only pulls text in when the on-disk `hash` changes — which an in-memory
+  edit must not touch. External rewrites now carry their own revision counter.
+- Two defects in the language-server client, which had been sitting outside the
+  module tree and had therefore never been compiled: `parse_completion_items`
+  moved a value while a borrow of it was live, and canonicalized paths kept
+  Windows' `\\?\` prefix while URIs decoded to the plain form, so the workspace
+  containment check silently discarded every published diagnostic.
+
+### Known limitations
+
+- Application binaries remain **unsigned**; in-app updates are minisign-signed.
+- The editor decoration changes still owe a pass of `docs/ime-checklist.md`.
+- No end-to-end component test layer.
 
 ## [0.2.0] — 2026-07-25
 
@@ -167,5 +183,6 @@ First packaged test release.
 - Per-project multi-window routing is still open (see `docs/TODO.md` when present).
 - APIs and UI may break between commits.
 
+[0.3.0]: https://github.com/Mar7thLover/Glyphra-IDE/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mar7thLover/Glyphra-IDE/releases/tag/v0.2.0
 [0.1.0-beta.1]: https://github.com/Mar7thLover/Glyphra-IDE/releases/tag/v0.1.0-beta.1

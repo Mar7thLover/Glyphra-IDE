@@ -11045,7 +11045,7 @@ developed by Chen Jiaju, licensed under the MIT License and the Apache License 2
 
 Used by:
 
-- [glyphra 0.2.0](https://crates.io/crates/glyphra)
+- [glyphra 0.3.0](https://crates.io/crates/glyphra)
 - [block2 0.6.2](https://github.com/madsmtm/objc2)
 - [dlopen2 0.8.2](https://github.com/OpenByteDev/dlopen2)
 - [dlopen2_derive 0.4.3](https://github.com/OpenByteDev/dlopen2)

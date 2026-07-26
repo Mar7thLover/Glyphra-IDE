@@ -1,6 +1,6 @@
 [package]
 name = "glyphra"
-version = "0.2.0"
+version = "0.3.0"
 description = "Agent-first, feather-light code studio for reviewing and steering AI-written code"
 authors = ["Glyphra contributors"]
 edition = "2021"

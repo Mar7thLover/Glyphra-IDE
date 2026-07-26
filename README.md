@@ -12,7 +12,7 @@
 
 <br />
 
-![release](https://img.shields.io/badge/release-v0.2.0-6366f1?style=flat-square)
+![release](https://img.shields.io/badge/release-v0.3.0-6366f1?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![stack](https://img.shields.io/badge/Tauri_2-React_19-0f172a?style=flat-square)
 ![platforms](https://img.shields.io/badge/Windows_·_macOS_·_Linux-CI-green?style=flat-square)
@@ -25,7 +25,7 @@ Most IDEs were designed for a human typing every line. Glyphra is designed for t
 
 Debuggers, extension marketplaces, and task runners are legacy weight from the pre-agent era — Glyphra leaves them out on purpose. What remains is a feather-light Tauri app: CodeMirror 6, an ACP-normalized agent timeline, and git-checkpointed review as the primary interaction.
 
-> **Status: `0.2.0` — first stable release.** Signed in-app updates, checkpointed review, and the full editor surface are in place and meant for daily use. Being `0.x`, settings and the harness contract can still change between minor versions; app binaries are not yet code-signed. Installers: [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · changelog: [`CHANGELOG.md`](./CHANGELOG.md) · release guide: [`docs/releasing.md`](./docs/releasing.md).
+> **Status: `0.3.0`.** Language servers, a git-worktree board, checkpointed review, and signed in-app updates are in place and meant for daily use. Being `0.x`, settings and the harness contract can still change between minor versions; app binaries are not yet code-signed. Installers: [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · changelog: [`CHANGELOG.md`](./CHANGELOG.md) · release guide: [`docs/releasing.md`](./docs/releasing.md).
 
 ## Why Glyphra
 
