@@ -12,7 +12,7 @@
 
 <br />
 
-![release](https://img.shields.io/badge/release-v0.2.0-6366f1?style=flat-square)
+![release](https://img.shields.io/badge/release-v0.3.0-6366f1?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![stack](https://img.shields.io/badge/Tauri_2-React_19-0f172a?style=flat-square)
 ![platforms](https://img.shields.io/badge/Windows_·_macOS_·_Linux-CI-green?style=flat-square)
@@ -25,7 +25,7 @@
 
 调试器、插件市场、任务系统是前 agent 时代的重型遗产 —— Glyphra 有意不做。留下的是一台极轻的 Tauri 应用：CodeMirror 6、ACP 归一化的 agent 时间线，以及以 git checkpoint 审阅为主交互。
 
-> **状态：`0.2.0` —— 第一个正式版。** 签名的应用内更新、checkpoint 审阅与完整编辑器能力均已就绪，可用于日常开发。仍处于 `0.x`：设置项与 harness 契约在小版本之间仍可能调整，应用二进制也尚未做代码签名。安装包见 [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · 更新日志见 [`CHANGELOG.md`](./CHANGELOG.md) · 发布说明见 [`docs/releasing.md`](./docs/releasing.md)。
+> **状态：`0.3.0`。** 语言服务器、git worktree 看板、checkpoint 审阅与签名的应用内更新均已就绪，可用于日常开发。仍处于 `0.x`：设置项与 harness 契约在小版本之间仍可能调整，应用二进制也尚未做代码签名。安装包见 [GitHub Releases](https://github.com/Mar7thLover/Glyphra-IDE/releases) · 更新日志见 [`CHANGELOG.md`](./CHANGELOG.md) · 发布说明见 [`docs/releasing.md`](./docs/releasing.md)。
 
 ## 为什么选 Glyphra
 

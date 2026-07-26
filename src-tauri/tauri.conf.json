@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Glyphra",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "dev.glyphra.ide",
   "build": {
     "beforeDevCommand": "pnpm build:runtime && pnpm dev",
@@ -71,7 +71,7 @@
         "type": "downloadBootstrapper"
       },
       "wix": {
-        "version": "0.2.0.0",
+        "version": "0.3.0.0",
         "upgradeCode": "6a301616-fa42-5b9e-9e84-a236c0f5dea5",
         "language": ["en-US", "zh-CN"],
         "fragmentPaths": ["./windows/wix/file-context-menu.wxs"],

@@ -21,8 +21,8 @@ Keep these three equal (enforced by `pnpm check:version`):
 2. `src-tauri/tauri.conf.json` → `version`
 3. `src-tauri/Cargo.toml` → `package.version`
 
-Current line: **`0.2.0`** — the first stable release. The previous test line was
-`0.1.0-beta.1`.
+Current line: **`0.3.0`**. The previous lines were `0.2.0` (first stable) and
+`0.1.0-beta.1` (first packaged test build).
 
 Semver with a pre-release suffix (`-beta.N`, `-rc.N`) is marked as a GitHub
 **prerelease** automatically; a bare `X.Y.Z` publishes as a normal release.
@@ -61,8 +61,8 @@ CI (`ci.yml`) must be green.
 ```sh
 git checkout main
 git pull origin main
-git tag -a "v0.2.0" -m "Glyphra v0.2.0"
-git push origin "v0.2.0"
+git tag -a "v0.3.0" -m "Glyphra v0.3.0"
+git push origin "v0.3.0"
 ```
 
 Pushing `v*` triggers `release.yml`. The action creates/updates the GitHub Release and uploads installers from every matrix leg.
