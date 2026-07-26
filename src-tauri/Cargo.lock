@@ -1555,6 +1555,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "ts-rs",
+ "url",
  "uuid",
  "win32job",
  "windows",

@@ -2,7 +2,12 @@
 import type { ImportedTheme } from "./ImportedTheme";
 import type { KeybindingSetting } from "./KeybindingSetting";
 
-export type AppSettings = { theme: string, language: string, fontSize: number, tabSize: number, wordWrap: boolean, lineNumbers: boolean, trimTrailingWhitespace: boolean, insertFinalNewline: boolean, formatOnSave: boolean, minimap: boolean, breadcrumbs: boolean, stickyScroll: boolean, bracketPairColorization: boolean, indentGuides: boolean, 
+export type AppSettings = { theme: string, 
+/**
+ * Achromatic tonal family layered on the scheme: `neutral`, `soft` or
+ * `contrast`.
+ */
+themeVariant: string, language: string, fontSize: number, tabSize: number, wordWrap: boolean, lineNumbers: boolean, trimTrailingWhitespace: boolean, insertFinalNewline: boolean, formatOnSave: boolean, minimap: boolean, breadcrumbs: boolean, stickyScroll: boolean, bracketPairColorization: boolean, indentGuides: boolean, 
 /**
  * Agent-backed inline completion. Off by default: every suggestion costs a
  * harness turn.
@@ -11,4 +16,14 @@ ghostText: boolean,
 /**
  * Idle time before a ghost-text request is sent, in milliseconds.
  */
-ghostTextDelayMs: number, customTheme: ImportedTheme | null, terminalWebgl: boolean, defaultMode: string, defaultBackend: string, defaultProviderId: string | null, defaultAgentModel: string | null, defaultReasoningEffort: string | null, defaultContextWindow: number | null, defaultFastMode: boolean, defaultApprovalReviewer: string, openAgentOnProject: boolean, keybindings: Array<KeybindingSetting>, };
+ghostTextDelayMs: number, 
+/**
+ * Lazily started language servers for completion, hover, navigation and
+ * diagnostics. Servers are only spawned once a matching file is opened.
+ */
+languageServer: boolean, 
+/**
+ * Language ids the user has switched off individually, even when
+ * `language_server` is on.
+ */
+languageServerDisabled: Array<string>, customTheme: ImportedTheme | null, terminalWebgl: boolean, defaultMode: string, defaultBackend: string, defaultProviderId: string | null, defaultAgentModel: string | null, defaultReasoningEffort: string | null, defaultContextWindow: number | null, defaultFastMode: boolean, defaultApprovalReviewer: string, openAgentOnProject: boolean, keybindings: Array<KeybindingSetting>, };

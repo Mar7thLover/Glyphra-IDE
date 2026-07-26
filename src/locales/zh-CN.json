@@ -156,6 +156,9 @@
       "workbench.search": "在文件中搜索",
       "workbench.review": "打开审阅",
       "editor.inlineEdit": "用 Agent 内联编辑",
+      "editor.goToDefinition": "转到定义",
+      "editor.findReferences": "查找引用",
+      "editor.rename": "重命名符号",
       "editor.save": "保存活动编辑器",
       "editor.close": "关闭活动编辑器",
       "editor.nextTab": "下一个编辑器标签"
@@ -181,6 +184,11 @@
     "mcpRemove": "移除服务器",
     "mcpRemoveConfirm": "移除 MCP 服务器“{{name}}”？",
     "theme": "主题",
+    "themeVariant": "色调",
+    "themeVariantHint": "三者都是纯灰阶，只改变灰度分布，不引入任何色相。高对比还会关闭半透明 Mica 背景，以保证对比度。",
+    "variantNeutral": "标准",
+    "variantSoft": "柔和",
+    "variantContrast": "高对比",
     "language": "语言",
     "light": "浅色",
     "dark": "深色",
@@ -236,6 +244,14 @@
     "indentGuides": "缩进参考线",
     "ghostText": "内联补全（幽灵文本）",
     "ghostTextHint": "输入停顿时预测后续几行。每条建议都会消耗一次 Agent 调用，因此默认关闭。",
+    "languageServer": "语言服务器",
+    "languageServerHint": "提供补全、悬停、转到定义、查找引用、重命名与诊断。只有在打开对应文件后才会启动服务器。",
+    "languageServerLanguages": "按语言配置",
+    "languageServerReady": "运行中",
+    "languageServerMissing": "未安装",
+    "languageServerStopped": "已停止",
+    "languageServerIdle": "未启动",
+    "languageServerInstallHint": "Glyphra 不捆绑语言服务器。请自行安装可执行文件并确保在 PATH 中，然后重新打开文件。",
     "ghostTextDelay": "补全延迟",
     "ghostTextDelayValue": "{{ms}} 毫秒",
     "terminalWebgl": "使用 WebGL 终端渲染器",
@@ -340,6 +356,8 @@
     "copyPath": "复制路径",
     "copyRelativePath": "复制相对路径",
     "closeTab": "关闭标签页",
+    "closeTabNamed": "关闭 {{name}}",
+    "openTabs": "已打开的编辑器",
     "closeOtherTabs": "关闭其他标签页",
     "closeTabsToRight": "关闭右侧标签页",
     "pinTab": "保留预览标签页",
@@ -370,6 +388,19 @@
     "inlineEditUnchanged": "Agent 返回的内容与原文一致。",
     "inlineEditTooLarge": "选区过大，无法内联编辑，请缩小选择范围。",
     "inlineEditPending": "请先采纳或丢弃当前的内联编辑。"
+  },
+  "lsp": {
+    "close": "关闭",
+    "definitions": "定义（{{n}}）",
+    "references": "引用（{{n}}）",
+    "noReferences": "未找到引用。",
+    "renameTitle": "重命名符号",
+    "renameHint": "改动以未保存缓冲区打开——检查后再保存。",
+    "renameApplied": "已在 {{files}} 个文件中重命名 {{edits}} 处，请检查后保存。",
+    "renameAppliedPartial": "已在 {{files}} 个文件中重命名 {{edits}} 处；跳过 {{skipped}} 个（只读或过大）。",
+    "renameEmpty": "语言服务器没有为该符号返回改动。",
+    "renameTooManyFiles": "此次重命名涉及 {{files}} 个文件，超出 Glyphra 一次可应用的上限。",
+    "renameFailed": "重命名失败。"
   },
   "agent": {
     "thinking": "思考过程",
@@ -445,6 +476,7 @@
     "sessionArchive": "已保存会话",
     "sessionReadonly": "会话恢复未完成 — 可重试恢复，历史消息仍会保留。",
     "sessionDismiss": "关闭",
+    "dismissError": "关闭错误提示",
     "promptReadonly": "会话恢复未完成 — 重试恢复后可继续…",
     "crashed": "Agent 进程意外退出。",
     "circuitOpen": "熔断已触发 — 30 秒内崩溃 3 次。重置后再重启。",
@@ -533,6 +565,12 @@
     "reviewDiffApplied": "待审阅",
     "reviewDiffApplyHint": "通过 Checkpoint 精确应用此 Diff，并加入审阅队列",
     "reviewDiffUnsafePath": "建议路径超出了当前项目范围。",
+    "patchTitle": "此消息中的补丁",
+    "patchSummary": "{{files}} 个文件",
+    "patchMoreFiles": "另有 {{n}} 个",
+    "patchApply": "应用补丁",
+    "patchSkipped": "已跳过 {{n}} 项——删除操作与项目外路径不会被应用。",
+    "patchNoProject": "请先打开项目文件夹再应用补丁。",
     "slashReview": "审阅当前改动",
     "slashExplain": "解释引用的上下文",
     "slashTest": "补充或建议针对性测试",
@@ -580,6 +618,18 @@
     "commitNow": "创建提交",
     "commitCancel": "取消",
     "commitCreated": "已创建提交 {{hash}}",
+    "worktrees": "工作树",
+    "worktreesHint": "每个工作树都是一份并行检出，拥有独立的窗口、Agent 会话与 Checkpoint 历史，且存放在你的仓库目录之外。",
+    "worktreesLoading": "正在读取工作树…",
+    "worktreesEmpty": "还没有额外的工作树。",
+    "worktreeName": "工作树名称",
+    "worktreeNamePlaceholder": "分支名",
+    "worktreeCreate": "创建",
+    "worktreeRemove": "移除工作树",
+    "worktreeRemoveConfirm": "移除位于 {{path}} 的工作树？其中未提交的改动会丢失。",
+    "worktreeCancel": "取消",
+    "worktreeDetached": "游离 HEAD",
+    "worktreeLocked": "该工作树已被锁定。",
     "close": "关闭审阅"
   },
   "problems": {
@@ -592,7 +642,8 @@
       "editor": "编辑器",
       "build": "构建",
       "terminal": "终端",
-      "agent": "Agent"
+      "agent": "Agent",
+      "lsp": "语言服务器"
     }
   },
   "search": {
@@ -630,6 +681,11 @@
     "openSearch": "在文件中搜索",
     "toggleTerminal": "切换终端",
     "openReview": "打开变更审阅",
-    "toggleTheme": "切换明暗主题"
+    "toggleTheme": "切换明暗主题",
+    "cycleTone": "切换色调：标准 / 柔和 / 高对比",
+    "groupCode": "代码",
+    "goToDefinition": "转到定义",
+    "findReferences": "查找引用",
+    "renameSymbol": "重命名符号"
   }
 }

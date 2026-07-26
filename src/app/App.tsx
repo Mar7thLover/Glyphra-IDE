@@ -11,6 +11,7 @@ import {
   persistEditorRecovery,
   restoreEditorRecovery,
 } from "@/lib/editorRecovery";
+import { applyAppearanceSettings } from "@/lib/appearance";
 import { ipc, type AppSettings, type LaunchRequest } from "@/lib/ipc/ipc";
 import { commandMatches } from "@/lib/keybindings";
 import { useAgentStore } from "@/lib/stores/agentStore";
@@ -52,15 +53,6 @@ function enqueueLaunchRequest(request: LaunchRequest) {
   });
 }
 
-function applyBootSettings(theme: string, language: string) {
-  if (theme === "light" || theme === "dark") {
-    useUiStore.getState().setTheme(theme);
-  }
-  if (language === "en" || language === "zh-CN") {
-    void i18n.changeLanguage(language);
-    localStorage.setItem("glyphra.lang", language);
-  }
-}
 
 function AgentSlot() {
   const open = useUiStore((s) => s.agentOpen);
@@ -100,7 +92,7 @@ export default function App() {
         booted.current = true;
         try {
           const settings = await ipc.settingsGet();
-          applyBootSettings(settings.theme, settings.language);
+          applyAppearanceSettings(settings);
           usePrefsStore.getState().hydrate(settings);
           useAgentStore
             .getState()
@@ -129,7 +121,7 @@ export default function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<AppSettings>("settings-changed", (event) => {
-      applyBootSettings(event.payload.theme, event.payload.language);
+      applyAppearanceSettings(event.payload);
       usePrefsStore.getState().hydrate(event.payload);
       useAgentStore
         .getState()

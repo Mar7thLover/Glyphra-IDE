@@ -31,6 +31,7 @@ import {
 
 import MergeEditor, { type MergeEditorHandle } from "./MergeEditor";
 import { reviewKeyboardAction } from "./reviewKeyboard";
+import WorktreeBoard from "./WorktreeBoard";
 
 export const REVIEW_WIDTH = 500;
 
@@ -312,6 +313,8 @@ export default function ReviewPanel({ variant = "sidebar" }: { variant?: "sideba
             <PanelRightClose className="size-3.5" strokeWidth={1.6} />
           </button>
         </header>
+
+        <WorktreeBoard />
 
         {error && <div className="border-b border-danger/20 px-3 py-1.5 text-[11px] text-danger">{error}</div>}
         {commitHash && (

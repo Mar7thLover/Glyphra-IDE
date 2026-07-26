@@ -85,6 +85,88 @@
   --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+/*
+ * Tonal variants. `data-theme` stays the scheme (so Mica rules and
+ * `color-scheme` are untouched); `data-variant` only redistributes the gray
+ * ramp. Every value below is achromatic on purpose — a warm or cool cast would
+ * be a color, and color is what makes an interface look generated.
+ *
+ * soft     — lower contrast for long reading sessions
+ * contrast — pure black on pure white, heavier hairlines, for accessibility
+ */
+/* `soft` deliberately leaves the surface colors alone. Backgrounds are what
+   Mica overrides, so touching them here would make the variant vanish whenever
+   the material is on; ink and hairlines are the contrast that actually tires
+   the eye, and they compose with every backdrop. */
+:root[data-variant="soft"][data-theme="light"] {
+  --ink-1: #33342f;
+  --ink-2: #6f6f6f;
+  --ink-3: #a3a3a3;
+  --line: rgba(0, 0, 0, 0.06);
+  --line-strong: rgba(0, 0, 0, 0.12);
+  --accent: #33342f;
+  --accent-hover: #1a1a1a;
+  --accent-soft: rgba(0, 0, 0, 0.04);
+  --hov: rgba(0, 0, 0, 0.035);
+  --act: rgba(0, 0, 0, 0.06);
+  --ok: #33342f;
+}
+
+:root[data-variant="soft"][data-theme="dark"] {
+  --ink-1: #dcdcdc;
+  --ink-2: #9b9b9b;
+  --ink-3: #6e6e6e;
+  --line: rgba(255, 255, 255, 0.06);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --accent: #dcdcdc;
+  --accent-hover: #f2f2f2;
+  --accent-soft: rgba(255, 255, 255, 0.07);
+  --hov: rgba(255, 255, 255, 0.05);
+  --act: rgba(255, 255, 255, 0.09);
+  --ok: #dcdcdc;
+}
+
+:root[data-variant="contrast"][data-theme="light"] {
+  --bg-app: #ffffff;
+  --bg-editor: #ffffff;
+  --bg-panel: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-overlay: #ffffff;
+  --ink-1: #000000;
+  --ink-2: #333333;
+  --ink-3: #595959;
+  --line: rgba(0, 0, 0, 0.35);
+  --line-strong: rgba(0, 0, 0, 0.6);
+  --accent: #000000;
+  --accent-hover: #000000;
+  --accent-soft: rgba(0, 0, 0, 0.1);
+  --hov: rgba(0, 0, 0, 0.09);
+  --act: rgba(0, 0, 0, 0.16);
+  --ok: #000000;
+  --danger: #b3000f;
+}
+
+:root[data-variant="contrast"][data-theme="dark"] {
+  --bg-app: #000000;
+  --bg-editor: #000000;
+  --bg-panel: #000000;
+  --bg-raised: #121212;
+  --bg-overlay: #0a0a0a;
+  --ink-1: #ffffff;
+  --ink-2: #d4d4d4;
+  --ink-3: #ababab;
+  --line: rgba(255, 255, 255, 0.38);
+  --line-strong: rgba(255, 255, 255, 0.65);
+  --accent: #ffffff;
+  --accent-hover: #ffffff;
+  --accent-ink: #000000;
+  --accent-soft: rgba(255, 255, 255, 0.14);
+  --hov: rgba(255, 255, 255, 0.12);
+  --act: rgba(255, 255, 255, 0.2);
+  --ok: #ffffff;
+  --danger: #ff6b62;
+}
+
 /* With Mica the OS supplies the backdrop: shell surfaces go translucent so
    the material shows through. The editor surface stays near-opaque. */
 :root[data-mica="true"][data-theme="light"] {
@@ -102,6 +184,25 @@
   --bg-editor: rgba(26, 26, 26, 0.96);
   --bg-raised: rgba(36, 36, 36, 0.95);
   --bg-overlay: rgba(30, 30, 30, 0.97);
+}
+
+/* Contrast opts out of the material entirely — a translucent shell over an
+   arbitrary desktop wallpaper cannot promise any contrast ratio. Declared
+   after the Mica rules so it wins at equal specificity. */
+:root[data-variant="contrast"][data-mica="true"][data-theme="light"] {
+  --bg-app: #ffffff;
+  --bg-panel: #ffffff;
+  --bg-editor: #ffffff;
+  --bg-raised: #ffffff;
+  --bg-overlay: #ffffff;
+}
+
+:root[data-variant="contrast"][data-mica="true"][data-theme="dark"] {
+  --bg-app: #000000;
+  --bg-panel: #000000;
+  --bg-editor: #000000;
+  --bg-raised: #121212;
+  --bg-overlay: #0a0a0a;
 }
 
 html,

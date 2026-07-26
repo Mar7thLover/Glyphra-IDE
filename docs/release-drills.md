@@ -71,10 +71,17 @@ Fault controls are intentionally available only in development builds under
 3. **Forced recovery:** open a project, make an unsaved edit, trigger recovery,
    and confirm the content returns after reload. Modify the file externally
    before reload and confirm the recovery conflict notice appears.
-4. **Orphan-process check:** start an agent, agent terminal, PTY, and search;
-   take a resource snapshot, close the owning project window, then take another
-   snapshot from a remaining window. Counts for the closed window must be zero,
-   and Task Manager must show no matching child process.
+4. **Orphan-process check:** start an agent, agent terminal, PTY, search, and a
+   language server (open a file whose server is installed — `rust-analyzer` on
+   this repository); take a resource snapshot, close the owning project window,
+   then take another snapshot from a remaining window. Counts for the closed
+   window must be zero, and Task Manager must show no matching child process.
+   The snapshot line reports `language-servers=` alongside the other counts.
+5. **Language-server retirement:** with a server running, close every tab of
+   that language without closing the window. The next snapshot must report one
+   fewer language server, and the server process must be gone from Task
+   Manager — servers are retired when their last document closes, not only on
+   window close.
 
 Attach the relevant `panic.log` excerpt, before/after resource snapshots, and
 diagnostic bundle to the release issue. Do not include source files or secrets

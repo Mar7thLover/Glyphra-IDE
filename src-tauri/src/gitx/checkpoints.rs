@@ -89,7 +89,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn project_key(project: &Path) -> String {
+pub(crate) fn project_key(project: &Path) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     project.to_string_lossy().hash(&mut hasher);
     format!("{:016x}", hasher.finish())

@@ -5,6 +5,57 @@ All notable changes to Glyphra are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/) with pre-release tags for test builds.
 
+## [Unreleased]
+
+### Added
+
+- **Lazy language servers** — one process per `(window, workspace, language)`,
+  started only after a matching file is opened and retired once its last
+  document closes. Covers completion, hover, go to definition (`F12`), find
+  references (`Shift+F12`), rename (`F2`), and published diagnostics for Rust,
+  TypeScript/JavaScript, Python, Go, C/C++, Java, JSON, HTML, CSS, YAML and Lua.
+  No server is bundled; missing executables surface the install hint in the
+  editor and in **Settings → Editor**, where servers can be toggled globally or
+  per language.
+- Rename lands as unsaved buffers across every touched file rather than writing
+  to disk, so the change goes through the usual review-and-save path.
+- `diagnostics_resource_counts` now reports live language servers, and window
+  close cascades into shutting them down.
+- **One-click apply for chat patches** — a multi-file unified diff in an
+  assistant message applies as a single checkpoint turn and lands in the review
+  queue as one change instead of one per file. Every file is resolved in memory
+  first, so a hunk that no longer matches aborts before anything is written.
+  Patch blocks are now recognised by their content rather than the fence label,
+  and `--- /dev/null` entries create new files.
+
+- **Git-worktree board** in the review panel — create, open and remove parallel
+  checkouts of the current repository. Each worktree opens as its own project
+  window, which gives it an independent agent session, terminal and checkpoint
+  history. Worktrees are created under Glyphra's app data directory rather than
+  inside the repository, and the primary checkout can never be removed.
+
+- **Discoverability for the new surfaces** — go to definition, find references
+  and rename symbol are in the command palette with their shortcuts, alongside a
+  tone cycler; the status bar shows which language server is serving the active
+  file and links to its settings.
+- **Tonal theme variants** — **Neutral**, **Soft** and **Contrast**, layered on
+  top of light/dark in **Settings → Personal**. All three are achromatic by
+  design: they redistribute the gray ramp and never introduce a hue. Contrast
+  additionally opts out of the translucent Mica backdrop, because a shell over
+  an arbitrary wallpaper cannot promise a contrast ratio. The choice is applied
+  before first paint and synchronizes across windows. Contrast also swaps the
+  chromatic syntax palette for a monochrome one that differentiates by weight
+  and slant — every ink in it clears WCAG AAA, asserted in the test suite.
+
+### Fixed
+
+- **Editor tabs are keyboard-reachable.** The close control was a `<span>` click
+  handler nested inside the tab `<button>`, which no keyboard could reach. The
+  strip is now a `tablist` with roving focus and a real close button per tab.
+- Permission prompts, the command palette, and onboarding expose dialog
+  semantics, and the agent error dismissals have accessible names. A static
+  accessibility suite keeps all four checks from regressing.
+
 ## [0.2.0] — 2026-07-25
 
 First stable release. Everything below landed on top of the `0.1.0-beta.1` test

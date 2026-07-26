@@ -24,6 +24,13 @@ export interface EditorTab {
   bom: boolean;
   savedBom: boolean;
   editorConfig?: EditorConfigSettings | null;
+  /**
+   * Bumped whenever something other than the editor itself rewrites the buffer
+   * (an LSP rename, for instance). A mounted CodeMirror view watches this to
+   * pull the new text in — `hash` cannot serve that role because it is the
+   * on-disk hash the optimistic-lock save depends on.
+   */
+  revision?: number;
   /** Single-click explorer tabs are replaced until edited, pinned, or double-clicked. */
   ephemeral?: boolean;
   preview?: MediaPreviewResult | null;
@@ -113,6 +120,8 @@ interface EditorState {
   pinTab: (path: string) => void;
   closeTab: (path: string) => Promise<void>;
   setContent: (path: string, content: string) => void;
+  /** Rewrite a buffer from outside the editor and make mounted views follow. */
+  applyExternalEdit: (path: string, content: string) => void;
   setLineEnding: (path: string, eol: EditorDocInfo["eol"]) => void;
   setEncoding: (path: string, encoding: string) => void;
   reopenWithEncoding: (path: string, encoding: string) => Promise<void>;
@@ -463,6 +472,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Editing pins an explorer preview so it cannot be replaced.
       tabs: state.tabs.map((tab) =>
         tab.path === path ? { ...tab, content, ephemeral: false } : tab,
+      ),
+    }));
+  },
+
+  applyExternalEdit: (path, content) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.path === path && !tab.readOnly && tab.content !== content
+          ? {
+              ...tab,
+              content,
+              revision: (tab.revision ?? 0) + 1,
+              ephemeral: false,
+            }
+          : tab,
       ),
     }));
   },

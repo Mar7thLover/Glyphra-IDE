@@ -21,6 +21,9 @@ pub struct KeybindingSetting {
 #[ts(export, export_to = "../../src/lib/ipc/gen/AppSettings.ts")]
 pub struct AppSettings {
     pub theme: String,
+    /// Achromatic tonal family layered on the scheme: `neutral`, `soft` or
+    /// `contrast`.
+    pub theme_variant: String,
     pub language: String,
     pub font_size: u16,
     pub tab_size: u8,
@@ -39,6 +42,12 @@ pub struct AppSettings {
     pub ghost_text: bool,
     /// Idle time before a ghost-text request is sent, in milliseconds.
     pub ghost_text_delay_ms: u16,
+    /// Lazily started language servers for completion, hover, navigation and
+    /// diagnostics. Servers are only spawned once a matching file is opened.
+    pub language_server: bool,
+    /// Language ids the user has switched off individually, even when
+    /// `language_server` is on.
+    pub language_server_disabled: Vec<String>,
     pub custom_theme: Option<ImportedTheme>,
     pub terminal_webgl: bool,
     pub default_mode: String,
@@ -57,6 +66,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            theme_variant: "neutral".into(),
             language: "system".into(),
             font_size: 13,
             tab_size: 2,
@@ -72,6 +82,8 @@ impl Default for AppSettings {
             indent_guides: true,
             ghost_text: false,
             ghost_text_delay_ms: 400,
+            language_server: true,
+            language_server_disabled: Vec::new(),
             custom_theme: None,
             terminal_webgl: false,
             default_mode: "standard".into(),
@@ -93,6 +105,9 @@ impl AppSettings {
         let defaults = Self::default();
         if !matches!(self.theme.as_str(), "system" | "light" | "dark") {
             self.theme = defaults.theme;
+        }
+        if !matches!(self.theme_variant.as_str(), "neutral" | "soft" | "contrast") {
+            self.theme_variant = defaults.theme_variant;
         }
         if !matches!(self.language.as_str(), "system" | "en" | "zh-CN") {
             self.language = defaults.language;
@@ -121,10 +136,32 @@ impl AppSettings {
         self.default_provider_id = bounded_optional(self.default_provider_id, 160);
         self.default_agent_model = bounded_optional(self.default_agent_model, 160);
         self.default_backend = bounded_string(self.default_backend, &defaults.default_backend, 160);
+        self.language_server_disabled = sanitize_language_ids(self.language_server_disabled);
         self.custom_theme = self.custom_theme.and_then(ImportedTheme::sanitized);
         self.keybindings = sanitize_keybindings(self.keybindings);
         self
     }
+}
+
+fn sanitize_language_ids(values: Vec<String>) -> Vec<String> {
+    let mut seen = Vec::new();
+    for value in values {
+        let value = value.trim().to_ascii_lowercase();
+        if value.is_empty()
+            || value.len() > 40
+            || !value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '+')
+            || seen.contains(&value)
+        {
+            continue;
+        }
+        seen.push(value);
+        if seen.len() >= 64 {
+            break;
+        }
+    }
+    seen
 }
 
 fn bounded_optional(value: Option<String>, max: usize) -> Option<String> {
@@ -211,6 +248,9 @@ fn default_keybindings() -> Vec<KeybindingSetting> {
         ("workbench.search", "Ctrl+Shift+F", Some("projectOpen")),
         ("workbench.review", "Ctrl+Shift+R", Some("projectOpen")),
         ("editor.inlineEdit", "Ctrl+K", Some("editorFocus")),
+        ("editor.goToDefinition", "F12", Some("editorFocus")),
+        ("editor.findReferences", "Shift+F12", Some("editorFocus")),
+        ("editor.rename", "F2", Some("editorFocus")),
         ("editor.save", "Ctrl+S", Some("editorFocus")),
         ("editor.close", "Ctrl+W", Some("editorFocus")),
         ("editor.nextTab", "Ctrl+Tab", Some("editorFocus")),

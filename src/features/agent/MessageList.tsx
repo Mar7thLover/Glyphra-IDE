@@ -23,7 +23,11 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 
 import PlanCard from "./PlanCard";
-import ReviewCommentCard, { parseReviewComments } from "./ReviewCommentCard";
+import PatchCard from "./PatchCard";
+import ReviewCommentCard, {
+  parseMessagePatch,
+  parseReviewComments,
+} from "./ReviewCommentCard";
 import SystemNote from "./SystemNote";
 import ToolCard from "./ToolCard";
 import ThoughtCard from "./ThoughtCard";
@@ -91,6 +95,7 @@ function AssistantMessage({ item }: { item: Extract<AgentTimelineItem, { kind: "
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const comments = useMemo(() => parseReviewComments(item.text), [item.text]);
+  const patchFiles = useMemo(() => parseMessagePatch(item.text), [item.text]);
 
   const copy = () => {
     void copyText(item.text);
@@ -106,6 +111,7 @@ function AssistantMessage({ item }: { item: Extract<AgentTimelineItem, { kind: "
         <AssistantMarkdown text={item.text} />
       </Suspense>
       <ReviewCommentCard comments={comments} />
+      <PatchCard files={patchFiles} />
       <div className="mt-0.5 flex h-5 items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 group-focus-within/msg:opacity-100">
         <HoverAction label={t("agent.copyMessage")} onClick={copy}>
           {copied ? (

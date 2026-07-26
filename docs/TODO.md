@@ -5,7 +5,7 @@
 > [development-plan.md](./development-plan.md) and
 > [git-review-ux-plan.md](./git-review-ux-plan.md).
 >
-> Last reviewed: **2026-07-25**. Status reflects the current working tree, not
+> Last reviewed: **2026-07-26**. Status reflects the current working tree, not
 > only the last commit on `main`.
 
 Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` agentic UX.
@@ -40,6 +40,11 @@ Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` ag
 - [x] `[agent]` Structured tool diff rendering and collapsible streamed thought cards
 
 ### P0.2 Remaining release gates
+
+Both open items are operator gates: they need a clean virtual machine and a
+running GUI, so no amount of repository automation can close them. Steps live in
+[release-drills.md](./release-drills.md); record the results in the release
+issue.
 
 - [x] `[hardening]` Per-project windows (`proj-<hash>`) plus a dedicated welcome window
 - [x] `[hardening]` Key Rust state by `(windowLabel, sessionId)` to prevent cross-window stream bleed
@@ -99,14 +104,19 @@ Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` ag
 
 ## P3 — post-release roadmap
 
-- [ ] `[editor]` Lazy-started LSP: completion, hover, navigation, references, rename, diagnostics
+- [x] `[editor]` Lazy-started LSP: completion, hover, navigation, references, rename, diagnostics
+      — still owes the [IME checklist](./ime-checklist.md) pass for the new hover
+      tooltip and completion source
 - [x] `[editor]` VS Code theme JSON import
 - [x] `[editor]` Minimap, breadcrumbs, sticky scroll, bracket colors and indent guides
 - [x] `[editor]` Full EditorConfig support
 - [x] `[agent]` Ctrl+K inline edit and ghost-text completion
-- [ ] `[agent]` One-click apply diff from chat through checkpoints/review
-- [ ] `[agent]` Git-worktree multi-agent board
-- [ ] `[hardening]` End-to-end/component test layer and systematic accessibility pass
+- [x] `[agent]` One-click apply diff from chat through checkpoints/review
+- [x] `[agent]` Git-worktree multi-agent board
+- [x] `[hardening]` Systematic accessibility pass, guarded by `src/a11y.test.ts`
+- [ ] `[hardening]` End-to-end/component test layer — needs a decision on adding
+      `jsdom` + a component-testing library, which the dependency-light stance
+      makes a judgement call rather than an obvious yes
 - [ ] `[hardening]` SignPath Foundation code signing
 
 ## Verification gates

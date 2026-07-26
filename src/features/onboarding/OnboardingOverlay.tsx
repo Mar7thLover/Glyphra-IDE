@@ -50,13 +50,20 @@ export default function OnboardingOverlay() {
 
   return (
     <div className="absolute inset-0 z-40 grid place-items-center bg-app/55 p-4 backdrop-blur-[2px]">
-      <div className="glass-float pop-in flex max-h-[min(860px,92vh)] w-full max-w-xl flex-col overflow-hidden rounded-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        className="glass-float pop-in flex max-h-[min(860px,92vh)] w-full max-w-xl flex-col overflow-hidden rounded-2xl"
+      >
         <header className="flex items-start gap-3 border-b border-line px-4 py-3">
           <div className="grid size-9 place-items-center rounded-xl bg-accent-soft text-accent">
             <Rocket className="size-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-ink">{t("onboarding.title")}</h2>
+            <h2 id="onboarding-title" className="text-sm font-semibold text-ink">
+              {t("onboarding.title")}
+            </h2>
             <p className="mt-0.5 text-[11px] text-ink-3">{t("onboarding.subtitle")}</p>
           </div>
           <button

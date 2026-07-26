@@ -45,10 +45,11 @@ import {
   INLINE_EDIT_MAX_SELECTION,
 } from "@/lib/inlineEdit";
 import { codeMirrorKey } from "@/lib/keybindings";
-import { ipc } from "@/lib/ipc/ipc";
+import { ipc, type LspLocation } from "@/lib/ipc/ipc";
 import type { EditorCursor, EditorTab } from "@/lib/stores/editorStore";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
+import { ensureLspListeners, lspEnabledFor, useLspStore } from "@/lib/stores/lspStore";
 import {
   EDITOR_COMMAND_EVENT,
   type EditorCommand,
@@ -64,7 +65,18 @@ import EditorMinimap from "./EditorMinimap";
 import { editorVisualExtensions } from "./editorVisuals";
 import { resolveEditorLanguage } from "./editorLanguage";
 import { ghostTextExtension } from "./ghostText";
+import {
+  lspCompletionSource,
+  lspFindReferences,
+  lspGoToDefinition,
+  lspHoverExtension,
+  lspRename,
+  revealLocation,
+  type LspDocContext,
+} from "./lspExtension";
+import { lspLanguageId, lspSettingGroup } from "./lspLanguage";
 import InlineEditPanel, { type InlineEditStatus } from "./InlineEditPanel";
+import { LspLocationsPanel, LspNotice, LspRenamePanel } from "./LspPanels";
 import { modifiedCodeMarkerExtension } from "./modifiedCodeMarkers";
 
 function readCursor(state: EditorState): EditorCursor {
@@ -342,6 +354,7 @@ export default function CodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const hashRef = useRef(tab.hash);
+  const revisionRef = useRef(tab.revision ?? 0);
   const focusedRef = useRef(focused);
   const languageNameRef = useRef<string | null>(null);
   focusedRef.current = focused;
@@ -363,12 +376,23 @@ export default function CodeEditor({
     menuOpen: boolean;
   } | null>(null);
   const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
+  const [lspLocations, setLspLocations] = useState<{
+    kind: "definition" | "references";
+    items: LspLocation[];
+  } | null>(null);
+  const [renamePrompt, setRenamePrompt] = useState<{
+    value: string;
+    busy: boolean;
+    error: string | null;
+  } | null>(null);
+  const [lspNotice, setLspNotice] = useState<string | null>(null);
   const themeCompartment = useRef(new Compartment());
   const keymapCompartment = useRef(new Compartment());
   const prefsCompartment = useRef(new Compartment());
   const modifiedCodeCompartment = useRef(new Compartment());
   const visualsCompartment = useRef(new Compartment());
   const theme = useUiStore((s) => s.theme);
+  const themeVariant = useUiStore((s) => s.variant);
   const fontSize = usePrefsStore((s) => s.fontSize);
   const tabSize = usePrefsStore((s) => s.tabSize);
   const wordWrap = usePrefsStore((s) => s.wordWrap);
@@ -383,6 +407,18 @@ export default function CodeEditor({
     (s) => s.keybindings.find((b) => b.command === "editor.inlineEdit")?.key ?? null,
   );
   const inlineEditKey = inlineEditShortcut ? codeMirrorKey(inlineEditShortcut) : null;
+  const definitionShortcut = usePrefsStore(
+    (s) => s.keybindings.find((b) => b.command === "editor.goToDefinition")?.key ?? null,
+  );
+  const referencesShortcut = usePrefsStore(
+    (s) => s.keybindings.find((b) => b.command === "editor.findReferences")?.key ?? null,
+  );
+  const renameShortcut = usePrefsStore(
+    (s) => s.keybindings.find((b) => b.command === "editor.rename")?.key ?? null,
+  );
+  const definitionKey = definitionShortcut ? codeMirrorKey(definitionShortcut) : null;
+  const referencesKey = referencesShortcut ? codeMirrorKey(referencesShortcut) : null;
+  const renameKey = renameShortcut ? codeMirrorKey(renameShortcut) : null;
   const reveal = useEditorStore((s) => s.reveal);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
   const reviewTurns = useReviewStore((s) => s.turns);
@@ -423,6 +459,29 @@ export default function CodeEditor({
 
   const relativePath = projectPath ? projectRelativePath(projectPath, tab.path) : null;
   relativePathRef.current = relativePath;
+
+  // Degraded buffers are never synced to a server: the content the editor holds
+  // is not the content on disk, so every position would be wrong.
+  const lspLanguage =
+    tab.truncated || tab.longLines ? null : lspLanguageId(tab.name);
+  const lspStatus = useLspStore((s) =>
+    lspLanguage ? (s.statuses[lspLanguage] ?? null) : null,
+  );
+  const lspActive = usePrefsStore(
+    (s) =>
+      lspLanguage !== null
+      && s.languageServer
+      && !s.languageServerDisabled.includes(lspSettingGroup(lspLanguage)),
+  );
+  const lspContextRef = useRef<() => LspDocContext | null>(() => null);
+  lspContextRef.current = () =>
+    projectPath && lspLanguage
+      ? { projectPath, path: tab.path, languageId: lspLanguage }
+      : null;
+  /** Stable across re-renders so CodeMirror extensions can capture it once. */
+  const getLspContext = useRef(() => lspContextRef.current()).current;
+  const lspChangeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lspNoticeShown = useRef<string | null>(null);
   const pendingReview = relativePath
     ? reviewTurns
         .map((turn) => ({
@@ -459,6 +518,103 @@ export default function CodeEditor({
         .getState()
         .replaceFile("editor", tab.path, analyzeEditorDocument(tab.path, content));
     }, 220);
+    queueLspChange(content);
+  };
+
+  /**
+   * Language servers only need the document for diagnostics — every on-demand
+   * request ships the current text itself — so this can idle much longer than
+   * the store sync.
+   */
+  const queueLspChange = (content: string) => {
+    const context = lspContextRef.current();
+    if (!context || !lspEnabledFor(context.languageId)) return;
+    if (lspChangeTimer.current) clearTimeout(lspChangeTimer.current);
+    lspChangeTimer.current = setTimeout(() => {
+      lspChangeTimer.current = null;
+      void ipc
+        .lspChange(context.projectPath, context.path, context.languageId, content)
+        .catch(() => undefined);
+    }, 500);
+  };
+
+  const runGoToDefinition = (view: EditorView) => {
+    const context = lspContextRef.current();
+    if (!context || !lspEnabledFor(context.languageId)) return false;
+    setLspNotice(null);
+    void lspGoToDefinition(view, getLspContext).then((items) => {
+      if (items.length === 0) return;
+      setLspLocations({ kind: "definition", items });
+    });
+    return true;
+  };
+
+  const runFindReferences = (view: EditorView) => {
+    const context = lspContextRef.current();
+    if (!context || !lspEnabledFor(context.languageId)) return false;
+    setLspNotice(null);
+    void lspFindReferences(view, getLspContext).then((items) => {
+      if (items.length === 0) {
+        setLspNotice(t("lsp.noReferences"));
+        return;
+      }
+      setLspLocations({ kind: "references", items });
+    });
+    return true;
+  };
+
+  const runRename = (view: EditorView) => {
+    const context = lspContextRef.current();
+    if (!context || !lspEnabledFor(context.languageId)) return false;
+    if (tabRef.current.readOnly) return false;
+    const selection = view.state.selection.main;
+    const word = selection.empty
+      ? view.state.wordAt(selection.head)
+      : { from: selection.from, to: selection.to };
+    setLspNotice(null);
+    setRenamePrompt({
+      value: word ? view.state.sliceDoc(word.from, word.to) : "",
+      busy: false,
+      error: null,
+    });
+    return true;
+  };
+
+  const lspKeyBindings = () => [
+    ...(definitionKey ? [{ key: definitionKey, run: runGoToDefinition }] : []),
+    ...(referencesKey ? [{ key: referencesKey, run: runFindReferences }] : []),
+    ...(renameKey ? [{ key: renameKey, run: runRename }] : []),
+  ];
+
+  const submitRename = async () => {
+    const view = viewRef.current;
+    const prompt = renamePrompt;
+    if (!view || !prompt) return;
+    const name = prompt.value.trim();
+    if (!name) return;
+    setRenamePrompt({ ...prompt, busy: true, error: null });
+    flushChange();
+    const outcome = await lspRename(view, getLspContext, name);
+    if (outcome.status === "applied") {
+      setRenamePrompt(null);
+      setLspNotice(
+        outcome.skipped > 0
+          ? t("lsp.renameAppliedPartial", {
+              edits: outcome.edits,
+              files: outcome.files,
+              skipped: outcome.skipped,
+            })
+          : t("lsp.renameApplied", { edits: outcome.edits, files: outcome.files }),
+      );
+      return;
+    }
+    const message =
+      outcome.status === "empty"
+        ? t("lsp.renameEmpty")
+        : outcome.status === "too-many-files"
+          ? t("lsp.renameTooManyFiles", { files: outcome.files })
+          : (outcome.message ?? t("lsp.renameFailed"));
+    setRenamePrompt({ ...prompt, busy: false, error: message });
   };
 
   const persistInlineReviewDecision = async () => {
@@ -777,6 +933,7 @@ export default function CodeEditor({
     let unsubscribeDiagnostics: (() => void) | null = null;
     const degrade = tab.truncated || tab.longLines;
     hashRef.current = tab.hash;
+    revisionRef.current = tab.revision ?? 0;
 
     async function mount() {
       const language = !degrade ? resolveEditorLanguage(tab.name, tab.content) : null;
@@ -790,10 +947,14 @@ export default function CodeEditor({
         extensions: [
           basicSetup,
           autocompletion({
-            override: [glyphraCompletionSource],
+            // The LSP source resolves first when a server is live; the
+            // heuristic source always contributes so completion still works
+            // for file types and projects with no server installed.
+            override: [lspCompletionSource(getLspContext), glyphraCompletionSource],
             activateOnTyping: true,
             maxRenderedOptions: 80,
           }),
+          lspHoverExtension(getLspContext),
           lintGutter(),
           EditorState.lineSeparator.of(lineEnding === "CRLF" ? "\r\n" : "\n"),
           keymapCompartment.current.of(
@@ -826,6 +987,7 @@ export default function CodeEditor({
                   return true;
                 },
               },
+              ...lspKeyBindings(),
               ...baseKeymapWithout(inlineEditKey),
             ]),
           ),
@@ -848,7 +1010,7 @@ export default function CodeEditor({
               effectiveIndentStyle,
             ),
           ),
-          themeCompartment.current.of(editorThemeExtensions(theme, customTheme)),
+          themeCompartment.current.of(editorThemeExtensions(theme, customTheme, themeVariant)),
           visualsCompartment.current.of(
             editorVisualExtensions({
               bracketPairColorization,
@@ -953,17 +1115,58 @@ export default function CodeEditor({
   }, [tab.name, tab.path, tab.readOnly, tab.truncated, tab.longLines, lineEnding]);
 
   useEffect(() => {
-    // External disk sync: only rewrite the CM doc when the saved hash changes.
+    // Lazy start: the server for this language only spawns once a matching file
+    // is actually open, and every open document is released on tab close.
+    if (!projectPath || !lspLanguage || !lspActive) return;
+    let cancelled = false;
+    const path = tab.path;
+    const languageId = lspLanguage;
+    void (async () => {
+      try {
+        await ensureLspListeners();
+        if (cancelled) return;
+        await ipc.lspOpen(projectPath, path, languageId, tabRef.current.content);
+      } catch {
+        // Failures arrive as an `lsp-status` event with the install hint.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (lspChangeTimer.current) {
+        clearTimeout(lspChangeTimer.current);
+        lspChangeTimer.current = null;
+      }
+      setLspLocations(null);
+      setRenamePrompt(null);
+      setLspNotice(null);
+      void ipc.lspClose(projectPath, path, languageId).catch(() => undefined);
+    };
+  }, [projectPath, lspLanguage, lspActive, tab.path]);
+
+  useEffect(() => {
+    // Surface a missing server once per message, not on every tab switch: the
+    // hint names the executable to install, and repeating it is noise.
+    if (!lspActive || lspStatus?.state !== "unavailable" || !lspStatus.message) return;
+    if (lspNoticeShown.current === lspStatus.message) return;
+    lspNoticeShown.current = lspStatus.message;
+    setLspNotice(lspStatus.message);
+  }, [lspActive, lspStatus?.state, lspStatus?.message]);
+
+  useEffect(() => {
+    // Pull in writes that did not come from this view: a disk sync (new hash)
+    // or an external rewrite such as an LSP rename (new revision).
     const view = viewRef.current;
     if (!view) return;
-    if (hashRef.current === tab.hash) return;
+    const revision = tab.revision ?? 0;
+    if (hashRef.current === tab.hash && revisionRef.current === revision) return;
     hashRef.current = tab.hash;
+    revisionRef.current = revision;
     const current = view.state.doc.toString();
     if (current === tab.content) return;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: tab.content },
     });
-  }, [tab.hash, tab.content]);
+  }, [tab.hash, tab.revision, tab.content]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -1016,10 +1219,10 @@ export default function CodeEditor({
     if (!view) return;
     view.dispatch({
       effects: themeCompartment.current.reconfigure(
-        editorThemeExtensions(theme, customTheme),
+        editorThemeExtensions(theme, customTheme, themeVariant),
       ),
     });
-  }, [customTheme, theme]);
+  }, [customTheme, theme, themeVariant]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -1052,12 +1255,13 @@ export default function CodeEditor({
               return true;
             },
           },
+          ...lspKeyBindings(),
           ...baseKeymapWithout(inlineEditKey),
         ]),
       ),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inlineEditKey]);
+  }, [inlineEditKey, definitionKey, referencesKey, renameKey]);
 
   useEffect(() => {
     if (inlineEdit?.status !== "preview") return;
@@ -1159,6 +1363,14 @@ export default function CodeEditor({
       if (command === "undo") undo(view);
       if (command === "redo") redo(view);
       if (command === "selectAll") selectAll(view);
+      if (command === "goToDefinition") runGoToDefinition(view);
+      if (command === "findReferences") runFindReferences(view);
+      // Rename opens its own input, so it keeps focus rather than handing it
+      // straight back to the document.
+      if (command === "rename") {
+        runRename(view);
+        return;
+      }
       view.focus();
     };
     window.addEventListener(EDITOR_COMMAND_EVENT, onCommand);
@@ -1368,6 +1580,39 @@ export default function CodeEditor({
             onAccept={acceptInlineEdit}
             onDiscard={discardInlineEdit}
           />
+        )}
+        {renamePrompt && (
+          <LspRenamePanel
+            value={renamePrompt.value}
+            busy={renamePrompt.busy}
+            error={renamePrompt.error}
+            onChange={(value) =>
+              setRenamePrompt((current) => (current ? { ...current, value } : current))
+            }
+            onSubmit={() => void submitRename()}
+            onCancel={() => {
+              setRenamePrompt(null);
+              viewRef.current?.focus();
+            }}
+          />
+        )}
+        {lspLocations && (
+          <LspLocationsPanel
+            kind={lspLocations.kind}
+            items={lspLocations.items}
+            projectPath={projectPath}
+            onPick={(location) => {
+              setLspLocations(null);
+              void revealLocation(location);
+            }}
+            onClose={() => {
+              setLspLocations(null);
+              viewRef.current?.focus();
+            }}
+          />
+        )}
+        {!lspLocations && lspNotice && (
+          <LspNotice message={lspNotice} onClose={() => setLspNotice(null)} />
         )}
         {capsule && (
           <div

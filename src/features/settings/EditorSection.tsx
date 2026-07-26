@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
 
+import { LSP_LANGUAGES } from "@/features/editor/lspLanguage";
+import { useLspStore } from "@/lib/stores/lspStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 
 import { SettingsField, SettingsSelect, ToggleRow } from "./SettingsField";
@@ -21,8 +23,18 @@ export default function EditorSection() {
   const ghostText = usePrefsStore((s) => s.ghostText);
   const ghostTextDelayMs = usePrefsStore((s) => s.ghostTextDelayMs);
   const terminalWebgl = usePrefsStore((s) => s.terminalWebgl);
+  const languageServer = usePrefsStore((s) => s.languageServer);
+  const languageServerDisabled = usePrefsStore((s) => s.languageServerDisabled);
+  const lspStatuses = useLspStore((s) => s.statuses);
   const setPref = usePrefsStore((s) => s.setPref);
   const resetEditor = usePrefsStore((s) => s.resetEditor);
+
+  const toggleLanguageServer = (languageId: string, enabled: boolean) => {
+    const next = enabled
+      ? languageServerDisabled.filter((entry) => entry !== languageId)
+      : [...new Set([...languageServerDisabled, languageId])];
+    setPref("languageServerDisabled", next);
+  };
 
   return (
     <div className="space-y-4">
@@ -133,6 +145,46 @@ export default function EditorSection() {
             ))}
           </SettingsSelect>
         </SettingsField>
+      )}
+
+      <div className="space-y-1 border-t border-line pt-3">
+        <ToggleRow
+          label={t("settings.languageServer")}
+          hint={t("settings.languageServerHint")}
+          checked={languageServer}
+          onChange={(checked) => setPref("languageServer", checked)}
+        />
+      </div>
+
+      {languageServer && (
+        <div className="space-y-1 rounded-lg border border-line px-2.5 py-2">
+          <div className="text-[10px] uppercase tracking-[0.06em] text-ink-3">
+            {t("settings.languageServerLanguages")}
+          </div>
+          {LSP_LANGUAGES.map((entry) => {
+            const status = lspStatuses[entry.id] ?? null;
+            const state =
+              status?.state === "ready"
+                ? t("settings.languageServerReady")
+                : status?.state === "unavailable"
+                  ? t("settings.languageServerMissing")
+                  : status?.state === "stopped"
+                    ? t("settings.languageServerStopped")
+                    : t("settings.languageServerIdle");
+            return (
+              <ToggleRow
+                key={entry.id}
+                label={`${entry.label} · ${entry.server}`}
+                hint={state}
+                checked={!languageServerDisabled.includes(entry.id)}
+                onChange={(checked) => toggleLanguageServer(entry.id, checked)}
+              />
+            );
+          })}
+          <p className="pt-1 text-[10px] leading-relaxed text-ink-3">
+            {t("settings.languageServerInstallHint")}
+          </p>
+        </div>
       )}
 
       <button

@@ -2,6 +2,7 @@ mod agent;
 mod agent_terminal;
 mod gitx;
 mod ipc;
+mod lsp;
 mod mcp;
 mod paths;
 mod perf;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 use agent::supervisor::AgentSupervisor;
 use agent_terminal::AgentTerminalManager;
 use gitx::checkpoints::CheckpointEngine;
+use lsp::LspManager;
 use pty::PtyManager;
 use search::SearchManager;
 use tauri::Manager;
@@ -50,6 +52,7 @@ pub fn run() {
         .manage(Arc::new(SearchManager::default()))
         .manage(Arc::new(PtyManager::default()))
         .manage(Arc::new(AgentTerminalManager::default()))
+        .manage(Arc::new(LspManager::default()))
         .on_window_event(|window, event| {
             if !matches!(event, tauri::WindowEvent::Destroyed) {
                 return;
@@ -59,11 +62,13 @@ pub fn run() {
             let terminals = Arc::clone(window.state::<Arc<AgentTerminalManager>>().inner());
             let ptys = Arc::clone(window.state::<Arc<PtyManager>>().inner());
             let searches = Arc::clone(window.state::<Arc<SearchManager>>().inner());
+            let language_servers = Arc::clone(window.state::<Arc<LspManager>>().inner());
             tauri::async_runtime::spawn(async move {
                 let agents = supervisor.kill_window(&window_label).await;
                 let terminals = terminals.kill_window(&window_label).unwrap_or_default();
                 let ptys = ptys.close_window(&window_label).unwrap_or_default();
                 let searches = searches.cancel_window(&window_label).unwrap_or_default();
+                let language_servers = language_servers.kill_window(&window_label).await;
                 tracing::info!(
                     target: "shutdown",
                     %window_label,
@@ -71,6 +76,7 @@ pub fn run() {
                     terminals,
                     ptys,
                     searches,
+                    language_servers,
                     "window resources stopped"
                 );
             });
@@ -90,6 +96,14 @@ pub fn run() {
             ipc::diagnostics::diagnostics_resource_counts,
             ipc::diagnostics::diagnostics_fault_panic,
             ipc::editorconfig::editor_config_resolve,
+            ipc::lsp::lsp_open,
+            ipc::lsp::lsp_change,
+            ipc::lsp::lsp_close,
+            ipc::lsp::lsp_completion,
+            ipc::lsp::lsp_hover,
+            ipc::lsp::lsp_definition,
+            ipc::lsp::lsp_references,
+            ipc::lsp::lsp_rename,
             ipc::project::project_open,
             ipc::project::project_symbols,
             ipc::project::project_recent,
@@ -126,6 +140,9 @@ pub fn run() {
             ipc::git::git_exec_readonly,
             ipc::git::git_diff_file,
             ipc::git::git_commit,
+            ipc::git::git_worktree_list,
+            ipc::git::git_worktree_add,
+            ipc::git::git_worktree_remove,
             ipc::ckpt::ckpt_begin_turn,
             ipc::ckpt::ckpt_preimage,
             ipc::ckpt::ckpt_commit_turn,
