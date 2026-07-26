@@ -28,6 +28,12 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
   Patch blocks are now recognised by their content rather than the fence label,
   and `--- /dev/null` entries create new files.
 
+- **Git-worktree board** in the review panel — create, open and remove parallel
+  checkouts of the current repository. Each worktree opens as its own project
+  window, which gives it an independent agent session, terminal and checkpoint
+  history. Worktrees are created under Glyphra's app data directory rather than
+  inside the repository, and the primary checkout can never be removed.
+
 ### Fixed
 
 - **Editor tabs are keyboard-reachable.** The close control was a `<span>` click

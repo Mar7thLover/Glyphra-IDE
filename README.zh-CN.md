@@ -44,6 +44,7 @@
 | **Harness 目录** | 启动时读取各 CLI 原生的模型列表、reasoning、上下文窗口与权限画像，composer 反映真实安装能力。 |
 | **ACP 归一化会话** | Codex JSON-RPC、Claude stream-json、Pi JSON、OpenCode ACP，以及自定义 stdio/JSONL/shell 与 OpenAI/Anthropic HTTP —— 全部桥成同一时间线（[契约](./docs/harness-api.md)）。 |
 | **Checkpoint 审阅** | 按 turn 的 shadow 快照；审阅面板含 turn 分组、工作区 diff、键盘裁决（`j/k`、`a/r`）与整轮还原。 |
+| **工作树看板** | 在审阅面板中创建仓库的并行检出；每个工作树独立开窗，拥有各自的 Agent 会话、终端与 Checkpoint 历史。 |
 | **会话存档** | 本地 JSONL 存档（列表 / 加载 / 删除）；恢复优先原生 `session/resume` → `session/load`，再退回上下文续接。 |
 | **编辑器内核** | CodeMirror 6、语言自动探测、VS Code 风格键位、未保存保护、命令面板、ripgrep 搜索、PTY 终端。 |
 | **内联编辑** | `Ctrl+K` 用一个隐藏、禁用工具的 Agent 会话就地重写选区 —— `Enter` 采纳、`Esc` 丢弃；可选的幽灵文本补全复用同一会话。 |
@@ -126,7 +127,7 @@ pnpm release:windows   # NSIS + MSI + 便携版 exe，并校验产物
 | **审阅 R2–R3** | 选区呼叫 agent、行内呈阅、提交辅助 | 已完成 |
 | **v0.2** | 问题面板、MCP 管理、快捷键自定义、主题导入、恢复 | 已完成 |
 
-接下来：从对话一键应用 diff、git worktree 多 agent 看板、端到端测试层与无障碍梳理、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、SignPath 签名。
+接下来：端到端组件测试层、Gemini CLI、Codex app-server 原生 Rust 客户端（去 Node）、SignPath 签名。
 
 有序的近期任务清单见 [docs/TODO.md](./docs/TODO.md)。
 

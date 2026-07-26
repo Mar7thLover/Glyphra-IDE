@@ -43,6 +43,7 @@ mod export_bindings {
     use crate::gitx::{
         checkpoints::{CkptFileContents, CkptFileDiff, CkptHunkSummary, CkptTurnMeta},
         cli::{DiffSummary, GitCommitResult, GitFileDiff, GitFileStatus},
+        worktree::GitWorktree,
     };
     use crate::lsp::{
         LspCompletionItem, LspDiagnostic, LspDiagnosticsEvent, LspHover, LspLocation,
@@ -99,6 +100,7 @@ mod export_bindings {
         GitFileStatus::export_all().expect("export GitFileStatus");
         GitFileDiff::export_all().expect("export GitFileDiff");
         GitCommitResult::export_all().expect("export GitCommitResult");
+        GitWorktree::export_all().expect("export GitWorktree");
         DiffSummary::export_all().expect("export DiffSummary");
         CkptTurnMeta::export_all().expect("export CkptTurnMeta");
         CkptFileDiff::export_all().expect("export CkptFileDiff");

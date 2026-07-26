@@ -112,7 +112,7 @@ issue.
 - [x] `[editor]` Full EditorConfig support
 - [x] `[agent]` Ctrl+K inline edit and ghost-text completion
 - [x] `[agent]` One-click apply diff from chat through checkpoints/review
-- [ ] `[agent]` Git-worktree multi-agent board
+- [x] `[agent]` Git-worktree multi-agent board
 - [x] `[hardening]` Systematic accessibility pass, guarded by `src/a11y.test.ts`
 - [ ] `[hardening]` End-to-end/component test layer — needs a decision on adding
       `jsdom` + a component-testing library, which the dependency-light stance

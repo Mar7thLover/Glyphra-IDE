@@ -613,6 +613,18 @@
     "commitNow": "Create commit",
     "commitCancel": "Cancel",
     "commitCreated": "Created commit {{hash}}",
+    "worktrees": "Worktrees",
+    "worktreesHint": "Each worktree is a parallel checkout with its own window, agent session and checkpoint history. They live outside your repository folder.",
+    "worktreesLoading": "Reading worktrees…",
+    "worktreesEmpty": "No extra worktrees yet.",
+    "worktreeName": "Worktree name",
+    "worktreeNamePlaceholder": "branch name",
+    "worktreeCreate": "Create",
+    "worktreeRemove": "Remove worktree",
+    "worktreeRemoveConfirm": "Remove the worktree at {{path}}? Uncommitted work there is lost.",
+    "worktreeCancel": "Cancel",
+    "worktreeDetached": "detached HEAD",
+    "worktreeLocked": "This worktree is locked.",
     "close": "Close review"
   },
   "problems": {

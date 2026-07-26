@@ -613,6 +613,18 @@
     "commitNow": "创建提交",
     "commitCancel": "取消",
     "commitCreated": "已创建提交 {{hash}}",
+    "worktrees": "工作树",
+    "worktreesHint": "每个工作树都是一份并行检出，拥有独立的窗口、Agent 会话与 Checkpoint 历史，且存放在你的仓库目录之外。",
+    "worktreesLoading": "正在读取工作树…",
+    "worktreesEmpty": "还没有额外的工作树。",
+    "worktreeName": "工作树名称",
+    "worktreeNamePlaceholder": "分支名",
+    "worktreeCreate": "创建",
+    "worktreeRemove": "移除工作树",
+    "worktreeRemoveConfirm": "移除位于 {{path}} 的工作树？其中未提交的改动会丢失。",
+    "worktreeCancel": "取消",
+    "worktreeDetached": "游离 HEAD",
+    "worktreeLocked": "该工作树已被锁定。",
     "close": "关闭审阅"
   },
   "problems": {

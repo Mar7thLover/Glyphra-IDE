@@ -40,6 +40,7 @@ export type { FsEvent } from "./gen/FsEvent";
 export type { GitFileStatus } from "./gen/GitFileStatus";
 export type { GitCommitResult } from "./gen/GitCommitResult";
 export type { GitFileDiff } from "./gen/GitFileDiff";
+export type { GitWorktree } from "./gen/GitWorktree";
 export type { ProjectInfo } from "./gen/ProjectInfo";
 export type { ProjectSymbol } from "./gen/ProjectSymbol";
 export type { ProviderKind } from "./gen/ProviderKind";
@@ -95,6 +96,7 @@ import type { PtyEvent } from "./gen/PtyEvent";
 import type { RecentProject } from "./gen/RecentProject";
 import type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
 import type { ResourceCounts } from "./gen/ResourceCounts";
+import type { GitWorktree } from "./gen/GitWorktree";
 import type { LspCompletionItem } from "./gen/LspCompletionItem";
 import type { LspHover } from "./gen/LspHover";
 import type { LspLocation } from "./gen/LspLocation";
@@ -110,6 +112,8 @@ export const ipc = {
   appPrepareRestart: () => invoke<void>("app_prepare_restart"),
   perfMark: (name: string) => invoke<void>("perf_mark", { name }),
   windowOpenAgent: () => invoke<void>("window_open_agent"),
+  windowOpenProject: (projectPath: string, filePath?: string) =>
+    invoke<string>("window_open_project", { projectPath, filePath }),
   windowFocusMain: () => invoke<void>("window_focus_main"),
   appExit: () => invoke<void>("app_exit"),
   diagnosticsInfo: () => invoke<DiagnosticInfo>("diagnostics_info"),
@@ -274,6 +278,12 @@ export const ipc = {
     invoke<GitFileDiff>("git_diff_file", { projectPath, path, base }),
   gitCommit: (projectPath: string, message: string) =>
     invoke<GitCommitResult>("git_commit", { projectPath, message }),
+  gitWorktreeList: (projectPath: string) =>
+    invoke<GitWorktree[]>("git_worktree_list", { projectPath }),
+  gitWorktreeAdd: (projectPath: string, name: string, base?: string) =>
+    invoke<GitWorktree>("git_worktree_add", { projectPath, name, base }),
+  gitWorktreeRemove: (projectPath: string, path: string, force = false) =>
+    invoke<GitWorktree[]>("git_worktree_remove", { projectPath, path, force }),
   ckptBeginTurn: (projectPath: string, label?: string) =>
     invoke<CkptTurnMeta>("ckpt_begin_turn", { projectPath, label }),
   ckptPreimage: (projectPath: string, path: string) =>

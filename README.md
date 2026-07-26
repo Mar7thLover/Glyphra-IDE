@@ -44,6 +44,7 @@ Debuggers, extension marketplaces, and task runners are legacy weight from the p
 | **Harness catalog** | Reads each CLI's native model list, reasoning options, context window, and permission profile at startup so the composer reflects what is actually installed. |
 | **ACP-normalized sessions** | Codex JSON-RPC, Claude stream-json, Pi JSON events, OpenCode ACP, plus custom stdio/JSONL/shell and OpenAI/Anthropic HTTP — all bridged into one timeline ([contract](./docs/harness-api.md)). |
 | **Checkpointed review** | Per-turn shadow snapshots; review panel with turn groups, working-tree diffs, keyboard adjudication (`j/k`, `a/r`), and turn-level restore. |
+| **Worktree board** | Create parallel checkouts of the repository from the review panel; each opens as its own window with an independent agent session, terminal, and checkpoint history. |
 | **Session archives** | Local JSONL archives with list / load / delete; live restore prefers native `session/resume` → `session/load`, then continuation context. |
 | **Editor core** | CodeMirror 6, language auto-detection, VS Code-familiar keymap, unsaved-changes guarding, command palette, ripgrep search, PTY terminal. |
 | **Inline editing** | `Ctrl+K` rewrites the selection in place through a hidden, tool-free agent session — accept with `Enter`, discard with `Esc`. Opt-in ghost-text completion uses the same session. |
@@ -128,7 +129,7 @@ Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/rel
 | **Review R2–R3** | Selection → agent, inline review, commit assist | Done |
 | **v0.2** | Problems panel, MCP manager, keybindings, theme import, recovery | Done |
 
-Next up: one-click apply diff from chat, git-worktree multi-agent board, an end-to-end test layer with an accessibility pass, Gemini CLI, a native Rust Codex app-server client (drop Node), and SignPath code signing.
+Next up: an end-to-end component test layer, Gemini CLI, a native Rust Codex app-server client (drop Node), and SignPath code signing.
 
 See [docs/TODO.md](./docs/TODO.md) for the ordered near-term backlog.
 
