@@ -43,7 +43,9 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
   design: they redistribute the gray ramp and never introduce a hue. Contrast
   additionally opts out of the translucent Mica backdrop, because a shell over
   an arbitrary wallpaper cannot promise a contrast ratio. The choice is applied
-  before first paint and synchronizes across windows.
+  before first paint and synchronizes across windows. Contrast also swaps the
+  chromatic syntax palette for a monochrome one that differentiates by weight
+  and slant — every ink in it clears WCAG AAA, asserted in the test suite.
 
 ### Fixed
 

@@ -50,6 +50,7 @@ const MergeEditor = forwardRef<MergeEditorHandle, MergeEditorProps>(function Mer
   const callbacks = useRef({ onMerged, onHunkProgress, onResolved });
   callbacks.current = { onMerged, onHunkProgress, onResolved };
   const theme = useUiStore((s) => s.theme);
+  const themeVariant = useUiStore((s) => s.variant);
 
   useImperativeHandle(ref, () => ({
     decide: (decision) => {
@@ -102,7 +103,7 @@ const MergeEditor = forwardRef<MergeEditorHandle, MergeEditorProps>(function Mer
           collapseUnchanged: { margin: 3, minSize: 8 },
         }),
         ...(readOnly ? [EditorView.editable.of(false), EditorState.readOnly.of(true)] : []),
-        ...editorThemeExtensions(theme),
+        ...editorThemeExtensions(theme, null, themeVariant),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) callbacks.current.onMerged?.(update.state.doc.toString());
           const remaining = getChunks(update.state)?.chunks.length ?? 0;
@@ -130,7 +131,7 @@ const MergeEditor = forwardRef<MergeEditorHandle, MergeEditorProps>(function Mer
       viewRef.current = null;
       view.destroy();
     };
-  }, [acceptLabel, after, before, readOnly, rejectLabel, theme]);
+  }, [acceptLabel, after, before, readOnly, rejectLabel, theme, themeVariant]);
 
   return <div ref={host} className="min-h-0 flex-1 overflow-hidden" />;
 });

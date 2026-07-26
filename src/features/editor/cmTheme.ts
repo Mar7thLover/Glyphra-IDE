@@ -7,7 +7,7 @@ import { Tag, tags as t } from "@lezer/highlight";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
-import type { Theme } from "@/lib/stores/uiStore";
+import type { Theme, ThemeVariant } from "@/lib/stores/uiStore";
 import type { ImportedTheme } from "@/lib/ipc/ipc";
 
 const chromeTheme = (dark: boolean) =>
@@ -82,6 +82,41 @@ const darkHighlight = HighlightStyle.define([
   { tag: t.invalid, color: "#f87171" },
 ]);
 
+/**
+ * Syntax highlighting for the Contrast tone.
+ *
+ * The regular palettes are chromatic, and hue is exactly what stops carrying
+ * meaning when the surface is pure black or pure white. This one differentiates
+ * with weight, slant and a few gray steps instead, every one of which clears
+ * WCAG AAA (7:1) against `#fff` and `#000`.
+ */
+function contrastHighlight(dark: boolean) {
+  const strong = dark ? "#ffffff" : "#000000";
+  const body = dark ? "#d4d4d4" : "#333333";
+  const muted = dark ? "#b0b0b0" : "#4a4a4a";
+  return HighlightStyle.define([
+    { tag: [t.keyword, t.operatorKeyword, t.modifier, t.self], color: strong, fontWeight: "700" },
+    { tag: [t.atom, t.bool, t.null], color: strong, fontWeight: "700" },
+    {
+      tag: [t.typeName, t.className, t.namespace, t.annotation],
+      color: strong,
+      fontWeight: "600",
+    },
+    { tag: [t.function(t.variableName), t.labelName, t.macroName], color: strong },
+    { tag: [t.definition(t.name), t.propertyName], color: strong },
+    { tag: [t.string, t.special(t.string), t.inserted, t.processingInstruction], color: body },
+    { tag: [t.number, t.constant(t.name), t.regexp, t.escape], color: body },
+    { tag: [t.variableName, t.operator, t.punctuation, t.separator], color: body },
+    { tag: [t.comment, t.meta, t.lineComment, t.blockComment, t.docComment], color: muted, fontStyle: "italic" },
+    { tag: t.link, color: body, textDecoration: "underline" },
+    { tag: t.heading, color: strong, fontWeight: "700" },
+    { tag: t.strong, fontWeight: "700" },
+    { tag: t.emphasis, fontStyle: "italic" },
+    { tag: t.strikethrough, textDecoration: "line-through" },
+    { tag: t.invalid, color: "var(--danger)", fontWeight: "700" },
+  ]);
+}
+
 function scopeTags(scope: string): Tag[] {
   const value = scope.toLowerCase();
   if (value.includes("invalid")) return [t.invalid];
@@ -135,12 +170,21 @@ function importedHighlightStyle(theme: ImportedTheme) {
 export function editorThemeExtensions(
   theme: Theme,
   importedTheme: ImportedTheme | null = null,
+  variant: ThemeVariant = "neutral",
 ): Extension[] {
   const dark = theme === "dark";
   const imported = importedTheme ? importedHighlightStyle(importedTheme) : null;
+  // An imported VS Code theme is an explicit choice of palette, so it still
+  // wins — the tone only governs Glyphra's own highlighting.
+  const base =
+    variant === "contrast"
+      ? contrastHighlight(dark)
+      : dark
+        ? darkHighlight
+        : lightHighlight;
   return [
     chromeTheme(dark),
-    syntaxHighlighting(dark ? darkHighlight : lightHighlight),
+    syntaxHighlighting(base),
     imported ? syntaxHighlighting(imported) : [],
   ];
 }

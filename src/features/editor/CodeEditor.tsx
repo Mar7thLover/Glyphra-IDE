@@ -392,6 +392,7 @@ export default function CodeEditor({
   const modifiedCodeCompartment = useRef(new Compartment());
   const visualsCompartment = useRef(new Compartment());
   const theme = useUiStore((s) => s.theme);
+  const themeVariant = useUiStore((s) => s.variant);
   const fontSize = usePrefsStore((s) => s.fontSize);
   const tabSize = usePrefsStore((s) => s.tabSize);
   const wordWrap = usePrefsStore((s) => s.wordWrap);
@@ -1009,7 +1010,7 @@ export default function CodeEditor({
               effectiveIndentStyle,
             ),
           ),
-          themeCompartment.current.of(editorThemeExtensions(theme, customTheme)),
+          themeCompartment.current.of(editorThemeExtensions(theme, customTheme, themeVariant)),
           visualsCompartment.current.of(
             editorVisualExtensions({
               bracketPairColorization,
@@ -1218,10 +1219,10 @@ export default function CodeEditor({
     if (!view) return;
     view.dispatch({
       effects: themeCompartment.current.reconfigure(
-        editorThemeExtensions(theme, customTheme),
+        editorThemeExtensions(theme, customTheme, themeVariant),
       ),
     });
-  }, [customTheme, theme]);
+  }, [customTheme, theme, themeVariant]);
 
   useEffect(() => {
     const view = viewRef.current;
