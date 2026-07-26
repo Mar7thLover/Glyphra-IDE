@@ -16,6 +16,17 @@ coverage/
 .smoke/
 .tmp/
 
+# secrets — the updater signing key lives in ~/.tauri and must never be
+# committed; losing it means never being able to publish an update again, and
+# leaking it means anyone can sign one.
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+
 # editor / os
 .DS_Store
 Thumbs.db
