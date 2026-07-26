@@ -354,6 +354,7 @@ export default function CodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const hashRef = useRef(tab.hash);
+  const revisionRef = useRef(tab.revision ?? 0);
   const focusedRef = useRef(focused);
   const languageNameRef = useRef<string | null>(null);
   focusedRef.current = focused;
@@ -595,7 +596,15 @@ export default function CodeEditor({
     const outcome = await lspRename(view, getLspContext, name);
     if (outcome.status === "applied") {
       setRenamePrompt(null);
-      setLspNotice(t("lsp.renameApplied", { edits: outcome.edits, files: outcome.files }));
+      setLspNotice(
+        outcome.skipped > 0
+          ? t("lsp.renameAppliedPartial", {
+              edits: outcome.edits,
+              files: outcome.files,
+              skipped: outcome.skipped,
+            })
+          : t("lsp.renameApplied", { edits: outcome.edits, files: outcome.files }),
+      );
       return;
     }
     const message =
@@ -923,6 +932,7 @@ export default function CodeEditor({
     let unsubscribeDiagnostics: (() => void) | null = null;
     const degrade = tab.truncated || tab.longLines;
     hashRef.current = tab.hash;
+    revisionRef.current = tab.revision ?? 0;
 
     async function mount() {
       const language = !degrade ? resolveEditorLanguage(tab.name, tab.content) : null;
@@ -1142,17 +1152,20 @@ export default function CodeEditor({
   }, [lspActive, lspStatus?.state, lspStatus?.message]);
 
   useEffect(() => {
-    // External disk sync: only rewrite the CM doc when the saved hash changes.
+    // Pull in writes that did not come from this view: a disk sync (new hash)
+    // or an external rewrite such as an LSP rename (new revision).
     const view = viewRef.current;
     if (!view) return;
-    if (hashRef.current === tab.hash) return;
+    const revision = tab.revision ?? 0;
+    if (hashRef.current === tab.hash && revisionRef.current === revision) return;
     hashRef.current = tab.hash;
+    revisionRef.current = revision;
     const current = view.state.doc.toString();
     if (current === tab.content) return;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: tab.content },
     });
-  }, [tab.hash, tab.content]);
+  }, [tab.hash, tab.revision, tab.content]);
 
   useEffect(() => {
     const view = viewRef.current;

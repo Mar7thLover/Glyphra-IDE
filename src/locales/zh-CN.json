@@ -390,6 +390,7 @@
     "renameTitle": "重命名符号",
     "renameHint": "改动以未保存缓冲区打开——检查后再保存。",
     "renameApplied": "已在 {{files}} 个文件中重命名 {{edits}} 处，请检查后保存。",
+    "renameAppliedPartial": "已在 {{files}} 个文件中重命名 {{edits}} 处；跳过 {{skipped}} 个（只读或过大）。",
     "renameEmpty": "语言服务器没有为该符号返回改动。",
     "renameTooManyFiles": "此次重命名涉及 {{files}} 个文件，超出 Glyphra 一次可应用的上限。",
     "renameFailed": "重命名失败。"

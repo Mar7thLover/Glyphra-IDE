@@ -206,6 +206,8 @@ export interface RenameOutcome {
   status: "applied" | "empty" | "too-many-files" | "failed";
   files: number;
   edits: number;
+  /** Files left untouched because they are read-only or truncated. */
+  skipped: number;
   message?: string;
 }
 
@@ -219,7 +221,7 @@ export async function lspRename(
   newName: string,
 ): Promise<RenameOutcome> {
   const doc = activeContext(getContext);
-  if (!doc) return { status: "failed", files: 0, edits: 0 };
+  if (!doc) return { status: "failed", files: 0, edits: 0, skipped: 0 };
   const pos = view.state.selection.main.head;
   const { line, character } = protocolPosition(view.state, pos);
 
@@ -239,10 +241,11 @@ export async function lspRename(
       status: "failed",
       files: 0,
       edits: 0,
+      skipped: 0,
       message: error instanceof Error ? error.message : String(error),
     };
   }
-  if (edits.length === 0) return { status: "empty", files: 0, edits: 0 };
+  if (edits.length === 0) return { status: "empty", files: 0, edits: 0, skipped: 0 };
 
   const byPath = new Map<string, LspTextEdit[]>();
   for (const edit of edits) {
@@ -251,17 +254,34 @@ export async function lspRename(
     else byPath.set(edit.path, [edit]);
   }
   if (byPath.size > MAX_RENAME_FILES) {
-    return { status: "too-many-files", files: byPath.size, edits: edits.length };
+    return {
+      status: "too-many-files",
+      files: byPath.size,
+      edits: edits.length,
+      skipped: byPath.size,
+    };
   }
 
-  const store = useEditorStore.getState();
+  let applied = 0;
+  let skipped = 0;
   for (const [path, fileEdits] of byPath) {
-    if (!store.tabs.some((tab) => tab.path === path)) {
-      await store.openFile(path);
+    if (!useEditorStore.getState().tabs.some((tab) => tab.path === path)) {
+      await useEditorStore
+        .getState()
+        .openFile(path)
+        .catch(() => undefined);
     }
     const tab = useEditorStore.getState().tabs.find((entry) => entry.path === path);
-    if (!tab || tab.truncated || tab.readOnly) continue;
-    useEditorStore.getState().setContent(path, applyTextEdits(tab.content, fileEdits));
+    // Truncated and read-only buffers cannot take the edit, and applying to a
+    // truncated buffer would write a partial file on the next save.
+    if (!tab || tab.truncated || tab.readOnly) {
+      skipped += 1;
+      continue;
+    }
+    useEditorStore
+      .getState()
+      .applyExternalEdit(path, applyTextEdits(tab.content, fileEdits));
+    applied += 1;
   }
-  return { status: "applied", files: byPath.size, edits: edits.length };
+  return { status: "applied", files: applied, edits: edits.length, skipped };
 }

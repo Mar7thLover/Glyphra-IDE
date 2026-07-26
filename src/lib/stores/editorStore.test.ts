@@ -263,6 +263,53 @@ describe("editorStore", () => {
     expect(state.docInfo?.eol).toBe("CRLF");
   });
 
+  it("bumps a revision on external edits so mounted views follow", () => {
+    useEditorStore.setState({
+      tabs: [
+        {
+          path: "/tmp/a.ts",
+          name: "a.ts",
+          content: "const value = 1;",
+          savedContent: "const value = 1;",
+          ...tabEncoding,
+          hash: "h1",
+          truncated: false,
+          longLines: false,
+          readOnly: false,
+          ephemeral: true,
+        },
+        {
+          path: "/tmp/locked.ts",
+          name: "locked.ts",
+          content: "frozen",
+          savedContent: "frozen",
+          ...tabEncoding,
+          hash: "h2",
+          truncated: false,
+          longLines: false,
+          readOnly: true,
+        },
+      ],
+    });
+
+    useEditorStore.getState().applyExternalEdit("/tmp/a.ts", "const total = 1;");
+    const [edited, locked] = useEditorStore.getState().tabs;
+    expect(edited?.content).toBe("const total = 1;");
+    expect(edited?.revision).toBe(1);
+    // The hash still describes what is on disk, so the optimistic-lock save
+    // keeps working after an external rewrite.
+    expect(edited?.hash).toBe("h1");
+    expect(edited?.ephemeral).toBe(false);
+
+    // No revision churn when nothing actually changed.
+    useEditorStore.getState().applyExternalEdit("/tmp/a.ts", "const total = 1;");
+    expect(useEditorStore.getState().tabs[0]?.revision).toBe(1);
+
+    useEditorStore.getState().applyExternalEdit("/tmp/locked.ts", "thawed");
+    expect(locked?.content).toBe("frozen");
+    expect(useEditorStore.getState().tabs[1]?.content).toBe("frozen");
+  });
+
   it("skips save when content is unchanged", async () => {
     vi.mocked(ipc.fsRead).mockResolvedValue({
       path: "/tmp/b.ts",

@@ -390,6 +390,7 @@
     "renameTitle": "Rename symbol",
     "renameHint": "Edits open as unsaved buffers — review, then save.",
     "renameApplied": "Renamed {{edits}} occurrences in {{files}} files. Review and save.",
+    "renameAppliedPartial": "Renamed {{edits}} occurrences in {{files}} files; {{skipped}} skipped (read-only or too large).",
     "renameEmpty": "The language server returned no edits for this symbol.",
     "renameTooManyFiles": "Rename touches {{files}} files, which is more than Glyphra applies at once.",
     "renameFailed": "Rename failed."
