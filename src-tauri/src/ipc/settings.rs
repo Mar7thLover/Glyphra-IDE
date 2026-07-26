@@ -21,6 +21,9 @@ pub struct KeybindingSetting {
 #[ts(export, export_to = "../../src/lib/ipc/gen/AppSettings.ts")]
 pub struct AppSettings {
     pub theme: String,
+    /// Achromatic tonal family layered on the scheme: `neutral`, `soft` or
+    /// `contrast`.
+    pub theme_variant: String,
     pub language: String,
     pub font_size: u16,
     pub tab_size: u8,
@@ -63,6 +66,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme: "system".into(),
+            theme_variant: "neutral".into(),
             language: "system".into(),
             font_size: 13,
             tab_size: 2,
@@ -101,6 +105,9 @@ impl AppSettings {
         let defaults = Self::default();
         if !matches!(self.theme.as_str(), "system" | "light" | "dark") {
             self.theme = defaults.theme;
+        }
+        if !matches!(self.theme_variant.as_str(), "neutral" | "soft" | "contrast") {
+            self.theme_variant = defaults.theme_variant;
         }
         if !matches!(self.language.as_str(), "system" | "en" | "zh-CN") {
             self.language = defaults.language;

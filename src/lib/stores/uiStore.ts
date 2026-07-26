@@ -1,6 +1,22 @@
 import { create } from "zustand";
 
 export type Theme = "light" | "dark";
+/**
+ * Tonal family layered on top of the scheme. Every variant is achromatic —
+ * they redistribute the gray ramp, they never introduce a hue.
+ */
+export type ThemeVariant = "neutral" | "soft" | "contrast";
+
+export const THEME_VARIANTS: ThemeVariant[] = ["neutral", "soft", "contrast"];
+
+function readVariant(): ThemeVariant {
+  if (typeof document !== "undefined") {
+    const applied = document.documentElement.dataset.variant;
+    if (applied === "soft" || applied === "contrast") return applied;
+    if (applied === "neutral") return "neutral";
+  }
+  return "neutral";
+}
 /** Left sidebar panels — Settings is a separate full page. */
 export type Panel = "files" | "search";
 export type WorkspaceView = "editor" | "git-review";
@@ -24,6 +40,7 @@ function readAgentOpen(): boolean {
 
 interface UiState {
   theme: Theme;
+  variant: ThemeVariant;
   mica: boolean;
   hostOs: string;
   activePanel: Panel;
@@ -34,6 +51,7 @@ interface UiState {
   settingsOpen: boolean;
   settingsSection: SettingsSection;
   setTheme: (theme: Theme) => void;
+  setVariant: (variant: ThemeVariant) => void;
   setMica: (mica: boolean) => void;
   setHostOs: (os: string) => void;
   togglePanel: (panel: Panel) => void;
@@ -52,6 +70,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     typeof document === "undefined"
       ? "dark"
       : ((document.documentElement.dataset.theme as Theme) ?? "dark"),
+  variant: readVariant(),
   mica:
     typeof document !== "undefined" &&
     document.documentElement.dataset.mica === "true",
@@ -71,6 +90,16 @@ export const useUiStore = create<UiState>((set, get) => ({
       localStorage.setItem("glyphra.theme", theme);
     }
     set({ theme });
+  },
+
+  setVariant: (variant) => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.variant = variant;
+    }
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("glyphra.themeVariant", variant);
+    }
+    set({ variant });
   },
 
   setMica: (mica) => {

@@ -34,6 +34,13 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
   history. Worktrees are created under Glyphra's app data directory rather than
   inside the repository, and the primary checkout can never be removed.
 
+- **Tonal theme variants** — **Neutral**, **Soft** and **Contrast**, layered on
+  top of light/dark in **Settings → Personal**. All three are achromatic by
+  design: they redistribute the gray ramp and never introduce a hue. Contrast
+  additionally opts out of the translucent Mica backdrop, because a shell over
+  an arbitrary wallpaper cannot promise a contrast ratio. The choice is applied
+  before first paint and synchronizes across windows.
+
 ### Fixed
 
 - **Editor tabs are keyboard-reachable.** The close control was a `<span>` click

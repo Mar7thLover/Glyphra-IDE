@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { ipc } from "@/lib/ipc/ipc";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
-import { useUiStore, type Theme } from "@/lib/stores/uiStore";
+import { useUiStore, type Theme, type ThemeVariant } from "@/lib/stores/uiStore";
 
 import { ChoiceRow, ToggleRow } from "./SettingsField";
 
@@ -12,6 +12,8 @@ export default function PersonalSection() {
   const { t, i18n } = useTranslation();
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
+  const variant = useUiStore((s) => s.variant);
+  const setVariant = useUiStore((s) => s.setVariant);
   const openAgentOnProject = usePrefsStore((s) => s.openAgentOnProject);
   const setPref = usePrefsStore((s) => s.setPref);
   const persist = usePrefsStore((s) => s.persist);
@@ -65,6 +67,25 @@ export default function PersonalSection() {
             { value: "dark", label: t("settings.dark") },
           ]}
         />
+        <div className="mt-3 mb-2 text-[11px] font-medium text-ink-2">
+          {t("settings.themeVariant")}
+        </div>
+        <ChoiceRow
+          value={variant}
+          onChange={(v) => {
+            setVariant(v as ThemeVariant);
+            persist(theme, i18n.language);
+          }}
+          options={[
+            { value: "neutral", label: t("settings.variantNeutral") },
+            { value: "soft", label: t("settings.variantSoft") },
+            { value: "contrast", label: t("settings.variantContrast") },
+          ]}
+        />
+        <p className="mt-1 text-[10px] leading-relaxed text-ink-3">
+          {t("settings.themeVariantHint")}
+        </p>
+
         <div className="mt-2 flex items-center gap-2">
           <button
             type="button"

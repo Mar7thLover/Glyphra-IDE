@@ -2,7 +2,12 @@
 import type { ImportedTheme } from "./ImportedTheme";
 import type { KeybindingSetting } from "./KeybindingSetting";
 
-export type AppSettings = { theme: string, language: string, fontSize: number, tabSize: number, wordWrap: boolean, lineNumbers: boolean, trimTrailingWhitespace: boolean, insertFinalNewline: boolean, formatOnSave: boolean, minimap: boolean, breadcrumbs: boolean, stickyScroll: boolean, bracketPairColorization: boolean, indentGuides: boolean, 
+export type AppSettings = { theme: string, 
+/**
+ * Achromatic tonal family layered on the scheme: `neutral`, `soft` or
+ * `contrast`.
+ */
+themeVariant: string, language: string, fontSize: number, tabSize: number, wordWrap: boolean, lineNumbers: boolean, trimTrailingWhitespace: boolean, insertFinalNewline: boolean, formatOnSave: boolean, minimap: boolean, breadcrumbs: boolean, stickyScroll: boolean, bracketPairColorization: boolean, indentGuides: boolean, 
 /**
  * Agent-backed inline completion. Off by default: every suggestion costs a
  * harness turn.

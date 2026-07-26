@@ -155,9 +155,11 @@ function appSettings(
   prefs: GlyphraPrefs,
   theme: string = useUiStore.getState().theme,
   language: string = i18n.language.startsWith("zh") ? "zh-CN" : "en",
+  themeVariant: string = useUiStore.getState().variant,
 ): AppSettings {
   return {
     theme,
+    themeVariant,
     language,
     fontSize: prefs.fontSize,
     tabSize: prefs.tabSize,

@@ -19,7 +19,6 @@ import { useTranslation } from "react-i18next";
 
 import GlyphMark from "@/app/GlyphMark";
 import { MacWindowControls, WindowControls } from "@/app/TitleBar";
-import i18n from "@/app/i18n";
 import AgentComposer from "@/features/agent/AgentComposer";
 import MessageList from "@/features/agent/MessageList";
 import Notice from "@/features/agent/Notice";
@@ -27,6 +26,7 @@ import PermissionModal from "@/features/agent/PermissionModal";
 import SessionTitleInput from "@/features/agent/SessionTitleInput";
 import { sessionLabel } from "@/lib/acp/archive";
 import { AGENT_WINDOW_PROJECT_KEY } from "@/lib/agentWindow";
+import { applyAppearanceSettings } from "@/lib/appearance";
 import { ipc, type AppSettings, type RecentProject } from "@/lib/ipc/ipc";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { useComposerDraft } from "@/lib/stores/composerStore";
@@ -145,12 +145,7 @@ export default function AgentWindowApp() {
     void (async () => {
       try {
         const settings = await ipc.settingsGet();
-        if (settings.theme === "light" || settings.theme === "dark") {
-          useUiStore.getState().setTheme(settings.theme);
-        }
-        if (settings.language === "en" || settings.language === "zh-CN") {
-          void i18n.changeLanguage(settings.language);
-        }
+        applyAppearanceSettings(settings, { persistLanguage: false });
         usePrefsStore.getState().hydrate(settings);
         useAgentStore
           .getState()
@@ -178,13 +173,7 @@ export default function AgentWindowApp() {
     const unlisteners: Array<() => void> = [];
     void listen<AppSettings>("settings-changed", (event) => {
       const settings = event.payload;
-      if (settings.theme === "light" || settings.theme === "dark") {
-        useUiStore.getState().setTheme(settings.theme);
-      }
-      if (settings.language === "en" || settings.language === "zh-CN") {
-        void i18n.changeLanguage(settings.language);
-        localStorage.setItem("glyphra.lang", settings.language);
-      }
+      applyAppearanceSettings(settings);
       usePrefsStore.getState().hydrate(settings);
       useAgentStore
         .getState()

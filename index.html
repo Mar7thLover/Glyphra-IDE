@@ -12,6 +12,9 @@
           t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
         }
         document.documentElement.dataset.theme = t;
+        var v = localStorage.getItem("glyphra.themeVariant");
+        document.documentElement.dataset.variant =
+          v === "soft" || v === "contrast" ? v : "neutral";
         // Assume Mica until the backend reports otherwise (avoids opaque->transparent pop).
         document.documentElement.dataset.mica = "true";
       })();
