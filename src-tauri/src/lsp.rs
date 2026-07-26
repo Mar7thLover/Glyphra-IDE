@@ -666,7 +666,9 @@ async fn read_server(server: Arc<LspServer>, stdout: ChildStdout) {
     let _ = server.window.emit("lsp-status", status);
 }
 
-async fn read_frame(reader: &mut BufReader<ChildStdout>) -> Result<Option<Value>, String> {
+async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<Option<Value>, String> {
     let mut content_length = None;
     loop {
         let mut line = String::new();
@@ -1245,6 +1247,57 @@ mod tests {
         assert_eq!(items[0].insert_text, "collect(value)");
         assert_eq!(items[0].kind.as_deref(), Some("function"));
         assert_eq!(items[0].documentation.as_deref(), Some("**Collect**"));
+    }
+
+    async fn frames_from(bytes: &[u8]) -> Vec<Result<Option<Value>, String>> {
+        let mut reader = BufReader::new(std::io::Cursor::new(bytes.to_vec()));
+        let mut output = Vec::new();
+        loop {
+            let frame = read_frame(&mut reader).await;
+            let done = !matches!(frame, Ok(Some(_)));
+            output.push(frame);
+            if done {
+                return output;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn reads_consecutive_frames_and_ignores_extra_headers() {
+        let body_one = br#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}"#;
+        let body_two = br#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#;
+        let mut stream = Vec::new();
+        stream.extend_from_slice(
+            format!(
+                "Content-Length: {}\r\nContent-Type: application/vscode-jsonrpc\r\n\r\n",
+                body_one.len()
+            )
+            .as_bytes(),
+        );
+        stream.extend_from_slice(body_one);
+        stream.extend_from_slice(format!("content-length: {}\r\n\r\n", body_two.len()).as_bytes());
+        stream.extend_from_slice(body_two);
+
+        let frames = frames_from(&stream).await;
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0].as_ref().unwrap().as_ref().unwrap()["id"], 1);
+        assert_eq!(
+            frames[1].as_ref().unwrap().as_ref().unwrap()["method"],
+            "initialized"
+        );
+        // Clean end of stream, not an error.
+        assert!(matches!(frames[2], Ok(None)));
+    }
+
+    #[tokio::test]
+    async fn rejects_frames_without_a_length_and_oversized_frames() {
+        let missing = frames_from(b"Content-Type: application/json\r\n\r\n{}").await;
+        assert!(missing[0].is_err());
+
+        let oversized =
+            frames_from(format!("Content-Length: {}\r\n\r\n", MAX_FRAME_BYTES + 1).as_bytes())
+                .await;
+        assert!(oversized[0].is_err());
     }
 
     #[test]

@@ -41,6 +41,11 @@ Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` ag
 
 ### P0.2 Remaining release gates
 
+Both open items are operator gates: they need a clean virtual machine and a
+running GUI, so no amount of repository automation can close them. Steps live in
+[release-drills.md](./release-drills.md); record the results in the release
+issue.
+
 - [x] `[hardening]` Per-project windows (`proj-<hash>`) plus a dedicated welcome window
 - [x] `[hardening]` Key Rust state by `(windowLabel, sessionId)` to prevent cross-window stream bleed
 - [x] `[hardening]` Second launch with a path opens/focuses the matching project window
@@ -100,6 +105,8 @@ Labels: `[hardening]` stability/release · `[editor]` editing UX · `[agent]` ag
 ## P3 — post-release roadmap
 
 - [x] `[editor]` Lazy-started LSP: completion, hover, navigation, references, rename, diagnostics
+      — still owes the [IME checklist](./ime-checklist.md) pass for the new hover
+      tooltip and completion source
 - [x] `[editor]` VS Code theme JSON import
 - [x] `[editor]` Minimap, breadcrumbs, sticky scroll, bracket colors and indent guides
 - [x] `[editor]` Full EditorConfig support
