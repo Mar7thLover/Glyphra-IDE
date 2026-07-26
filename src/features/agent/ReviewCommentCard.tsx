@@ -15,7 +15,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import {
   applyUnifiedPatch,
-  parseUnifiedPatchFiles,
+  extractPatchBlocks,
   safeProjectRelativePath,
 } from "@/lib/unifiedPatch";
 
@@ -56,9 +56,10 @@ export function parseReviewComments(text: string): ReviewComment[] {
       message: match[5].trim(),
     });
   }
-  const diffBlocks = [...text.matchAll(/```diff[^\n]*\n([\s\S]*?)```/gi)].flatMap(
-    (match) => parseUnifiedPatchFiles(match[1].trim()),
-  );
+  const diffBlocks = extractPatchBlocks(text);
+  // A patch spanning several files belongs to PatchCard, which applies the whole
+  // set as one checkpoint turn instead of one turn per file.
+  const standalone = diffBlocks.length <= 1;
   for (const file of diffBlocks) {
     const path = file.newPath === "/dev/null" ? file.oldPath : file.newPath;
     const normalized = path.replace(/^\.\//, "");
@@ -69,6 +70,7 @@ export function parseReviewComments(text: string): ReviewComment[] {
       existing.diff = file.diff;
       continue;
     }
+    if (!standalone) continue;
     const line = Number(file.diff.match(/^@@ -\d+(?:,\d+)? \+(\d+)/m)?.[1] ?? 1);
     comments.push({
       severity: "info",
@@ -79,6 +81,25 @@ export function parseReviewComments(text: string): ReviewComment[] {
     });
   }
   return comments;
+}
+
+/**
+ * Files a message offers as a multi-file patch — the ones `parseReviewComments`
+ * deliberately leaves alone.
+ */
+export function parseMessagePatch(text: string) {
+  const files = extractPatchBlocks(text);
+  if (files.length <= 1) return [];
+  const comments = parseReviewComments(text);
+  return files.filter((file) => {
+    const path = file.newPath === "/dev/null" ? file.oldPath : file.newPath;
+    const normalized = path.replace(/^\.\//, "");
+    // A diff already adopted by a review bullet keeps its inline apply button.
+    return !comments.some(
+      (comment) =>
+        comment.diff === file.diff && comment.path.replace(/^\.\//, "") === normalized,
+    );
+  });
 }
 
 function SeverityIcon({ severity }: { severity: ReviewSeverity }) {

@@ -111,7 +111,7 @@ issue.
 - [x] `[editor]` Minimap, breadcrumbs, sticky scroll, bracket colors and indent guides
 - [x] `[editor]` Full EditorConfig support
 - [x] `[agent]` Ctrl+K inline edit and ghost-text completion
-- [ ] `[agent]` One-click apply diff from chat through checkpoints/review
+- [x] `[agent]` One-click apply diff from chat through checkpoints/review
 - [ ] `[agent]` Git-worktree multi-agent board
 - [ ] `[hardening]` End-to-end/component test layer and systematic accessibility pass
 - [ ] `[hardening]` SignPath Foundation code signing

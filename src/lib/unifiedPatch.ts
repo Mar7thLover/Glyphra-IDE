@@ -50,6 +50,44 @@ export function parseUnifiedPatchFiles(diff: string): UnifiedPatchFile[] {
   return files;
 }
 
+/**
+ * A fenced block only counts as a patch when it carries the full unified-diff
+ * shape. That is stricter than trusting the fence language — agents label these
+ * blocks `diff`, `patch`, `git`, or nothing at all — and it keeps prose that
+ * merely mentions `+`/`-` lines from offering an apply button.
+ */
+function looksLikeUnifiedDiff(body: string): boolean {
+  return /^--- \S/m.test(body) && /^\+\+\+ \S/m.test(body) && /^@@ -\d/m.test(body);
+}
+
+/** Every unified-diff file described by fenced code blocks in a message. */
+export function extractPatchBlocks(text: string): UnifiedPatchFile[] {
+  const files: UnifiedPatchFile[] = [];
+  for (const match of text.matchAll(/```[^\n`]*\n([\s\S]*?)```/g)) {
+    const body = match[1];
+    if (!looksLikeUnifiedDiff(body)) continue;
+    files.push(...parseUnifiedPatchFiles(body.trim()));
+  }
+  return files;
+}
+
+export interface PatchStats {
+  added: number;
+  removed: number;
+}
+
+export function patchStats(files: UnifiedPatchFile[]): PatchStats {
+  let added = 0;
+  let removed = 0;
+  for (const file of files) {
+    for (const line of file.diff.split("\n")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) added += 1;
+      else if (line.startsWith("-") && !line.startsWith("---")) removed += 1;
+    }
+  }
+  return { added, removed };
+}
+
 function parseHunks(diff: string): ParsedHunk[] {
   const lines = diff.replace(/\r\n/g, "\n").split("\n");
   const hunks: ParsedHunk[] = [];

@@ -21,6 +21,12 @@ Versioning follows [SemVer](https://semver.org/) with pre-release tags for test 
   to disk, so the change goes through the usual review-and-save path.
 - `diagnostics_resource_counts` now reports live language servers, and window
   close cascades into shutting them down.
+- **One-click apply for chat patches** — a multi-file unified diff in an
+  assistant message applies as a single checkpoint turn and lands in the review
+  queue as one change instead of one per file. Every file is resolved in memory
+  first, so a hunk that no longer matches aborts before anything is written.
+  Patch blocks are now recognised by their content rather than the fence label,
+  and `--- /dev/null` entries create new files.
 
 ## [0.2.0] — 2026-07-25
 
