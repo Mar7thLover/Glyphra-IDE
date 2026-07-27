@@ -25,6 +25,7 @@ export default function AgentSection() {
   const defaultContextWindow = usePrefsStore((s) => s.defaultContextWindow);
   const defaultFastMode = usePrefsStore((s) => s.defaultFastMode);
   const defaultApprovalReviewer = usePrefsStore((s) => s.defaultApprovalReviewer);
+  const showSelectionAgentButton = usePrefsStore((s) => s.showSelectionAgentButton);
   const setPref = usePrefsStore((s) => s.setPref);
   const setAgentProviderId = useAgentStore((s) => s.setProviderId);
   const providers = useProviderStore((s) => s.providers);
@@ -47,6 +48,13 @@ export default function AgentSection() {
   return (
     <div className="space-y-4">
       <p className="text-[11px] leading-relaxed text-ink-3">{t("settings.agentHint")}</p>
+
+      <ToggleRow
+        label={t("settings.showSelectionAgentButton")}
+        hint={t("settings.showSelectionAgentButtonHint")}
+        checked={showSelectionAgentButton}
+        onChange={(checked) => setPref("showSelectionAgentButton", checked)}
+      />
 
       <SettingsField label={t("settings.defaultMode")} hint={t("settings.defaultModeHint")}>
         <SettingsSelect

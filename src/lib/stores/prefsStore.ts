@@ -69,6 +69,7 @@ export interface GlyphraPrefs {
   defaultFastMode: boolean;
   defaultApprovalReviewer: AgentApprovalReviewer;
   openAgentOnProject: boolean;
+  showSelectionAgentButton: boolean;
   keybindings: KeybindingSetting[];
 }
 
@@ -100,6 +101,7 @@ export const defaultPrefs: GlyphraPrefs = {
   defaultFastMode: false,
   defaultApprovalReviewer: "user",
   openAgentOnProject: false,
+  showSelectionAgentButton: false,
   keybindings: DEFAULT_KEYBINDINGS,
 };
 
@@ -144,6 +146,7 @@ function prefsFromSettings(settings: AppSettings): GlyphraPrefs {
     defaultFastMode: settings.defaultFastMode,
     defaultApprovalReviewer: settings.defaultApprovalReviewer as AgentApprovalReviewer,
     openAgentOnProject: settings.openAgentOnProject,
+    showSelectionAgentButton: settings.showSelectionAgentButton,
     keybindings:
       settings.keybindings.length > 0
         ? settings.keybindings.map((binding) => ({ ...binding }))
@@ -188,6 +191,7 @@ function appSettings(
     defaultFastMode: prefs.defaultFastMode,
     defaultApprovalReviewer: prefs.defaultApprovalReviewer,
     openAgentOnProject: prefs.openAgentOnProject,
+    showSelectionAgentButton: prefs.showSelectionAgentButton,
     keybindings: prefs.keybindings,
   };
 }

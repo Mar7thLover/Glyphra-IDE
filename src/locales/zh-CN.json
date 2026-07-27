@@ -258,6 +258,8 @@
     "terminalWebglHint": "环境支持时使用 GPU 渲染；上下文丢失后会自动回退。",
     "resetEditor": "恢复编辑器默认",
     "agentHint": "新 Agent 会话的默认值，也可在右侧面板随时改。",
+    "showSelectionAgentButton": "在选中文字旁显示 Agent 操作",
+    "showSelectionAgentButtonHint": "默认关闭。仍可使用 Ctrl+L 或编辑器右键菜单。",
     "defaultMode": "默认权限模式",
     "defaultModeHint": "安全偏只读；放飞会跳过编辑审批。",
     "defaultBackend": "默认 Agent 后端",
@@ -650,7 +652,10 @@
     "placeholder": "在项目中搜索…",
     "hint": "输入关键字搜索工作区。",
     "empty": "没有匹配结果。",
-    "needProject": "打开项目后即可搜索。"
+    "needProject": "打开项目后即可搜索。",
+    "clear": "清除搜索",
+    "searching": "正在搜索…",
+    "summary": "{{matches}} 个匹配，分布在 {{files}} 个文件中"
   },
   "terminal": {
     "title": "终端",

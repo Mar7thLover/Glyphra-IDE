@@ -258,6 +258,8 @@
     "terminalWebglHint": "Uses GPU rendering when supported and falls back automatically after a context loss.",
     "resetEditor": "Reset editor defaults",
     "agentHint": "Defaults for new Agent sessions. Change them anytime in the Agent panel.",
+    "showSelectionAgentButton": "Show Agent action beside selected text",
+    "showSelectionAgentButtonHint": "Off by default. Ctrl+L and the editor context menu remain available.",
     "defaultMode": "Default permission mode",
     "defaultModeHint": "Safe is read-oriented; Unleashed skips edit approvals.",
     "defaultBackend": "Default agent backend",
@@ -650,7 +652,10 @@
     "placeholder": "Search in project…",
     "hint": "Type to search across the workspace.",
     "empty": "No matches.",
-    "needProject": "Open a project to search."
+    "needProject": "Open a project to search.",
+    "clear": "Clear search",
+    "searching": "Searching…",
+    "summary": "{{matches}} matches in {{files}} files"
   },
   "terminal": {
     "title": "Terminal",

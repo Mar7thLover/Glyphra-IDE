@@ -26,4 +26,4 @@ languageServer: boolean,
  * Language ids the user has switched off individually, even when
  * `language_server` is on.
  */
-languageServerDisabled: Array<string>, customTheme: ImportedTheme | null, terminalWebgl: boolean, defaultMode: string, defaultBackend: string, defaultProviderId: string | null, defaultAgentModel: string | null, defaultReasoningEffort: string | null, defaultContextWindow: number | null, defaultFastMode: boolean, defaultApprovalReviewer: string, openAgentOnProject: boolean, keybindings: Array<KeybindingSetting>, };
+languageServerDisabled: Array<string>, customTheme: ImportedTheme | null, terminalWebgl: boolean, defaultMode: string, defaultBackend: string, defaultProviderId: string | null, defaultAgentModel: string | null, defaultReasoningEffort: string | null, defaultContextWindow: number | null, defaultFastMode: boolean, defaultApprovalReviewer: string, openAgentOnProject: boolean, showSelectionAgentButton: boolean, keybindings: Array<KeybindingSetting>, };

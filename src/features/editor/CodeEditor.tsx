@@ -402,6 +402,7 @@ export default function CodeEditor({
   const stickyScroll = usePrefsStore((s) => s.stickyScroll);
   const bracketPairColorization = usePrefsStore((s) => s.bracketPairColorization);
   const indentGuides = usePrefsStore((s) => s.indentGuides);
+  const showSelectionAgentButton = usePrefsStore((s) => s.showSelectionAgentButton);
   const customTheme = usePrefsStore((s) => s.customTheme);
   const inlineEditShortcut = usePrefsStore(
     (s) => s.keybindings.find((b) => b.command === "editor.inlineEdit")?.key ?? null,
@@ -873,7 +874,7 @@ export default function CodeEditor({
   requestGhostTextRef.current = requestGhostText;
 
   const refreshCapsule = (view: EditorView) => {
-    if (view.composing) {
+    if (!usePrefsStore.getState().showSelectionAgentButton || view.composing) {
       setCapsule(null);
       return;
     }
@@ -896,6 +897,15 @@ export default function CodeEditor({
       menuOpen: false,
     });
   };
+
+  useEffect(() => {
+    if (!showSelectionAgentButton) {
+      setCapsule(null);
+      return;
+    }
+    const view = viewRef.current;
+    if (view) refreshCapsule(view);
+  }, [showSelectionAgentButton]);
 
   const refreshBreadcrumb = (view: EditorView) => {
     const scopes = scopeLinesAt(view.state, view.state.selection.main.head);

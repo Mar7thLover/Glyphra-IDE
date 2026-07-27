@@ -21,7 +21,15 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   searchId: null,
   error: null,
 
-  setQuery: (query) => set({ query }),
+  setQuery: (query) => {
+    if (query) {
+      set({ query });
+      return;
+    }
+    const searchId = get().searchId;
+    if (searchId != null) void ipc.searchCancel(searchId).catch(() => undefined);
+    set({ query: "", hits: [], searching: false, searchId: null, error: null });
+  },
 
   run: async (root, query) => {
     const trimmed = query.trim();
@@ -63,5 +71,9 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ searchId: null, searching: false });
   },
 
-  clear: () => set({ hits: [], query: "", searching: false, searchId: null }),
+  clear: () => {
+    const searchId = get().searchId;
+    if (searchId != null) void ipc.searchCancel(searchId).catch(() => undefined);
+    set({ hits: [], query: "", searching: false, searchId: null, error: null });
+  },
 }));

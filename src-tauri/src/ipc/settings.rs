@@ -59,6 +59,7 @@ pub struct AppSettings {
     pub default_fast_mode: bool,
     pub default_approval_reviewer: String,
     pub open_agent_on_project: bool,
+    pub show_selection_agent_button: bool,
     pub keybindings: Vec<KeybindingSetting>,
 }
 
@@ -95,6 +96,7 @@ impl Default for AppSettings {
             default_fast_mode: false,
             default_approval_reviewer: "user".into(),
             open_agent_on_project: false,
+            show_selection_agent_button: false,
             keybindings: default_keybindings(),
         }
     }
@@ -346,6 +348,7 @@ mod tests {
     fn ghost_text_defaults_off_and_the_delay_is_bounded() {
         let defaults = AppSettings::default();
         assert!(!defaults.ghost_text);
+        assert!(!defaults.show_selection_agent_button);
         assert_eq!(defaults.ghost_text_delay_ms, 400);
 
         let too_fast = AppSettings {

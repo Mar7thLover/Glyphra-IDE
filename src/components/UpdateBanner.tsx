@@ -31,7 +31,7 @@ export default function UpdateBanner() {
     <aside
       role="status"
       aria-live="polite"
-      className="fixed bottom-8 right-3 z-50 w-[300px] rounded-xl border border-line bg-panel p-3 shadow-[var(--shadow-float)]"
+      className="glass-float fixed bottom-8 right-3 z-50 w-[300px] overflow-hidden rounded-xl p-3"
     >
       <div className="flex items-start gap-2">
         <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
