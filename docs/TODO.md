@@ -89,6 +89,14 @@ issue.
 - [x] Diagnostics store, editor gutter and Problems panel
 - [x] Build/terminal/agent diagnostic ingestion
 - [x] Trim trailing whitespace, final newline and optional format-on-save
+- [x] `[editor]` Multi-root workspaces: add/remove folders, per-root explorer, cross-root
+      Ctrl+P / symbols / mentions / search, `.glyphra-workspace` multi-folder launches
+- [x] `[editor]` Search options (case / whole-word / explicit regex) with byte-accurate
+      match ranges, include/exclude globs, and encoding-preserving cross-file Replace All
+- [x] `[editor]` Untitled `Ctrl+N` buffers with Save As, drag-and-drop file/folder open,
+      and a loose-file sidebar with "Open Folder" always reachable
+- [x] `[agent]` OpenCode detection on Windows: prefer `.exe/.cmd/.bat` launchers over the
+      bare npm POSIX shim so npm-global `opencode` installs are recognized and spawnable
 
 ## P2 — multi-session and platform maturity
 

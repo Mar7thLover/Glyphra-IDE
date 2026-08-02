@@ -5,6 +5,47 @@ All notable changes to Glyphra are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/) with pre-release tags for test builds.
 
+## [Unreleased]
+
+VSCode-style multi-root workspaces, better search, and single-file editing.
+
+### Added
+
+- **Multi-root workspaces** — `File → Add Folder to Workspace…` (and the
+  command palette) appends folders to the current window. The explorer shows
+  one tree per root with a root-header menu to remove a folder; Ctrl+P, symbols,
+  rules, composer `@`-mentions and search span every root. A
+  `.glyphra-workspace` descriptor with multiple `folders` opens them all, with
+  the first folder as the primary root that agent sessions, checkpoints, git
+  and recovery key off.
+- **Search options** — case-sensitive, whole-word and explicit regex toggles
+  (no more silent literal→regex fallback), plus include/exclude file globs.
+  Matching highlights use the exact byte ranges from the backend, so
+  case-insensitive and regex results highlight correctly.
+- **Cross-file Replace All** — the search panel gains a replace bar; files are
+  rewritten encoding-preservingly (UTF-8/16 with BOM round-trips), regex
+  replacements support `$0`–`$9` group expansion, and open tabs refresh from
+  disk afterwards. Replacement is one-shot: confirm before you click.
+- **Untitled buffers** — `Ctrl+N` (`File → New File`) opens an unsaved buffer;
+  the first save asks for a destination. Recovery keeps untitled content with
+  its `Untitled-N` label.
+- **Drag and drop** — dropping files opens them as loose tabs; dropping one or
+  several folders opens them as a workspace (or adds them to the current one).
+- **Loose-file sidebar** — with no project open, the activity rail and sidebar
+  stay visible so "Open Folder" is always reachable next to open files.
+- **OpenCode detection on Windows** — PATH probing prefers `.exe/.cmd/.bat`
+  launchers over the bare npm POSIX shim, so npm-global installs of `opencode`
+  (and other CLIs) are recognized and spawnable again.
+
+### Fixed
+
+- Inline review control used a stale `var(--raised)` token (invisible
+  background); now `var(--bg-raised)`.
+- Hard-coded status colors replaced with `--warn` and `--diff-*` design tokens
+  across the status bar, problems panel, review badges and comment cards;
+  the merge-accept control follows the monochrome design; the title-bar close
+  hover uses `--danger`.
+
 ## [0.3.0] — 2026-07-26
 
 Language servers, parallel worktrees, and a monochrome tone system.

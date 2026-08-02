@@ -47,6 +47,9 @@ Debuggers, extension marketplaces, and task runners are legacy weight from the p
 | **Worktree board** | Create parallel checkouts of the repository from the review panel; each opens as its own window with an independent agent session, terminal, and checkpoint history. |
 | **Session archives** | Local JSONL archives with list / load / delete; live restore prefers native `session/resume` → `session/load`, then continuation context. |
 | **Editor core** | CodeMirror 6, language auto-detection, VS Code-familiar keymap, unsaved-changes guarding, command palette, ripgrep search, PTY terminal. |
+| **Workspaces** | VSCode-style multi-root workspaces: add/remove folders from one window, per-root explorer trees, Ctrl+P/symbols/mentions/search across every root, `.glyphra-workspace` multi-folder launches. |
+| **Search & replace** | Case/whole-word/regex toggles, include/exclude globs, byte-accurate match highlighting, and encoding-preserving cross-file Replace All with `$1`–`$9` group expansion. |
+| **Single-file editing** | Open any file without a folder — per-file watchers, untitled `Ctrl+N` buffers with Save As, drag-and-drop of files and folders, and a sidebar that stays available for "Open Folder". |
 | **Inline editing** | `Ctrl+K` rewrites the selection in place through a hidden, tool-free agent session — accept with `Enter`, discard with `Esc`. Opt-in ghost-text completion uses the same session. |
 | **Editor comfort** | Minimap, breadcrumbs, sticky scroll, indent guides, bracket colors, `Ctrl+Shift+O` symbol jump, encoding detection, EditorConfig, format-on-save, and VS Code theme JSON import. |
 | **Language servers** | Lazily started per language — completion, hover, go to definition, find references, and rename. Nothing is bundled: install a server on `PATH` and Glyphra picks it up when you open a matching file. |
