@@ -78,6 +78,7 @@
     "help": "Help",
     "openProject": "Open Project…",
     "openFile": "Open File…",
+    "newFile": "New File",
     "addFolderToWorkspace": "Add Folder to Workspace…",
     "save": "Save",
     "closeProject": "Close Project",

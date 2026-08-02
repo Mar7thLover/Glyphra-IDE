@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 
 import {
   ipc,
@@ -34,6 +35,18 @@ export interface EditorTab {
   /** Single-click explorer tabs are replaced until edited, pinned, or double-clicked. */
   ephemeral?: boolean;
   preview?: MediaPreviewResult | null;
+}
+
+/** Synthetic path prefix for unsaved `Ctrl+N` buffers. */
+export const UNTITLED_PREFIX = "untitled://";
+
+export function isUntitledPath(path: string): boolean {
+  return path.startsWith(UNTITLED_PREFIX);
+}
+
+export function untitledLabel(path: string): string {
+  const index = path.slice(UNTITLED_PREFIX.length);
+  return `Untitled-${index || "1"}`;
 }
 
 export const TEXT_ENCODINGS = [
@@ -111,6 +124,7 @@ interface EditorState {
   docInfo: EditorDocInfo | null;
   recoveryNotice: EditorRecoveryNotice | null;
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>;
+  newUntitled: () => void;
   confirmLeaveActive: () => Promise<boolean>;
   activateTab: (path: string) => Promise<void>;
   focusPane: (pane: "primary" | "secondary") => void;
@@ -254,6 +268,26 @@ async function prepareToLeave(path: string): Promise<boolean> {
 }
 
 let revealToken = 0;
+let untitledCounter = 0;
+
+function untitledTab(): EditorTab {
+  untitledCounter += 1;
+  const path = `${UNTITLED_PREFIX}${untitledCounter}`;
+  return {
+    path,
+    name: untitledLabel(path),
+    content: "",
+    savedContent: "",
+    hash: "",
+    truncated: false,
+    longLines: false,
+    readOnly: false,
+    encoding: "UTF-8",
+    savedEncoding: "UTF-8",
+    bom: false,
+    savedBom: false,
+  };
+}
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   tabs: [],
@@ -350,6 +384,34 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     } catch (error) {
       set({ loading: false, error: asMessage(error) });
     }
+  },
+
+  newUntitled: () => {
+    const tab = untitledTab();
+    set((state) => {
+      const replaceable = state.tabs.find(
+        (item) =>
+          item.ephemeral &&
+          !isEditorTabDirty(item) &&
+          item.path !== state.secondaryPath,
+      );
+      const tabs = replaceable
+        ? state.tabs.map((item) => (item.path === replaceable.path ? tab : item))
+        : [...state.tabs, tab];
+      return {
+        tabs,
+        activePath: tab.path,
+        primaryPath:
+          state.focusedPane === "primary" || !state.secondaryPath
+            ? tab.path
+            : state.primaryPath,
+        secondaryPath:
+          state.focusedPane === "secondary" && state.secondaryPath
+            ? tab.path
+            : state.secondaryPath,
+        error: null,
+      };
+    });
   },
 
   activateTab: async (path) => {
@@ -536,9 +598,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const active = get().tabs.find((tab) => tab.path === path);
     if (!active || active.readOnly) return true;
     const prefs = usePrefsStore.getState();
-    const editorConfig = await ipc
-      .editorConfigResolve(active.path)
-      .catch(() => active.editorConfig ?? null);
+    const editorConfig = isUntitledPath(active.path)
+      ? null
+      : await ipc
+          .editorConfigResolve(active.path)
+          .catch(() => active.editorConfig ?? null);
     const configuredEncoding = encodingFromEditorConfig(editorConfig);
     const encoding = configuredEncoding ?? active.encoding;
     const bom = editorConfig?.charset
@@ -567,33 +631,56 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return true;
     }
 
+    // Untitled buffers have no on-disk path: ask for one first (Save As).
+    let targetPath = active.path;
+    if (isUntitledPath(active.path)) {
+      const chosen = await saveDialog({
+        defaultPath: active.name,
+        filters: [
+          { name: "All files", extensions: ["*"] },
+          { name: "Text", extensions: ["txt", "md"] },
+        ],
+      });
+      if (typeof chosen !== "string") return false;
+      targetPath = chosen;
+    }
+
     set({ loading: true, error: null });
     try {
       const result = await ipc.fsWrite(
-        active.path,
+        targetPath,
         prepared,
-        active.hash,
+        isUntitledPath(active.path) ? undefined : active.hash,
         encoding,
         bom,
       );
-      set((state) => ({
-        loading: false,
-        tabs: state.tabs.map((tab) =>
-          tab.path === active.path
-            ? {
-                ...tab,
-                hash: result.hash,
-                savedContent: prepared,
-                encoding,
-                savedEncoding: encoding,
-                bom,
-                savedBom: bom,
-                editorConfig,
-                content: tab.content === active.content ? prepared : tab.content,
-              }
-            : tab,
-        ),
-      }));
+      const remapped: Partial<EditorTab> & Record<string, unknown> = {
+        path: targetPath,
+        name: basename(targetPath),
+        hash: result.hash,
+        savedContent: prepared,
+        encoding,
+        savedEncoding: encoding,
+        bom,
+        savedBom: bom,
+        editorConfig,
+      };
+      set((state) => {
+        const remapPanePath = (panePath: string | null) =>
+          panePath === active.path ? targetPath : panePath;
+        return {
+          loading: false,
+          tabs: state.tabs.map((tab) => {
+            if (tab.path === active.path) {
+              return { ...tab, ...remapped, content: tab.content === active.content ? prepared : tab.content };
+            }
+            return tab;
+          }),
+          activePath: remapPanePath(state.activePath),
+          primaryPath: remapPanePath(state.primaryPath),
+          secondaryPath: remapPanePath(state.secondaryPath),
+        };
+      });
       return true;
     } catch (error) {
       set({ loading: false, error: asMessage(error) });

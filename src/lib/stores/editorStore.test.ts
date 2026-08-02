@@ -9,9 +9,15 @@ vi.mock("@/lib/ipc/ipc", () => ({
   },
 }));
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  save: vi.fn(),
+  open: vi.fn(),
+}));
+
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ipc } from "@/lib/ipc/ipc";
 import { useUnsavedChangesStore } from "@/lib/unsavedChanges";
-import { convertLineEndings, useEditorStore } from "./editorStore";
+import { convertLineEndings, isUntitledPath, useEditorStore } from "./editorStore";
 
 const fileEncoding = { encoding: "UTF-8", bom: false };
 const tabEncoding = {
@@ -40,6 +46,7 @@ describe("editorStore", () => {
     vi.mocked(ipc.fsWrite).mockReset();
     vi.mocked(ipc.fsMediaPreview).mockReset();
     vi.mocked(ipc.editorConfigResolve).mockReset();
+    vi.mocked(saveDialog).mockReset();
     vi.mocked(ipc.fsMediaPreview).mockResolvedValue(null);
     vi.mocked(ipc.editorConfigResolve).mockResolvedValue({
       sourceFiles: [],
@@ -390,5 +397,53 @@ describe("editorStore", () => {
     const state = useEditorStore.getState();
     expect(state.activePath).toBe("/tmp/b.ts");
     expect(state.tabs[0]?.content).toBe("original");
+  });
+
+  it("creates an untitled buffer without touching disk", () => {
+    useEditorStore.getState().newUntitled();
+    const state = useEditorStore.getState();
+    expect(state.tabs).toHaveLength(1);
+    expect(isUntitledPath(state.tabs[0]!.path)).toBe(true);
+    expect(state.tabs[0]!.name).toMatch(/^Untitled-/);
+    expect(state.tabs[0]!.content).toBe("");
+    expect(state.tabs[0]!.readOnly).toBe(false);
+    expect(state.activePath).toBe(state.tabs[0]!.path);
+  });
+
+  it("saves an untitled buffer through a Save As dialog and remaps the tab", async () => {
+    vi.mocked(saveDialog).mockResolvedValue("/tmp/out.txt");
+    vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "saved-hash" });
+
+    useEditorStore.getState().newUntitled();
+    const untitledPath = useEditorStore.getState().tabs[0]!.path;
+    useEditorStore.setState({ tabs: [{ ...useEditorStore.getState().tabs[0]!, content: "hello" }] });
+
+    const saved = await useEditorStore.getState().saveTab(untitledPath);
+    expect(saved).toBe(true);
+    expect(saveDialog).toHaveBeenCalledOnce();
+    expect(ipc.fsWrite).toHaveBeenCalledWith(
+      "/tmp/out.txt",
+      "hello\n",
+      undefined,
+      "UTF-8",
+      false,
+    );
+    const state = useEditorStore.getState();
+    expect(state.tabs[0]!.path).toBe("/tmp/out.txt");
+    expect(state.tabs[0]!.name).toBe("out.txt");
+    expect(state.tabs[0]!.savedContent).toBe("hello\n");
+    expect(state.activePath).toBe("/tmp/out.txt");
+  });
+
+  it("keeps an untitled buffer untitled when Save As is cancelled", async () => {
+    vi.mocked(saveDialog).mockResolvedValue(null);
+    useEditorStore.getState().newUntitled();
+    const untitledPath = useEditorStore.getState().tabs[0]!.path;
+    useEditorStore.setState({ tabs: [{ ...useEditorStore.getState().tabs[0]!, content: "draft" }] });
+
+    const saved = await useEditorStore.getState().saveTab(untitledPath);
+    expect(saved).toBe(false);
+    expect(ipc.fsWrite).not.toHaveBeenCalled();
+    expect(isUntitledPath(useEditorStore.getState().tabs[0]!.path)).toBe(true);
   });
 });

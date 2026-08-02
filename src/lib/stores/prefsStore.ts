@@ -22,6 +22,7 @@ export const DEFAULT_KEYBINDINGS: KeybindingSetting[] = [
   { command: "workbench.quickOpen", key: "Ctrl+P", when: "projectOpen" },
   { command: "workbench.openFolder", key: "Ctrl+O", when: null },
   { command: "workbench.openFile", key: "Ctrl+Shift+P", when: null },
+  { command: "workbench.newFile", key: "Ctrl+N", when: null },
   {
     command: "editor.goToSymbol",
     key: "Ctrl+Shift+O",

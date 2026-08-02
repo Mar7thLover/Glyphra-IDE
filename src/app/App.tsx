@@ -16,7 +16,7 @@ import { ipc, type AppSettings, type LaunchRequest } from "@/lib/ipc/ipc";
 import { commandMatches } from "@/lib/keybindings";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { useGitStore } from "@/lib/stores/gitStore";
-import { isEditorTabDirty, useEditorStore } from "@/lib/stores/editorStore";
+import { isEditorTabDirty, isUntitledPath, useEditorStore } from "@/lib/stores/editorStore";
 import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
@@ -244,6 +244,11 @@ export default function App() {
         void pickFile(i18n.t("menu.openFile"), i18n.t("menu.unsavedProject"));
         return;
       }
+      if (commandMatches(e, "workbench.newFile", context)) {
+        e.preventDefault();
+        useEditorStore.getState().newUntitled();
+        return;
+      }
       if (commandMatches(e, "workbench.toggleAgent", context)) {
         e.preventDefault();
         const ui = useUiStore.getState();
@@ -289,6 +294,47 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void mainWindow.onDragDropEvent(async (event) => {
+      if (event.payload.type !== "drop" || disposed) return;
+      const paths = event.payload.paths;
+      if (paths.length === 0) return;
+      const dirs: string[] = [];
+      const files: string[] = [];
+      await Promise.all(
+        paths.map(async (path) => {
+          try {
+            await ipc.fsList(path);
+            dirs.push(path);
+          } catch {
+            files.push(path);
+          }
+        }),
+      );
+      const unsaved = i18n.t("menu.unsavedProject");
+      if (dirs.length > 0) {
+        const hasWorkspace = Boolean(useProjectStore.getState().current);
+        if (!hasWorkspace) {
+          await openWorkspacePaths(dirs, unsaved);
+        } else {
+          for (const dir of dirs) await useProjectStore.getState().addFolder(dir);
+        }
+      }
+      for (const file of files) {
+        await openFilePath(file, unsaved);
+      }
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (projectPath && projectPath !== lastProjectPath.current) {
       if (usePrefsStore.getState().openAgentOnProject) {
         useUiStore.getState().openAgent();
@@ -304,6 +350,7 @@ export default function App() {
     const looseFiles = openEditorPaths
       .split("\0")
       .filter(Boolean)
+      .filter((path) => !isUntitledPath(path))
       .filter((path) => !rootPaths.some((root) => {
         const normalized = normalizePath(path);
         const normalizedRoot = normalizePath(root);

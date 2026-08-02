@@ -78,6 +78,7 @@
     "help": "帮助",
     "openProject": "打开项目…",
     "openFile": "打开文件…",
+    "newFile": "新建文件",
     "addFolderToWorkspace": "添加文件夹到工作区…",
     "save": "保存",
     "closeProject": "关闭项目",

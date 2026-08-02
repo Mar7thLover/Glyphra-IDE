@@ -99,6 +99,11 @@ export default function AppMenuBar() {
   const entries: Record<MenuId, MenuEntry[]> = {
     file: [
       {
+        label: t("menu.newFile"),
+        shortcut: "Ctrl+N",
+        action: () => useEditorStore.getState().newUntitled(),
+      },
+      {
         label: t("menu.openProject"),
         shortcut: "Ctrl+O",
         action: () => pickProject(t("empty.openFolder"), unsaved),

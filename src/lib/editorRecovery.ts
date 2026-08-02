@@ -4,7 +4,12 @@ import {
   type EditorRecoveryTab,
   type FileReadResult,
 } from "@/lib/ipc/ipc";
-import { isEditorTabDirty, type EditorTab } from "@/lib/stores/editorStore";
+import {
+  isEditorTabDirty,
+  isUntitledPath,
+  untitledLabel,
+  type EditorTab,
+} from "@/lib/stores/editorStore";
 import { useEditorStore } from "@/lib/stores/editorStore";
 
 export const EDITOR_RECOVERY_INTERVAL_MS = 2_000;
@@ -80,7 +85,9 @@ function recoveredTab(
     return {
       tab: {
         path: recovery.path,
-        name: basename(recovery.path),
+        name: isUntitledPath(recovery.path)
+          ? untitledLabel(recovery.path)
+          : basename(recovery.path),
         content: recovery.content,
         savedContent: "",
         hash: "",
