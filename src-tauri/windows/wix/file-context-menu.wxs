@@ -67,6 +67,77 @@
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\shell\open" Name="FriendlyAppName" Type="string" Value="Open with Glyphra" />
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\shell\open\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
 
+        <!-- Shared ProgID used only by additive OpenWithProgids entries below.
+             No extension default value is changed. -->
+        <RegistryValue Root="HKLM" Key="Software\Classes\Glyphra.TextFile" Type="string" Value="Glyphra Text File" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Glyphra.TextFile\DefaultIcon" Type="string" Value="[INSTALLDIR]glyphra.exe,0" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\Glyphra.TextFile\shell\open\command" Type="string" Value="&quot;[INSTALLDIR]glyphra.exe&quot; &quot;%1&quot;" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.txt\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.md\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.markdown\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.rst\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.adoc\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.log\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.csv\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.tsv\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.json\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.jsonc\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.yaml\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.yml\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.toml\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.xml\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.ini\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cfg\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.conf\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.env\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.properties\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.c\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cc\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cpp\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cxx\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.h\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.hh\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.hpp\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.hxx\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cs\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.css\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.scss\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.sass\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.less\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.go\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.java\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.js\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.jsx\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.mjs\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cjs\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.ts\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.tsx\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.vue\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.svelte\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.html\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.htm\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.php\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.py\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.pyw\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.rb\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.rs\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.swift\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.kt\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.kts\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.lua\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.r\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.sql\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.graphql\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.gql\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.sh\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.bash\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.zsh\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.fish\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.ps1\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.psm1\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.bat\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.cmd\OpenWithProgids" Name="Glyphra.TextFile" Type="string" Value="" />
+
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".txt" Type="string" Value="" />
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".md" Type="string" Value="" />
         <RegistryValue Root="HKLM" Key="Software\Classes\Applications\Glyphra.exe\SupportedTypes" Name=".markdown" Type="string" Value="" />

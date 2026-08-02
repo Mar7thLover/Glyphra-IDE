@@ -361,7 +361,24 @@ pub fn fs_watch_start(
     path: String,
     channel: Channel<FsEvent>,
 ) -> Result<u64, String> {
-    let dir = canonical_dir(&path)?;
+    let requested = PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve watch path: {err}"))?;
+    let requested = crate::paths::simplified(&requested);
+    let (watch_path, recursive, file_filter) = if requested.is_dir() {
+        (requested, RecursiveMode::Recursive, None)
+    } else if requested.is_file() {
+        let parent = requested
+            .parent()
+            .ok_or_else(|| format!("{} has no parent directory", requested.display()))?
+            .to_path_buf();
+        (parent, RecursiveMode::NonRecursive, Some(requested))
+    } else {
+        return Err(format!(
+            "{} is not a file or directory",
+            requested.display()
+        ));
+    };
     let watcher_id = state
         .next_watcher_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -370,14 +387,20 @@ pub fn fs_watch_start(
     let mut watcher = RecommendedWatcher::new(
         move |result: notify::Result<Event>| match result {
             Ok(event) => {
+                let paths = event
+                    .paths
+                    .into_iter()
+                    .map(|path| crate::paths::simplified(&path))
+                    .filter(|path| file_filter.as_ref().is_none_or(|expected| path == expected))
+                    .map(|path| path.to_string_lossy().to_string())
+                    .collect::<Vec<_>>();
+                if paths.is_empty() {
+                    return;
+                }
                 let _ = channel.send(FsEvent {
                     watcher_id,
                     kind: format!("{:?}", event.kind),
-                    paths: event
-                        .paths
-                        .into_iter()
-                        .map(|path| path.to_string_lossy().to_string())
-                        .collect(),
+                    paths,
                 });
             }
             Err(err) => {
@@ -393,8 +416,8 @@ pub fn fs_watch_start(
     .map_err(|err| format!("failed to create watcher: {err}"))?;
 
     watcher
-        .watch(&dir, RecursiveMode::Recursive)
-        .map_err(|err| format!("failed to watch {}: {err}", dir.display()))?;
+        .watch(&watch_path, recursive)
+        .map_err(|err| format!("failed to watch {}: {err}", watch_path.display()))?;
 
     state
         .watchers

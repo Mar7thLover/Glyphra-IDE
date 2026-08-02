@@ -11,17 +11,20 @@ const mocks = vi.hoisted(() => {
     openFile: vi.fn<(path: string) => Promise<void>>(),
   };
   return {
-    dirname: vi.fn<(path: string) => Promise<string>>(),
     projectState,
     editorState,
     agentState: {
       liveSessions: [] as Array<{ projectPath: string; archiveId: string }>,
       closeLiveSession: vi.fn(),
     },
+    uiState: {
+      setAgentOpen: vi.fn(),
+      showWorkspace: vi.fn(),
+      closeSettings: vi.fn(),
+    },
   };
 });
 
-vi.mock("@tauri-apps/api/path", () => ({ dirname: mocks.dirname }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("@/lib/stores/agentStore", () => ({
   useAgentStore: { getState: () => mocks.agentState },
@@ -37,7 +40,7 @@ vi.mock("@/lib/stores/terminalStore", () => ({
   useTerminalStore: { getState: () => ({ setOpen: vi.fn() }) },
 }));
 vi.mock("@/lib/stores/uiStore", () => ({
-  useUiStore: { getState: () => ({ setAgentOpen: vi.fn(), closeSettings: vi.fn() }) },
+  useUiStore: { getState: () => mocks.uiState },
 }));
 
 import { openFilePath, openProjectPath } from "./workspaceActions";
@@ -49,24 +52,37 @@ describe("workspaceActions", () => {
     mocks.projectState.closeProject.mockReset();
     mocks.editorState.tabs = [];
     mocks.editorState.openFile.mockReset();
-    mocks.dirname.mockReset();
     mocks.agentState.liveSessions = [];
     mocks.agentState.closeLiveSession.mockReset();
+    mocks.uiState.setAgentOpen.mockReset();
+    mocks.uiState.showWorkspace.mockReset();
+    mocks.uiState.closeSettings.mockReset();
   });
 
   it("opens a selected file in the existing IDE window", async () => {
-    mocks.dirname.mockResolvedValue("C:\\work");
-    mocks.projectState.openProject.mockImplementation(async (path) => {
-      mocks.projectState.current = { path: `\\\\?\\${path}`, name: "work" };
-    });
     mocks.editorState.openFile.mockImplementation(async (path) => {
       mocks.editorState.tabs.push({ path });
     });
 
     await expect(openFilePath("C:\\work\\note.ts", "unsaved")).resolves.toBe(true);
 
-    expect(mocks.projectState.openProject).toHaveBeenCalledWith("C:\\work");
+    expect(mocks.projectState.openProject).not.toHaveBeenCalled();
+    expect(mocks.projectState.current).toBeNull();
     expect(mocks.editorState.openFile).toHaveBeenCalledWith("C:\\work\\note.ts");
+    expect(mocks.uiState.showWorkspace).toHaveBeenCalledWith("editor");
+  });
+
+  it("keeps an existing project open when a loose file is opened", async () => {
+    mocks.projectState.current = { path: "C:\\repo", name: "repo" };
+    mocks.editorState.openFile.mockImplementation(async (path) => {
+      mocks.editorState.tabs.push({ path });
+    });
+
+    await expect(openFilePath("C:\\notes\\todo.md", "unsaved")).resolves.toBe(true);
+
+    expect(mocks.projectState.current?.path).toBe("C:\\repo");
+    expect(mocks.projectState.openProject).not.toHaveBeenCalled();
+    expect(mocks.projectState.closeProject).not.toHaveBeenCalled();
   });
 
   it("opens a project directly in the current window state", async () => {

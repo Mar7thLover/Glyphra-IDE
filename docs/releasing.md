@@ -137,7 +137,11 @@ A workspace descriptor is UTF-8 JSON and opens the first folder:
 Installed Explorer and workspace launches are forwarded to the running Glyphra
 instance. You can also launch an unpacked build as `glyphra.exe <folder-or-file>`.
 Inside Glyphra, `File > Open File…` (`Ctrl+Shift+O`) opens one text/source file
-and uses its parent directory as a temporary project workspace.
+as a standalone editor tab without opening or indexing its parent directory.
+Windows installers add Glyphra to **Open with** and add a dedicated Explorer
+action for supported text/source extensions. They use additive
+`OpenWithProgids`/`Applications` registration and never replace an extension's
+existing default handler.
 
 ## Signing
 

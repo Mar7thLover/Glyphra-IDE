@@ -8,6 +8,7 @@ import { openAgentsWindow } from "@/lib/agentWindow";
 import { formatShortcut } from "@/lib/platform";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { useEditorStore } from "@/lib/stores/editorStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 
 import GlyphMark from "./GlyphMark";
@@ -137,6 +138,9 @@ export default function TitleBar() {
   const toggleAgent = useUiStore((s) => s.toggleAgent);
   const openPalette = usePaletteStore((s) => s.setOpen);
   const projectName = useProjectStore((s) => s.current?.name);
+  const activeFileName = useEditorStore(
+    (s) => s.tabs.find((tab) => tab.path === s.activePath)?.name,
+  );
   const hostOs = useUiStore((s) => s.hostOs);
 
   /** Titlebar is the sole quick entry for the right Agent panel. */
@@ -177,7 +181,9 @@ export default function TitleBar() {
         >
           <Search className="size-3 shrink-0" strokeWidth={1.7} />
           <span className="min-w-0 flex-1 truncate text-left">
-            {settingsOpen ? t("panel.settings") : (projectName ?? t("titlebar.palette"))}
+            {settingsOpen
+              ? t("panel.settings")
+              : (projectName ?? activeFileName ?? t("titlebar.palette"))}
           </span>
           <kbd className="shrink-0">{formatShortcut("Ctrl+K", hostOs)}</kbd>
         </button>

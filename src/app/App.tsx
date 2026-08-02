@@ -26,7 +26,7 @@ import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 import { useUpdaterStore } from "@/lib/stores/updaterStore";
-import { openProjectPath, pickFile, pickProject } from "@/lib/workspaceActions";
+import { openFilePath, openProjectPath, pickFile, pickProject } from "@/lib/workspaceActions";
 
 import ActivityRail from "./ActivityRail";
 import EditorArea from "./EditorArea";
@@ -43,13 +43,19 @@ let launchQueue = Promise.resolve();
 
 function enqueueLaunchRequest(request: LaunchRequest) {
   launchQueue = launchQueue.then(async () => {
-    const current = useProjectStore.getState().current;
-    if (current?.path === request.projectPath && request.filePath) {
-      await useEditorStore.getState().openFile(request.filePath);
+    if (request.projectPath) {
+      const opened = await openProjectPath(
+        request.projectPath,
+        i18n.t("menu.unsavedProject"),
+      );
+      if (opened && request.filePath) {
+        await useEditorStore.getState().openFile(request.filePath);
+      }
       return;
     }
-    const opened = await openProjectPath(request.projectPath, i18n.t("menu.unsavedProject"));
-    if (opened && request.filePath) await useEditorStore.getState().openFile(request.filePath);
+    if (request.filePath) {
+      await openFilePath(request.filePath, i18n.t("menu.unsavedProject"));
+    }
   });
 }
 
@@ -73,6 +79,7 @@ export default function App() {
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const hasProject = useProjectStore((s) => !!s.current);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
+  const openEditorPaths = useEditorStore((s) => s.tabs.map((tab) => tab.path).join("\0"));
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const booted = useRef(false);
   const closing = useRef(false);
@@ -286,6 +293,57 @@ export default function App() {
     }
     lastProjectPath.current = projectPath;
   }, [projectPath]);
+
+  useEffect(() => {
+    const normalize = (path: string) =>
+      path.replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+    const root = projectPath ? normalize(projectPath) : null;
+    const looseFiles = openEditorPaths
+      .split("\0")
+      .filter(Boolean)
+      .filter((path) => {
+        if (!root) return true;
+        const normalized = normalize(path);
+        return normalized !== root && !normalized.startsWith(`${root}/`);
+      });
+    if (looseFiles.length === 0) return;
+
+    let disposed = false;
+    const watcherIds: number[] = [];
+    const refreshTimers = new Map<string, number>();
+    for (const path of looseFiles) {
+      void ipc
+        .fsWatchStart(path, (event) => {
+          if (disposed) return;
+          for (const changedPath of event.paths) {
+            const previous = refreshTimers.get(changedPath);
+            if (previous !== undefined) window.clearTimeout(previous);
+            refreshTimers.set(
+              changedPath,
+              window.setTimeout(() => {
+                refreshTimers.delete(changedPath);
+                void useEditorStore.getState().syncFromDisk([changedPath]);
+              }, 120),
+            );
+          }
+        })
+        .then((watcherId) => {
+          if (disposed) void ipc.fsWatchStop(watcherId);
+          else watcherIds.push(watcherId);
+        })
+        .catch(() => {
+          // A file may disappear between opening it and starting the watcher.
+          // The editor will surface the next explicit read/save error.
+        });
+    }
+
+    return () => {
+      disposed = true;
+      for (const timer of refreshTimers.values()) window.clearTimeout(timer);
+      refreshTimers.clear();
+      for (const watcherId of watcherIds) void ipc.fsWatchStop(watcherId);
+    };
+  }, [openEditorPaths, projectPath]);
 
   return (
     <div className="relative flex h-full flex-col bg-app text-ink">

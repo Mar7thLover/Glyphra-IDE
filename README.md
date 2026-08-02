@@ -82,7 +82,7 @@ Frontend-only Vite preview (no Rust IPC): `pnpm dev` on port `1420`. Backend sel
 
 ## Releases
 
-Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS + MSI + portable exe), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). The Windows installer registers Explorer's **Open Folder with Glyphra** action and `.glyphra-workspace` files. Details: [docs/releasing.md](./docs/releasing.md).
+Tagged `v*` pushes run [`.github/workflows/release.yml`](./.github/workflows/release.yml) and publish installers for Windows (NSIS + MSI + portable exe), macOS (arm64 + x64 DMG), and Linux (AppImage / deb / rpm). Windows installers add Glyphra to **Open with** without replacing existing default handlers, and also register Explorer's **Open Folder with Glyphra** action plus `.glyphra-workspace` files. Details: [docs/releasing.md](./docs/releasing.md).
 
 ## Architecture
 

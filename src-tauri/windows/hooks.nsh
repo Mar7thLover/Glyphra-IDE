@@ -10,10 +10,13 @@
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile" "" "Open with Glyphra"
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+  ; OpenWithProgids is additive: it never replaces the extension's default value.
+  WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "Glyphra.TextFile" ""
 !macroend
 
 !macro UNREGISTER_GLYPHRA_TEXT_EXTENSION EXT
   DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile"
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "Glyphra.TextFile"
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -104,6 +107,12 @@
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\DefaultIcon" "" "$INSTDIR\${MAINBINARYNAME}.exe,0"
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\shell\open" "FriendlyAppName" "Open with Glyphra"
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\shell\open\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+
+  ; Shared ProgID used only as an additive Open With target. Extension default
+  ; values are deliberately left untouched.
+  WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile" "" "Glyphra Text File"
+  WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile\DefaultIcon" "" "$INSTDIR\${MAINBINARYNAME}.exe,0"
+  WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile\shell\open\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\SupportedTypes" ".txt" ""
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\SupportedTypes" ".md" ""
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\SupportedTypes" ".markdown" ""
@@ -250,6 +259,7 @@
   !insertmacro UNREGISTER_GLYPHRA_TEXT_EXTENSION "bat"
   !insertmacro UNREGISTER_GLYPHRA_TEXT_EXTENSION "cmd"
   DeleteRegKey SHCTX "Software\Classes\Applications\Glyphra.exe"
+  DeleteRegKey SHCTX "Software\Classes\Glyphra.TextFile"
   DeleteRegKey SHCTX "Software\Microsoft\Windows\CurrentVersion\App Paths\Glyphra.exe"
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 !macroend

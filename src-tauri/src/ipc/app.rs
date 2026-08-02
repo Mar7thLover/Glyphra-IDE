@@ -24,7 +24,7 @@ pub const PREPARE_RESTART_EVENT: &str = "prepare-restart";
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/lib/ipc/gen/LaunchRequest.ts")]
 pub struct LaunchRequest {
-    pub project_path: String,
+    pub project_path: Option<String>,
     pub file_path: Option<String>,
 }
 
@@ -92,10 +92,10 @@ pub fn launch_request_from_args(args: &[String], cwd: &str) -> Option<LaunchRequ
 }
 
 fn resolve_launch_path(path: &Path) -> Option<LaunchRequest> {
-    let canonical = path.canonicalize().ok()?;
+    let canonical = crate::paths::simplified(&path.canonicalize().ok()?);
     if canonical.is_dir() {
         return Some(LaunchRequest {
-            project_path: canonical.to_string_lossy().into_owned(),
+            project_path: Some(canonical.to_string_lossy().into_owned()),
             file_path: None,
         });
     }
@@ -110,15 +110,14 @@ fn resolve_launch_path(path: &Path) -> Option<LaunchRequest> {
     {
         if let Some(project) = workspace_project(&canonical) {
             return Some(LaunchRequest {
-                project_path: project.to_string_lossy().into_owned(),
+                project_path: Some(project.to_string_lossy().into_owned()),
                 file_path: None,
             });
         }
     }
 
-    let project = canonical.parent()?.canonicalize().ok()?;
     Some(LaunchRequest {
-        project_path: project.to_string_lossy().into_owned(),
+        project_path: None,
         file_path: Some(canonical.to_string_lossy().into_owned()),
     })
 }
@@ -136,7 +135,7 @@ fn workspace_project(descriptor_path: &Path) -> Option<PathBuf> {
     } else {
         descriptor_path.parent()?.join(folder)
     };
-    let canonical = folder.canonicalize().ok()?;
+    let canonical = crate::paths::simplified(&folder.canonicalize().ok()?);
     canonical.is_dir().then_some(canonical)
 }
 
@@ -220,7 +219,7 @@ pub async fn window_open_project(
     file_path: Option<String>,
 ) -> Result<String, String> {
     let request = LaunchRequest {
-        project_path,
+        project_path: Some(project_path),
         file_path,
     };
     let main_exists = app.get_webview_window(WELCOME_WINDOW_LABEL).is_some();
@@ -414,8 +413,12 @@ mod tests {
         let args = vec!["glyphra".to_string(), ".".to_string()];
         let request = launch_request_from_args(&args, &cwd.to_string_lossy()).expect("request");
         assert_eq!(
-            request.project_path,
-            cwd.canonicalize().unwrap().to_string_lossy()
+            request.project_path.as_deref(),
+            Some(
+                crate::paths::simplified(&cwd.canonicalize().unwrap())
+                    .to_string_lossy()
+                    .as_ref()
+            )
         );
         assert_eq!(request.file_path, None);
     }
@@ -425,11 +428,11 @@ mod tests {
         let state = LaunchState::new(None);
         assert!(!state.is_main_ready());
         state.replace_pending(LaunchRequest {
-            project_path: "/projects/first".into(),
+            project_path: Some("/projects/first".into()),
             file_path: None,
         });
         state.replace_pending(LaunchRequest {
-            project_path: "/projects/second".into(),
+            project_path: Some("/projects/second".into()),
             file_path: Some("/projects/second/main.rs".into()),
         });
         state.mark_main_ready();
@@ -438,7 +441,7 @@ mod tests {
         assert_eq!(
             state.take_pending(),
             Some(LaunchRequest {
-                project_path: "/projects/second".into(),
+                project_path: Some("/projects/second".into()),
                 file_path: Some("/projects/second/main.rs".into()),
             })
         );
@@ -458,8 +461,12 @@ mod tests {
         ];
         let request = launch_request_from_args(&args, ".").expect("request");
         assert_eq!(
-            request.project_path,
-            project.canonicalize().unwrap().to_string_lossy()
+            request.project_path.as_deref(),
+            Some(
+                crate::paths::simplified(&project.canonicalize().unwrap())
+                    .to_string_lossy()
+                    .as_ref()
+            )
         );
         assert_eq!(request.file_path, None);
 
@@ -475,13 +482,14 @@ mod tests {
 
         let args = vec!["glyphra".to_string(), file.to_string_lossy().into_owned()];
         let request = launch_request_from_args(&args, ".").expect("request");
-        assert_eq!(
-            request.project_path,
-            root.canonicalize().unwrap().to_string_lossy()
-        );
+        assert_eq!(request.project_path, None);
         assert_eq!(
             request.file_path.as_deref(),
-            Some(file.canonicalize().unwrap().to_string_lossy().as_ref())
+            Some(
+                crate::paths::simplified(&file.canonicalize().unwrap())
+                    .to_string_lossy()
+                    .as_ref()
+            )
         );
 
         let _ = fs::remove_dir_all(root);

@@ -39,6 +39,9 @@ $nsisManifest = Join-Path $releaseRoot "nsis\x64\installer.nsi"
 $wixManifest = Join-Path $releaseRoot "wix\x64\main.wxs"
 $nsisHooks = Join-Path $projectRoot "src-tauri\windows\hooks.nsh"
 $wixFragment = Join-Path $projectRoot "src-tauri\windows\wix\file-context-menu.wxs"
+$tauriConfig = Get-Content -Raw -LiteralPath (
+  Join-Path $projectRoot "src-tauri\tauri.conf.json"
+) | ConvertFrom-Json
 foreach ($name in $runtimeNames) {
   $runtimePath = Join-Path $projectRoot "src-tauri\resources\runtime\$name"
   if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
@@ -63,12 +66,19 @@ foreach ($manifest in @($nsisManifest, $wixManifest)) {
 $nsisShellMarkers = @(
   "SystemFileAssociations\text\shell\Glyphra.OpenFile",
   '!insertmacro REGISTER_GLYPHRA_TEXT_EXTENSION "rs"',
-  "Applications\Glyphra.exe\SupportedTypes"
+  "Applications\Glyphra.exe\SupportedTypes",
+  "OpenWithProgids"
 )
 foreach ($marker in $nsisShellMarkers) {
   if (-not (Select-String -LiteralPath $nsisHooks -SimpleMatch $marker -Quiet)) {
     throw "NSIS installer does not include text-file shell registration: $marker"
   }
+}
+if (Select-String -LiteralPath $nsisHooks -SimpleMatch "Glyphra\Capabilities" -Quiet) {
+  throw "NSIS installer must not register Glyphra as a Default Apps candidate"
+}
+if (Select-String -LiteralPath $nsisManifest -SimpleMatch 'APP_ASSOCIATE "txt"' -Quiet) {
+  throw "Generated NSIS installer must not replace text-file default handlers"
 }
 if (-not (Select-String -LiteralPath $nsisManifest -SimpleMatch "hooks.nsh" -Quiet)) {
   throw "Generated NSIS installer does not include the Glyphra installer hooks"
@@ -77,15 +87,30 @@ if (-not (Select-String -LiteralPath $nsisManifest -SimpleMatch "hooks.nsh" -Qui
 $wixShellMarkers = @(
   "SystemFileAssociations\text\shell\Glyphra.OpenFile",
   "SystemFileAssociations\.rs\shell\Glyphra.OpenFile",
-  "Applications\Glyphra.exe\SupportedTypes"
+  "Applications\Glyphra.exe\SupportedTypes",
+  "OpenWithProgids"
 )
 foreach ($marker in $wixShellMarkers) {
   if (-not (Select-String -LiteralPath $wixFragment -SimpleMatch $marker -Quiet)) {
     throw "MSI installer does not include text-file shell registration: $marker"
   }
 }
+if (Select-String -LiteralPath $wixFragment -SimpleMatch "Glyphra\Capabilities" -Quiet) {
+  throw "MSI installer must not register Glyphra as a Default Apps candidate"
+}
+if (Select-String -LiteralPath $wixManifest -SimpleMatch 'ProgId Id="Glyphra.txt"' -Quiet) {
+  throw "Generated MSI installer must not replace text-file default handlers"
+}
 if (-not (Select-String -LiteralPath $wixManifest -SimpleMatch "GlyphraTextFileShellIntegration" -Quiet)) {
   throw "Generated MSI manifest does not include the text-file shell component"
+}
+
+$nonWorkspaceAssociations = @(
+  $tauriConfig.bundle.fileAssociations |
+    Where-Object { -not ($_.ext -contains "glyphra-workspace") }
+)
+if ($nonWorkspaceAssociations.Count -gt 0) {
+  throw "Common text/source extensions must use additive installer hooks, not Tauri fileAssociations"
 }
 
 $artifacts = @((Get-Item -LiteralPath $portable)) + $nsis + $msi
