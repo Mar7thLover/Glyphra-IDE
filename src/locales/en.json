@@ -655,7 +655,19 @@
     "needProject": "Open a project to search.",
     "clear": "Clear search",
     "searching": "Searching…",
-    "summary": "{{matches}} matches in {{files}} files"
+    "summary": "{{matches}} matches in {{files}} files",
+    "wholeWord": "Match whole word",
+    "caseSensitive": "Match case",
+    "regex": "Use regular expression",
+    "replacePlaceholder": "Replace with…",
+    "replaceAll": "Replace All",
+    "replaceConfirm": "Replace all {{files}} occurrence(s) in the listed files? This cannot be undone.",
+    "advanced": "File filters…",
+    "advancedHide": "Hide file filters",
+    "includeLabel": "Include files (comma-separated globs)",
+    "includePlaceholder": "e.g. **/*.ts, **/*.rs",
+    "excludeLabel": "Exclude files (comma-separated globs)",
+    "excludePlaceholder": "e.g. **/*.test.ts, **/fixtures/**"
   },
   "terminal": {
     "title": "Terminal",

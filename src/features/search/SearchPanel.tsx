@@ -1,5 +1,14 @@
-import { FileSearch2, Loader2, Search, X } from "lucide-react";
-import { Fragment, useEffect, useMemo, type FormEvent, type ReactNode } from "react";
+import {
+  CaseSensitive,
+  FileSearch2,
+  Loader2,
+  Regex,
+  Replace,
+  Search,
+  WholeWord,
+  X,
+} from "lucide-react";
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { GroupedVirtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +20,7 @@ import { useSearchStore } from "@/lib/stores/searchStore";
 interface SearchGroup {
   name: string;
   directory: string;
+  root: string;
   hits: SearchHit[];
 }
 
@@ -22,51 +32,104 @@ function projectRelativePath(root: string, path: string) {
     : normalizedPath;
 }
 
-function highlightedText(text: string, query: string): ReactNode {
-  const needle = query.trim();
-  if (!needle) return text;
+function rootName(root: string) {
+  const normalized = root.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized.split("/").pop() || normalized;
+}
 
-  const lowerText = text.toLocaleLowerCase();
-  const lowerNeedle = needle.toLocaleLowerCase();
+function highlightedText(text: string, hit: SearchHit, active: boolean): ReactNode {
+  const ranges = hit.ranges.filter(([start, end]) => start < end);
+  if (ranges.length === 0) return text;
   const parts: ReactNode[] = [];
   let cursor = 0;
-  let match = lowerText.indexOf(lowerNeedle);
-
-  while (match >= 0) {
-    if (match > cursor) parts.push(text.slice(cursor, match));
+  for (const [start, end] of ranges) {
+    if (start > cursor) parts.push(text.slice(cursor, start));
     parts.push(
       <mark
-        key={`${match}-${parts.length}`}
+        key={`${start}-${parts.length}`}
         className="rounded-sm bg-accent-soft px-px text-ink"
       >
-        {text.slice(match, match + needle.length)}
+        {text.slice(start, end)}
       </mark>,
     );
-    cursor = match + needle.length;
-    match = lowerText.indexOf(lowerNeedle, cursor);
+    cursor = end;
   }
-
   if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts.length > 0 ? <Fragment>{parts}</Fragment> : text;
+  return parts.length > 0 ? (
+    <Fragment key={active ? "active" : "idle"}>{parts}</Fragment>
+  ) : (
+    text
+  );
+}
+
+function OptionButton({
+  title,
+  active,
+  onClick,
+  children,
+}: {
+  title: string;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`grid size-5 shrink-0 place-items-center rounded transition-colors ${
+        active
+          ? "bg-accent text-accent-ink"
+          : "text-ink-3 hover:bg-hover hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function SearchPanel() {
   const { t } = useTranslation();
   const current = useProjectStore((s) => s.current);
   const query = useSearchStore((s) => s.query);
+  const options = useSearchStore((s) => s.options);
   const hits = useSearchStore((s) => s.hits);
   const searching = useSearchStore((s) => s.searching);
   const error = useSearchStore((s) => s.error);
   const setQuery = useSearchStore((s) => s.setQuery);
+  const setOptions = useSearchStore((s) => s.setOptions);
   const run = useSearchStore((s) => s.run);
+  const replaceAll = useSearchStore((s) => s.replaceAll);
   const clear = useSearchStore((s) => s.clear);
   const openFile = useEditorStore((s) => s.openFile);
 
+  const [replacement, setReplacement] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [includeText, setIncludeText] = useState("");
+  const [excludeText, setExcludeText] = useState("");
+
+  const roots = useMemo(() => (current ? [current.path] : []), [current]);
+
   useEffect(() => {
-    if (!current || !query.trim()) return;
-    const timer = setTimeout(() => void run(current.path, query), 250);
+    if (roots.length === 0 || !query.trim()) return;
+    const timer = setTimeout(() => void run(roots, query), 250);
     return () => clearTimeout(timer);
-  }, [current, query, run]);
+  }, [roots, query, run]);
+
+  useEffect(() => {
+    setOptions({
+      include: includeText
+        .split(",")
+        .map((glob) => glob.trim())
+        .filter(Boolean),
+      exclude: excludeText
+        .split(",")
+        .map((glob) => glob.trim())
+        .filter(Boolean),
+    });
+  }, [includeText, excludeText, setOptions]);
 
   const groups = useMemo(() => {
     if (!current) return [] as SearchGroup[];
@@ -74,11 +137,12 @@ export default function SearchPanel() {
     for (const hit of hits) {
       let group = byPath.get(hit.path);
       if (!group) {
-        const relativePath = projectRelativePath(current.path, hit.path);
+        const relativePath = projectRelativePath(hit.root || current.path, hit.path);
         const segments = relativePath.split("/");
         group = {
           name: segments.pop() || relativePath,
           directory: segments.join("/"),
+          root: hit.root || current.path,
           hits: [],
         };
         byPath.set(hit.path, group);
@@ -89,15 +153,25 @@ export default function SearchPanel() {
   }, [current, hits]);
 
   const flattenedHits = useMemo(() => groups.flatMap((group) => group.hits), [groups]);
+  const multiRoot = current !== null && groups.some((group) => group.root !== current.path);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (current) void run(current.path, query);
+    if (roots.length > 0) void run(roots, query);
+  };
+
+  const onReplaceAll = () => {
+    if (!query.trim() || !replacement.trim() || roots.length === 0) return;
+    const message = t("search.replaceConfirm", {
+      files: hits.length > 0 ? new Set(hits.map((hit) => hit.path)).size : 0,
+    });
+    if (!window.confirm(message)) return;
+    void replaceAll(roots, replacement);
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <form onSubmit={onSubmit} className="px-2 pb-2">
+      <form onSubmit={onSubmit} className="space-y-1.5 px-2 pb-2">
         <div className="flex h-8 items-center gap-2 rounded-lg border border-line-strong bg-raised px-2 shadow-[var(--shadow-soft)] transition-colors focus-within:border-ink-3">
           <Search className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.7} />
           <input
@@ -110,6 +184,27 @@ export default function SearchPanel() {
             aria-label={t("search.placeholder")}
             className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-3"
           />
+          <OptionButton
+            title={t("search.wholeWord")}
+            active={options.wholeWord}
+            onClick={() => setOptions({ wholeWord: !options.wholeWord })}
+          >
+            <WholeWord className="size-3" strokeWidth={1.8} />
+          </OptionButton>
+          <OptionButton
+            title={t("search.caseSensitive")}
+            active={options.caseSensitive}
+            onClick={() => setOptions({ caseSensitive: !options.caseSensitive })}
+          >
+            <CaseSensitive className="size-3" strokeWidth={1.8} />
+          </OptionButton>
+          <OptionButton
+            title={t("search.regex")}
+            active={options.regex}
+            onClick={() => setOptions({ regex: !options.regex })}
+          >
+            <Regex className="size-3" strokeWidth={1.8} />
+          </OptionButton>
           {searching ? (
             <Loader2 className="size-3.5 shrink-0 animate-spin text-ink-3" />
           ) : query ? (
@@ -124,6 +219,58 @@ export default function SearchPanel() {
             </button>
           ) : null}
         </div>
+
+        {query.trim() && hits.length > 0 && (
+          <div className="flex h-8 items-center gap-2 rounded-lg border border-line-strong bg-raised px-2 shadow-[var(--shadow-soft)]">
+            <Replace className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.7} />
+            <input
+              value={replacement}
+              onChange={(event) => setReplacement(event.target.value)}
+              placeholder={t("search.replacePlaceholder")}
+              aria-label={t("search.replacePlaceholder")}
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-ink-3"
+            />
+            <button
+              type="button"
+              onClick={onReplaceAll}
+              disabled={!replacement}
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-40"
+            >
+              {t("search.replaceAll")}
+            </button>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((open) => !open)}
+          aria-expanded={advancedOpen}
+          className="px-0.5 text-[10px] text-ink-3 transition-colors hover:text-ink"
+        >
+          {advancedOpen ? t("search.advancedHide") : t("search.advanced")}
+        </button>
+        {advancedOpen && (
+          <div className="space-y-1.5 rounded-lg border border-line bg-raised p-2">
+            <label className="block">
+              <span className="mb-0.5 block text-[10px] text-ink-3">{t("search.includeLabel")}</span>
+              <input
+                value={includeText}
+                onChange={(event) => setIncludeText(event.target.value)}
+                placeholder={t("search.includePlaceholder")}
+                className="w-full rounded border border-line bg-app px-1.5 py-1 font-mono text-[10px] text-ink outline-none placeholder:text-ink-3 focus:border-ink-3"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-0.5 block text-[10px] text-ink-3">{t("search.excludeLabel")}</span>
+              <input
+                value={excludeText}
+                onChange={(event) => setExcludeText(event.target.value)}
+                placeholder={t("search.excludePlaceholder")}
+                className="w-full rounded border border-line bg-app px-1.5 py-1 font-mono text-[10px] text-ink outline-none placeholder:text-ink-3 focus:border-ink-3"
+              />
+            </label>
+          </div>
+        )}
       </form>
 
       {error && (
@@ -160,6 +307,11 @@ export default function SearchPanel() {
             return (
               <div className="flex h-8 items-center gap-2 border-b border-line/70 bg-panel px-3">
                 <span className="min-w-0 flex-1 truncate text-[10.5px] font-medium text-ink-2">
+                  {multiRoot && (
+                    <span className="mr-1.5 rounded bg-accent-soft px-1 py-px font-mono text-[9px] text-accent">
+                      {rootName(group.root)}
+                    </span>
+                  )}
                   {group.name}
                   {group.directory && (
                     <span className="ml-1.5 font-normal text-ink-3">{group.directory}</span>
@@ -177,14 +329,14 @@ export default function SearchPanel() {
               <button
                 type="button"
                 onClick={() => void openFile(hit.path, { line: hit.line })}
-                title={`${projectRelativePath(current.path, hit.path)}:${hit.line}`}
+                title={`${projectRelativePath(hit.root || current.path, hit.path)}:${hit.line}`}
                 className="group flex w-full items-start gap-2 border-b border-line/40 py-1.5 pl-3 pr-2 text-left transition-colors hover:bg-hover"
               >
                 <span className="w-7 shrink-0 pt-px text-right font-mono text-[9.5px] tabular-nums text-ink-3 group-hover:text-ink-2">
                   {hit.line}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-4 text-ink-2">
-                  {highlightedText(hit.text.trimStart(), query)}
+                  {highlightedText(hit.text.trimStart(), hit, false)}
                 </span>
               </button>
             );

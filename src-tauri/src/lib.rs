@@ -153,6 +153,7 @@ pub fn run() {
             ipc::ckpt::ckpt_restore_file,
             ipc::ckpt::ckpt_write_file,
             ipc::search::search_start,
+            ipc::search::search_replace,
             ipc::search::search_cancel,
             ipc::pty::pty_open,
             ipc::pty::pty_write,

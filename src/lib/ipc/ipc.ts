@@ -54,6 +54,8 @@ export type { RuntimeDetectInfo } from "./gen/RuntimeDetectInfo";
 export type { ResourceCounts } from "./gen/ResourceCounts";
 export type { SearchBatch } from "./gen/SearchBatch";
 export type { SearchHit } from "./gen/SearchHit";
+export type { SearchOptions } from "./gen/SearchOptions";
+export type { ReplaceSummary } from "./gen/ReplaceSummary";
 export type { SessionArchive } from "./gen/SessionArchive";
 export type { SessionCost } from "./gen/SessionCost";
 export type { SessionSummary } from "./gen/SessionSummary";
@@ -103,6 +105,8 @@ import type { LspLocation } from "./gen/LspLocation";
 import type { LspServerStatus } from "./gen/LspServerStatus";
 import type { LspTextEdit } from "./gen/LspTextEdit";
 import type { SearchBatch } from "./gen/SearchBatch";
+import type { SearchOptions } from "./gen/SearchOptions";
+import type { ReplaceSummary } from "./gen/ReplaceSummary";
 import type { SessionArchive } from "./gen/SessionArchive";
 import type { SessionSummary } from "./gen/SessionSummary";
 
@@ -302,10 +306,27 @@ export const ipc = {
     invoke<void>("ckpt_restore_file", { projectPath, turnId, path }),
   ckptWriteFile: (projectPath: string, path: string, content: string) =>
     invoke<void>("ckpt_write_file", { projectPath, path, content }),
-  searchStart: (root: string, query: string, onBatch: (batch: SearchBatch) => void) => {
+  searchStart: (
+    roots: string[],
+    query: string,
+    options: SearchOptions,
+    onBatch: (batch: SearchBatch) => void,
+  ) => {
     const channel = new Channel<SearchBatch>(onBatch);
-    return invoke<number>("search_start", { root, query, channel });
+    return invoke<number>("search_start", { roots, query, options, channel });
   },
+  searchReplace: (
+    roots: string[],
+    query: string,
+    replacement: string,
+    options: SearchOptions,
+  ) =>
+    invoke<ReplaceSummary>("search_replace", {
+      roots,
+      query,
+      replacement,
+      options,
+    }),
   searchCancel: (searchId: number) => invoke<void>("search_cancel", { searchId }),
   ptyOpen: (
     cwd: string,

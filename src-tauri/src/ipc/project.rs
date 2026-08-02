@@ -449,7 +449,10 @@ fn encoding_for_label(label: &str) -> Result<&'static Encoding, String> {
         .ok_or_else(|| format!("unsupported text encoding: {label}"))
 }
 
-fn decode_text(bytes: &[u8], requested: Option<&str>) -> Result<(String, String, bool), String> {
+pub(crate) fn decode_text(
+    bytes: &[u8],
+    requested: Option<&str>,
+) -> Result<(String, String, bool), String> {
     let bom_encoding = Encoding::for_bom(bytes);
     let (encoding, skip, bom) = if let Some(label) = requested {
         (encoding_for_label(label)?, 0, false)
@@ -472,7 +475,11 @@ fn decode_text(bytes: &[u8], requested: Option<&str>) -> Result<(String, String,
     Ok((decoded.into_owned(), encoding.name().to_string(), bom))
 }
 
-fn encode_text(content: &str, label: Option<&str>, bom: bool) -> Result<Vec<u8>, String> {
+pub(crate) fn encode_text(
+    content: &str,
+    label: Option<&str>,
+    bom: bool,
+) -> Result<Vec<u8>, String> {
     let encoding = match label {
         Some(value) => encoding_for_label(value)?,
         None => UTF_8,

@@ -162,16 +162,22 @@ fn run_version(bin: &Path, args: &[&str]) -> Option<String> {
 pub fn which(bin: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
+        #[cfg(windows)]
+        {
+            // npm and similar installers drop an extensionless POSIX shim
+            // (`#!/bin/sh`) next to the real launcher. CreateProcess cannot
+            // execute that shim, so prefer real Windows launchers first and
+            // keep the bare file only as a last resort.
+            for extension in ["exe", "cmd", "bat", "com"] {
+                let candidate = dir.join(format!("{bin}.{extension}"));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
         let candidate = dir.join(bin);
         if candidate.is_file() {
             return Some(candidate);
-        }
-        #[cfg(windows)]
-        for extension in ["exe", "cmd", "bat"] {
-            let candidate = dir.join(format!("{bin}.{extension}"));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
         }
     }
     None
@@ -205,5 +211,42 @@ mod tests {
         }
         let fixture = infos.iter().find(|i| i.backend == "fixture").unwrap();
         assert_eq!(fixture.installed, which("node").is_some());
+    }
+
+    #[test]
+    fn which_prefers_windows_launcher_shims_over_extensionless_files() {
+        let temp = std::env::temp_dir().join(format!("glyphra-which-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).expect("create temp dir");
+
+        // A POSIX shim (npm style) and a real .cmd launcher side by side.
+        let shim = temp.join("opencode");
+        std::fs::write(&shim, "#!/bin/sh\n").expect("write shim");
+        let cmd_shim = temp.join("opencode.cmd");
+        std::fs::write(&cmd_shim, "@echo off\n").expect("write cmd shim");
+
+        let old_path = std::env::var_os("PATH");
+        let mut path =
+            std::env::split_paths(&old_path.clone().unwrap_or_default()).collect::<Vec<_>>();
+        path.insert(0, temp.clone());
+        std::env::set_var("PATH", std::env::join_paths(&path).expect("join PATH"));
+
+        let found = which("opencode");
+
+        #[cfg(windows)]
+        {
+            // Must resolve to the executable .cmd shim, never the bare script.
+            assert_eq!(found, Some(cmd_shim));
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(found, Some(shim));
+        }
+
+        let _ = std::fs::remove_dir_all(&temp);
+        match old_path {
+            Some(value) => std::env::set_var("PATH", value),
+            None => std::env::remove_var("PATH"),
+        }
     }
 }

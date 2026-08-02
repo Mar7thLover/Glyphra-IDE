@@ -655,7 +655,19 @@
     "needProject": "打开项目后即可搜索。",
     "clear": "清除搜索",
     "searching": "正在搜索…",
-    "summary": "{{matches}} 个匹配，分布在 {{files}} 个文件中"
+    "summary": "{{matches}} 个匹配，分布在 {{files}} 个文件中",
+    "wholeWord": "全字匹配",
+    "caseSensitive": "区分大小写",
+    "regex": "使用正则表达式",
+    "replacePlaceholder": "替换为…",
+    "replaceAll": "全部替换",
+    "replaceConfirm": "在所列文件中替换全部 {{files}} 处匹配？此操作不可撤销。",
+    "advanced": "文件过滤…",
+    "advancedHide": "收起文件过滤",
+    "includeLabel": "包含文件（逗号分隔的 glob）",
+    "includePlaceholder": "例如 **/*.ts, **/*.rs",
+    "excludeLabel": "排除文件（逗号分隔的 glob）",
+    "excludePlaceholder": "例如 **/*.test.ts, **/fixtures/**"
   },
   "terminal": {
     "title": "终端",

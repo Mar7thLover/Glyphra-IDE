@@ -52,7 +52,7 @@ mod export_bindings {
     use crate::mcp::{McpServerRecord, McpServerUpsert, McpTransport};
     use crate::providers::{ProviderKind, ProviderRecord, ProviderTestResult, ProviderUpsert};
     use crate::pty::PtyEvent;
-    use crate::search::{SearchBatch, SearchHit};
+    use crate::search::{ReplaceSummary, SearchBatch, SearchHit, SearchOptions};
     use crate::state::RecentProject;
     use ts_rs::TS;
 
@@ -115,6 +115,8 @@ mod export_bindings {
         LspTextEdit::export_all().expect("export LspTextEdit");
         SearchHit::export_all().expect("export SearchHit");
         SearchBatch::export_all().expect("export SearchBatch");
+        SearchOptions::export_all().expect("export SearchOptions");
+        ReplaceSummary::export_all().expect("export ReplaceSummary");
         PtyEvent::export_all().expect("export PtyEvent");
         AgentTermCreateRequest::export_all().expect("export AgentTermCreateRequest");
         AgentTermEnvVar::export_all().expect("export AgentTermEnvVar");
