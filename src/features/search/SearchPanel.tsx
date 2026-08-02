@@ -37,8 +37,19 @@ function rootName(root: string) {
   return normalized.split("/").pop() || normalized;
 }
 
+/** Backstop for hits produced before the backend windowed them (a running
+ *  search survives a reload): every range becomes a DOM node, so a line with
+ *  a million matches would render a million of them. */
+const MAX_MARKS_PER_ROW = 100;
+const MAX_ROW_CHARS = 1_000;
+
 function highlightedText(text: string, hit: SearchHit, active: boolean): ReactNode {
-  const ranges = hit.ranges.filter(([start, end]) => start < end);
+  if (text.length > MAX_ROW_CHARS) {
+    return `${text.slice(0, MAX_ROW_CHARS)}…`;
+  }
+  const ranges = hit.ranges
+    .filter(([start, end]) => start < end && start < text.length)
+    .slice(0, MAX_MARKS_PER_ROW);
   if (ranges.length === 0) return text;
   const parts: ReactNode[] = [];
   let cursor = 0;
@@ -336,7 +347,10 @@ export default function SearchPanel() {
                   {hit.line}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-4 text-ink-2">
-                  {highlightedText(hit.text.trimStart(), hit, false)}
+                  {/* `hit.text` arrives windowed and already left-trimmed, with
+                      ranges rebased onto it — trimming again here would shift
+                      every highlight. */}
+                  {highlightedText(hit.text, hit, false)}
                 </span>
               </button>
             );

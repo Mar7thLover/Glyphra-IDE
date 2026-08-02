@@ -78,6 +78,16 @@ const MAX_HITS: usize = 100_000;
 const REPLACE_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const REPLACE_MAX_FILES: usize = 10_000;
 const MAX_FAILED_REPORTS: usize = 20;
+/// Files above this are skipped: a minified bundle is a single multi-megabyte
+/// line, and one such line would be copied into a hit verbatim.
+const MAX_SEARCH_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// Characters kept per result line. Long lines are windowed, not sent whole.
+const MAX_LINE_CHARS: usize = 1_000;
+/// Highlight ranges kept per result line — each one becomes a DOM node.
+const MAX_RANGES_PER_LINE: usize = 100;
+/// Directories never worth searching, pruned even when `.gitignore` does not
+/// apply (a plain folder that is not a git repo).
+const PRUNED_DIRS: [&str; 5] = [".git", "node_modules", "target", "dist", ".vite"];
 
 impl SearchManager {
     pub fn live_count(&self) -> Result<usize, String> {
@@ -246,14 +256,17 @@ fn run_search(
     let mut batch = Vec::new();
     let mut total = 0_usize;
 
-    for root in &roots {
+    'roots: for root in &roots {
         if cancel.load(Ordering::Relaxed) {
             break;
         }
         let root_str = root.to_string_lossy().to_string();
         for path in searchable_files(root, &options) {
+            // The hit cap and a dead channel end the whole search, not just
+            // this root — otherwise every remaining root gets walked for
+            // nothing.
             if cancel.load(Ordering::Relaxed) || total >= MAX_HITS {
-                break;
+                break 'roots;
             }
             let mut sink = HitCollector {
                 matcher: &matcher,
@@ -268,7 +281,7 @@ fn run_search(
             };
             let _ = searcher.search_path(&matcher, &path, &mut sink);
             if sink.stopped {
-                break;
+                break 'roots;
             }
         }
     }
@@ -317,11 +330,15 @@ impl Sink for HitCollector<'_> {
             return Ok(false);
         }
         let bytes = mat.bytes();
-        let mut ranges = Vec::new();
+        let mut byte_ranges = Vec::new();
         let _ = self.matcher.try_find_iter(bytes, |m| {
-            ranges.push((m.start() as u32, m.end() as u32));
-            Ok::<bool, grep::matcher::NoError>(true)
+            byte_ranges.push((m.start(), m.end()));
+            Ok::<bool, grep::matcher::NoError>(byte_ranges.len() < MAX_RANGES_PER_LINE)
         });
+        if byte_ranges.is_empty() {
+            return Ok(true);
+        }
+        let (text, ranges) = render_line(bytes, &byte_ranges);
         if ranges.is_empty() {
             return Ok(true);
         }
@@ -329,9 +346,7 @@ impl Sink for HitCollector<'_> {
             path: self.path.clone(),
             root: self.root.clone(),
             line: mat.line_number().unwrap_or_default() as u32,
-            text: String::from_utf8_lossy(bytes)
-                .trim_end_matches(['\r', '\n'])
-                .to_string(),
+            text,
             ranges,
         });
         *self.total += 1;
@@ -353,6 +368,79 @@ impl Sink for HitCollector<'_> {
         }
         Ok(true)
     }
+}
+
+fn char_floor(text: &str, mut index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+    while index > 0 && !text.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
+/// Renders one matching line into a bounded preview: leading indent dropped, a
+/// window of at most `MAX_LINE_CHARS` characters around the first match, and
+/// highlight ranges rebased onto that window as UTF-16 offsets (what
+/// `String.prototype.slice` on the frontend indexes by).
+///
+/// Without the window a single minified line — routine inside `dist/` or
+/// `node_modules/` — is copied verbatim into every hit and turns into one DOM
+/// node per match downstream.
+fn render_line(bytes: &[u8], byte_ranges: &[(usize, usize)]) -> (String, Vec<(u32, u32)>) {
+    let raw = String::from_utf8_lossy(bytes);
+    let line = raw.trim_end_matches(['\r', '\n']);
+    let leading = line.len() - line.trim_start().len();
+    let first = byte_ranges.first().map(|(start, _)| *start).unwrap_or(0);
+    // Keep the first match visible even when it sits far past the window width.
+    let start = char_floor(line, leading.max(first.saturating_sub(48)));
+
+    let mut text = String::new();
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    let mut u16_pos = 0_u32;
+    if start > leading {
+        text.push('…');
+        u16_pos = 1;
+    }
+    let mut index = 0_usize;
+    let mut open: Option<u32> = None;
+    let mut truncated = false;
+
+    for (chars, (relative, ch)) in line[start..].char_indices().enumerate() {
+        if chars >= MAX_LINE_CHARS {
+            truncated = true;
+            break;
+        }
+        let at = start + relative;
+        if let Some(begin) = open {
+            if at >= byte_ranges[index].1 {
+                ranges.push((begin, u16_pos));
+                open = None;
+                index += 1;
+            }
+        }
+        if open.is_none() {
+            // Skip ranges that ended before the window, then open the one that
+            // covers this character. `try_find_iter` yields them sorted and
+            // non-overlapping, so a single cursor is enough.
+            while index < byte_ranges.len() && byte_ranges[index].1 <= at {
+                index += 1;
+            }
+            if index < byte_ranges.len() && byte_ranges[index].0 <= at {
+                open = Some(u16_pos);
+            }
+        }
+        text.push(ch);
+        u16_pos += ch.len_utf16() as u32;
+    }
+    if let Some(begin) = open {
+        ranges.push((begin, u16_pos));
+    }
+    if truncated {
+        text.push('…');
+    }
+    (text, ranges)
 }
 
 fn build_matcher(query: &str, options: &SearchOptions) -> Result<RegexMatcher, String> {
@@ -408,14 +496,39 @@ fn searchable_files(root: &Path, options: &SearchOptions) -> Vec<PathBuf> {
     builder.git_ignore(true);
     builder.git_global(true);
     builder.git_exclude(true);
+    // A workspace root is often a plain folder rather than a git repo (dropped
+    // onto the window, added to a multi-root workspace, the parent of a single
+    // opened file). `.gitignore` is only honoured inside a repo unless we ask
+    // for it, and without it `node_modules/` and `dist/` get searched.
+    builder.require_git(false);
     if let Some(overrides) = overrides {
         builder.overrides(overrides);
     }
+    // Prune build/dependency trees outright, so neither gitignore coverage nor
+    // walk cost depends on how the root was opened. The root itself is exempt:
+    // a workspace root legitimately named `dist` or `target` must not be
+    // pruned away entirely.
+    builder.filter_entry(|entry| {
+        if entry.file_type().is_some_and(|ft| ft.is_dir()) && entry.depth() > 0 {
+            let name = entry.file_name().to_string_lossy();
+            return !PRUNED_DIRS.iter().any(|pruned| name == *pruned);
+        }
+        true
+    });
     let walker = builder.build();
     let mut files = Vec::new();
     for entry in walker {
         let Ok(entry) = entry else { continue };
         if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+            continue;
+        }
+        // Oversized files are almost always generated bundles or data dumps;
+        // one is enough to blow the result set up on its own.
+        if entry
+            .metadata()
+            .map(|meta| meta.len() > MAX_SEARCH_FILE_BYTES)
+            .unwrap_or(false)
+        {
             continue;
         }
         files.push(entry.path().to_path_buf());
@@ -649,6 +762,172 @@ mod tests {
             !names.contains(&"lib/util.test.rs".to_string()),
             "{names:?}"
         );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn ranges_for(matcher: &RegexMatcher, line: &[u8]) -> Vec<(usize, usize)> {
+        let mut spans = Vec::new();
+        let _ = matcher.try_find_iter(line, |m| {
+            spans.push((m.start(), m.end()));
+            Ok::<bool, grep::matcher::NoError>(spans.len() < MAX_RANGES_PER_LINE)
+        });
+        spans
+    }
+
+    #[test]
+    fn render_line_drops_indent_and_rebases_ranges_as_utf16() {
+        let matcher = build_matcher("bar", &SearchOptions::default()).expect("matcher");
+        let line = "    let 世界 = bar;\r\n".as_bytes();
+        let (text, ranges) = render_line(line, &ranges_for(&matcher, line));
+
+        assert_eq!(text, "let 世界 = bar;");
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let (start, end) = ranges[0];
+        assert_eq!(
+            String::from_utf16(&units[start as usize..end as usize]).unwrap(),
+            "bar",
+        );
+    }
+
+    #[test]
+    fn render_line_windows_long_lines_and_caps_ranges() {
+        // A minified bundle is one line of megabytes: the preview must stay
+        // bounded in both text and highlight count.
+        let matcher = build_matcher("x", &SearchOptions::default()).expect("matcher");
+        let line = "x".repeat(200_000);
+        let spans = ranges_for(&matcher, line.as_bytes());
+        assert_eq!(spans.len(), MAX_RANGES_PER_LINE);
+
+        let (text, ranges) = render_line(line.as_bytes(), &spans);
+        assert!(text.chars().count() <= MAX_LINE_CHARS + 1, "{}", text.len());
+        assert!(text.ends_with('…'));
+        assert!(ranges.len() <= MAX_RANGES_PER_LINE);
+    }
+
+    #[test]
+    fn render_line_keeps_a_late_match_inside_the_window() {
+        let matcher = build_matcher("needle", &SearchOptions::default()).expect("matcher");
+        let line = format!("{}needle tail", "a".repeat(5_000));
+        let (text, ranges) = render_line(line.as_bytes(), &ranges_for(&matcher, line.as_bytes()));
+
+        assert!(text.starts_with('…'));
+        assert_eq!(ranges.len(), 1);
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let (start, end) = ranges[0];
+        assert_eq!(
+            String::from_utf16(&units[start as usize..end as usize]).unwrap(),
+            "needle",
+        );
+    }
+
+    /// End-to-end guard for the payload that reaches the webview: a minified
+    /// asset is a single multi-megabyte line, and before it was windowed one
+    /// such line produced a hit carrying the whole line plus a highlight range
+    /// per match — enough to exhaust memory once rendered.
+    #[test]
+    fn run_search_keeps_hits_bounded_on_a_minified_line() {
+        let root = temp_root("minified");
+        fs::write(
+            root.join("bundle.min.js"),
+            format!("var a={};", "token,".repeat(200_000)),
+        )
+        .unwrap();
+        fs::write(root.join("app.ts"), "    const token = 1;\n").unwrap();
+
+        let hits = Arc::new(Mutex::new(Vec::<SearchHit>::new()));
+        let sink = Arc::clone(&hits);
+        let channel = tauri::ipc::Channel::new(move |body| {
+            let tauri::ipc::InvokeResponseBody::Json(json) = body else {
+                return Ok(());
+            };
+            let batch: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let parsed: Vec<SearchHit> = serde_json::from_value(batch["hits"].clone()).unwrap();
+            sink.lock().unwrap().extend(parsed);
+            Ok(())
+        });
+
+        run_search(
+            1,
+            vec![root.clone()],
+            "token".into(),
+            SearchOptions::default(),
+            channel,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .expect("search");
+
+        let hits = hits.lock().unwrap();
+        assert!(!hits.is_empty());
+        for hit in hits.iter() {
+            assert!(
+                hit.text.chars().count() <= MAX_LINE_CHARS + 2,
+                "line preview unbounded: {} chars",
+                hit.text.chars().count(),
+            );
+            assert!(
+                hit.ranges.len() <= MAX_RANGES_PER_LINE,
+                "ranges unbounded: {}",
+                hit.ranges.len(),
+            );
+        }
+        // The indented source line keeps its highlight aligned after trimming.
+        let source = hits
+            .iter()
+            .find(|hit| hit.path.ends_with("app.ts"))
+            .expect("source hit");
+        assert_eq!(source.text, "const token = 1;");
+        assert_eq!(source.ranges, vec![(6, 11)]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn searchable_files_prunes_dependency_trees_without_git() {
+        let root = temp_root("prune");
+        fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/app.ts"), "const token = 1;").unwrap();
+        fs::write(root.join("node_modules/pkg/index.js"), "const token = 1;").unwrap();
+        // Oversized generated output is skipped even outside a pruned directory.
+        fs::write(
+            root.join("bundle.js"),
+            "x".repeat(MAX_SEARCH_FILE_BYTES as usize + 1),
+        )
+        .unwrap();
+
+        let files = searchable_files(&root, &SearchOptions::default());
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|p| p.strip_prefix(&root).ok())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+
+        assert!(names.contains(&"src/app.ts".to_string()), "{names:?}");
+        assert!(
+            !names.iter().any(|n| n.starts_with("node_modules/")),
+            "{names:?}"
+        );
+        assert!(!names.contains(&"bundle.js".to_string()), "{names:?}");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn searchable_files_keeps_a_root_named_like_a_pruned_dir() {
+        let root = temp_root("prune-root");
+        let dist = root.join("dist");
+        fs::create_dir_all(&dist).unwrap();
+        fs::write(dist.join("main.js"), "const token = 1;").unwrap();
+
+        let files = searchable_files(&dist, &SearchOptions::default());
+        let names: Vec<String> = files
+            .iter()
+            .filter_map(|p| p.strip_prefix(&dist).ok())
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+
+        assert!(names.contains(&"main.js".to_string()), "{names:?}");
 
         let _ = fs::remove_dir_all(&root);
     }

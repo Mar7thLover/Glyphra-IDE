@@ -39,6 +39,25 @@ VSCode-style multi-root workspaces, better search, and single-file editing.
 
 ### Fixed
 
+- **Search could exhaust system memory.** Result lines were sent whole, with one
+  highlight range per match on the line and one DOM node per range — a single
+  minified line (routine in `dist/` or `node_modules/`) was megabytes of text and
+  hundreds of thousands of highlights, tens of gigabytes once rendered. Lines are
+  now windowed to 1000 characters around the first match with at most 100
+  highlights, files over 4 MiB are skipped, and `node_modules`, `dist`, `target`,
+  `.vite` and `.git` are pruned from the walk.
+- Search now honours `.gitignore` in workspace roots that are not git
+  repositories — dropping a plain folder onto the window or adding it to a
+  workspace used to search every ignored build artifact in it.
+- Search highlights were offset on indented and non-ASCII lines: ranges are byte
+  offsets rebased onto the trimmed preview as UTF-16 offsets, which is what the
+  panel indexes by.
+- Typing in the search box leaked a full workspace walk per keystroke: a
+  superseded search whose id arrived late was never cancelled, and its results
+  were merged into the newer search's list.
+- A workspace root named `dist`, `target` or `node_modules` was pruned along
+  with the dependency trees, making search silently return nothing; pruning now
+  skips the root itself.
 - Inline review control used a stale `var(--raised)` token (invisible
   background); now `var(--bg-raised)`.
 - Hard-coded status colors replaced with `--warn` and `--diff-*` design tokens

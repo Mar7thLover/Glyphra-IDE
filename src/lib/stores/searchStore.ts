@@ -25,6 +25,12 @@ interface SearchState {
   clear: () => void;
 }
 
+/** Identifies the current run locally. The backend `searchId` only arrives
+ *  after `searchStart` resolves, so batches from a superseded search cannot be
+ *  told apart by id alone — and a search whose id lands late would otherwise
+ *  never be cancelled, leaving its walk running. */
+let runToken = 0;
+
 export const useSearchStore = create<SearchState>((set, get) => ({
   query: "",
   options: { ...DEFAULT_SEARCH_OPTIONS },
@@ -38,6 +44,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       set({ query });
       return;
     }
+    runToken += 1;
     const searchId = get().searchId;
     if (searchId != null) void ipc.searchCancel(searchId).catch(() => undefined);
     set({ query: "", hits: [], searching: false, searchId: null, error: null });
@@ -51,10 +58,12 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   run: async (roots, query) => {
     const trimmed = query.trim();
     if (!trimmed || roots.length === 0) {
+      await get().cancel();
       set({ hits: [], searching: false });
       return;
     }
     await get().cancel();
+    const token = runToken;
     set({ query: trimmed, hits: [], searching: true, error: null });
     try {
       const searchId = await ipc.searchStart(
@@ -62,18 +71,22 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         trimmed,
         get().options,
         (batch) => {
-          set((state) => {
-            if (state.searchId !== null && batch.searchId !== state.searchId) return state;
-            return {
-              searchId: state.searchId ?? batch.searchId,
-              hits: batch.done ? state.hits : [...state.hits, ...batch.hits],
-              searching: !batch.done,
-            };
-          });
+          if (token !== runToken) return;
+          set((state) => ({
+            hits: batch.done ? state.hits : [...state.hits, ...batch.hits],
+            searching: !batch.done,
+          }));
         },
       );
-      set((state) => ({ searchId: state.searchId ?? searchId }));
+      // A newer run started while this one was being registered: its id is only
+      // known now, so cancel it here or the walk runs to completion unnoticed.
+      if (token !== runToken) {
+        void ipc.searchCancel(searchId).catch(() => undefined);
+        return;
+      }
+      set({ searchId });
     } catch (error) {
+      if (token !== runToken) return;
       set({
         searching: false,
         error: error instanceof Error ? error.message : String(error),
@@ -99,6 +112,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   },
 
   cancel: async () => {
+    runToken += 1;
     const id = get().searchId;
     if (id != null) {
       try {
@@ -111,6 +125,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   },
 
   clear: () => {
+    runToken += 1;
     const searchId = get().searchId;
     if (searchId != null) void ipc.searchCancel(searchId).catch(() => undefined);
     set({ hits: [], query: "", searching: false, searchId: null, error: null });
