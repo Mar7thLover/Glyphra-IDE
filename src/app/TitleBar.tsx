@@ -32,7 +32,7 @@ export function WinButton({
       title={title}
       onClick={onClick}
       className={`flex w-11 items-center justify-center text-ink-2 transition-colors duration-100 ${
-        danger ? "hover:bg-[#e81123] hover:text-white" : "hover:bg-hover hover:text-ink"
+        danger ? "hover:bg-danger hover:text-white" : "hover:bg-hover hover:text-ink"
       }`}
     >
       {children}

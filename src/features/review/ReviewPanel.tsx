@@ -58,7 +58,7 @@ function StatusDot({ status }: { status: string }) {
   return (
     <span
       className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold text-white"
-      style={{ background: added ? "#2e9b62" : deleted ? "#d14b45" : "#c58a22" }}
+      style={{ background: added ? "var(--diff-add)" : deleted ? "var(--diff-del)" : "var(--diff-mod)" }}
     >
       {added ? "A" : deleted ? "D" : "M"}
     </span>
@@ -68,8 +68,8 @@ function StatusDot({ status }: { status: string }) {
 function DiffBadge({ additions, deletions }: { additions: number; deletions: number }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-hover px-1.5 py-0.5 font-mono text-[9.5px]">
-      <span style={{ color: "#2e9b62" }}>+{additions}</span>
-      <span style={{ color: "#d14b45" }}>−{deletions}</span>
+      <span style={{ color: "var(--diff-add)" }}>+{additions}</span>
+      <span style={{ color: "var(--diff-del)" }}>−{deletions}</span>
     </span>
   );
 }

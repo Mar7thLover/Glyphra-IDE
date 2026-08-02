@@ -18,8 +18,7 @@ export default function SideBar() {
       initial={false}
       animate={{ width: open ? SIDEBAR_WIDTH : 0 }}
       transition={{ type: "spring", stiffness: 480, damping: 44 }}
-      className="glass-panel relative shrink-0 overflow-hidden"
-      style={{ borderRight: open ? "1px solid var(--line)" : "none" }}
+      className={`glass-panel relative shrink-0 overflow-hidden ${open ? "border-r border-line" : ""}`}
     >
       <div className="flex h-full flex-col" style={{ width: SIDEBAR_WIDTH }}>
         {panel !== "files" && (

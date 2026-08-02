@@ -104,7 +104,7 @@ export function parseMessagePatch(text: string) {
 
 function SeverityIcon({ severity }: { severity: ReviewSeverity }) {
   if (severity === "error") return <AlertTriangle className="size-3.5 text-danger" />;
-  if (severity === "warn") return <MessageSquareWarning className="size-3.5 text-[#c58a22]" />;
+    if (severity === "warn") return <MessageSquareWarning className="size-3.5 text-warn" />;
   return <Info className="size-3.5 text-ink-3" />;
 }
 

@@ -31,7 +31,7 @@ function SeverityIcon({ severity }: { severity: DiagnosticSeverity }) {
     return <CircleX className="size-3.5 shrink-0 text-danger" />;
   }
   if (severity === "warning") {
-    return <TriangleAlert className="size-3.5 shrink-0 text-[#c58a22]" />;
+    return <TriangleAlert className="size-3.5 shrink-0 text-warn" />;
   }
   return <Info className="size-3.5 shrink-0 text-accent" />;
 }

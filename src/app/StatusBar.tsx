@@ -205,7 +205,7 @@ export default function StatusBar() {
         className={`${item} relative`}
       >
         <GitPullRequestArrow className="size-3" />
-        {unresolved > 0 && <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-[#c58a22]" />}
+        {unresolved > 0 && <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-warn" />}
         {unresolved > 0 ? (
           <span className="inline-flex min-w-[14px] items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-medium text-accent">
             {unresolved}
@@ -237,7 +237,7 @@ export default function StatusBar() {
       >
         <CircleX className={`size-3 ${problemCounts.error ? "text-danger" : ""}`} />
         {problemCounts.error}
-        <TriangleAlert className={`ml-0.5 size-3 ${problemCounts.warning ? "text-[#c58a22]" : ""}`} />
+        <TriangleAlert className={`ml-0.5 size-3 ${problemCounts.warning ? "text-warn" : ""}`} />
         {problemCounts.warning}
       </button>
       <button

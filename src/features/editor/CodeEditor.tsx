@@ -212,7 +212,7 @@ function inlineReviewExtension(
       ".glyphra-inline-review-control": {
         border: "1px solid var(--line)",
         borderRadius: "999px",
-        background: "var(--raised)",
+        background: "var(--bg-raised)",
         color: "var(--ink-2)",
         padding: "1px 7px",
         marginRight: "4px",
