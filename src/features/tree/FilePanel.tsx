@@ -1,28 +1,47 @@
-import { ChevronRight, FileCode2, Folder, FolderOpen, Loader2 } from "lucide-react";
-import { useMemo } from "react";
+import {
+  ChevronRight,
+  FileCode2,
+  Folder,
+  FolderOpen,
+  FolderRoot,
+  Loader2,
+  MoreHorizontal,
+  Trash2,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 
 import type { DirEntryInfo } from "@/lib/ipc/ipc";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import { useGitStore } from "@/lib/stores/gitStore";
-import { useProjectStore } from "@/lib/stores/projectStore";
+import { normalizePath, useProjectStore } from "@/lib/stores/projectStore";
 import { pickProject } from "@/lib/workspaceActions";
 
 interface TreeRow {
+  kind: "file";
   entry: DirEntryInfo;
   depth: number;
 }
+
+interface RootRow {
+  kind: "root";
+  rootPath: string;
+  name: string;
+  count: number;
+}
+
+type FlatRow = RootRow | TreeRow;
 
 function flatten(
   entries: DirEntryInfo[],
   children: Record<string, DirEntryInfo[]>,
   expanded: Set<string>,
   depth = 0,
-) {
+): TreeRow[] {
   const rows: TreeRow[] = [];
   for (const entry of entries) {
-    rows.push({ entry, depth });
+    rows.push({ kind: "file", entry, depth });
     if (entry.kind === "directory" && expanded.has(entry.path)) {
       rows.push(...flatten(children[entry.path] ?? [], children, expanded, depth + 1));
     }
@@ -30,22 +49,48 @@ function flatten(
   return rows;
 }
 
+function rootFor(roots: { path: string }[], path: string) {
+  const normalized = normalizePath(path);
+  return (
+    roots.find((root) => {
+      const rootPath = normalizePath(root.path);
+      return normalized === rootPath || normalized.startsWith(`${rootPath}/`);
+    }) ?? null
+  );
+}
+
 export default function FilePanel() {
   const { t } = useTranslation();
   const current = useProjectStore((s) => s.current);
-  const entries = useProjectStore((s) => s.entries);
+  const roots = useProjectStore((s) => s.roots);
+  const entriesByRoot = useProjectStore((s) => s.entriesByRoot);
   const children = useProjectStore((s) => s.children);
   const expandedList = useProjectStore((s) => s.expanded);
   const loading = useProjectStore((s) => s.loading);
   const error = useProjectStore((s) => s.error);
   const toggleDirectory = useProjectStore((s) => s.toggleDirectory);
+  const removeFolder = useProjectStore((s) => s.removeFolder);
   const openFile = useEditorStore((s) => s.openFile);
   const activePath = useEditorStore((s) => s.activePath);
   const statuses = useGitStore((s) => s.statuses);
   const badgeFor = useGitStore((s) => s.badgeFor);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
-  const rows = useMemo(() => flatten(entries, children, expanded), [children, entries, expanded]);
+  const rows = useMemo(() => {
+    const flat: FlatRow[] = [];
+    for (const root of roots) {
+      const rootRows = flatten(entriesByRoot[root.path] ?? [], children, expanded);
+      flat.push({
+        kind: "root",
+        rootPath: root.path,
+        name: root.name,
+        count: rootRows.length,
+      });
+      flat.push(...rootRows);
+    }
+    return flat;
+  }, [children, entriesByRoot, expanded, roots]);
   // Touch statuses so badges re-render when git refresh completes.
   void statuses;
 
@@ -64,15 +109,20 @@ export default function FilePanel() {
     );
   }
 
+  const rootMenu = roots.find((root) => root.path === menuFor) ?? null;
+  const canRemove = roots.length > 1;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="px-3 pb-2 pt-1">
-        <div className="truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-2">
-          {current.name}
+      <div className="flex items-center gap-1 px-3 pb-1 pt-1">
+        <div className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-2">
+          {roots.length > 1
+            ? t("panel.workspace", { count: roots.length })
+            : (current.name ?? "")}
         </div>
       </div>
       {error && <div className="m-3 rounded-lg border border-danger/30 bg-danger/10 p-2 text-xs text-danger">{error}</div>}
-      {loading && entries.length === 0 ? (
+      {loading && roots.every((root) => (entriesByRoot[root.path] ?? []).length === 0) ? (
         <div className="flex flex-1 items-center justify-center text-ink-3">
           <Loader2 className="size-4 animate-spin" />
         </div>
@@ -81,11 +131,57 @@ export default function FilePanel() {
           className="flex-1"
           data={rows}
           itemContent={(_, row) => {
+            if (row.kind === "root") {
+              const root = roots.find((item) => item.path === row.rootPath);
+              if (!root) return null;
+              return (
+                <div className="relative group flex h-[26px] items-center gap-1 px-2">
+                  <FolderRoot
+                    className="size-3.5 shrink-0 text-accent"
+                    strokeWidth={1.7}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-ink">
+                    {row.name}
+                  </span>
+                  {row.count > 0 && (
+                    <span className="shrink-0 font-mono text-[9px] text-ink-3">{row.count}</span>
+                  )}
+                  {canRemove && (
+                    <button
+                      type="button"
+                      title={t("panel.workspaceRootMenu")}
+                      aria-label={t("panel.workspaceRootMenu")}
+                      onClick={() => setMenuFor((current) => (current === row.rootPath ? null : row.rootPath))}
+                      className="grid size-5 shrink-0 place-items-center rounded text-ink-3 opacity-0 transition-opacity hover:bg-hover hover:text-ink group-hover:opacity-100"
+                    >
+                      <MoreHorizontal className="size-3.5" strokeWidth={1.8} />
+                    </button>
+                  )}
+                  {menuFor === row.rootPath && rootMenu && (
+                    <div className="glass-float pop-in absolute right-2 top-[26px] z-[60] min-w-44 rounded-xl p-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuFor(null);
+                          void removeFolder(rootMenu.path);
+                        }}
+                        className="flex h-7 w-full items-center gap-2 rounded-lg px-2 text-left text-[11px] text-ink-2 transition-colors hover:bg-hover hover:text-danger"
+                      >
+                        <Trash2 className="size-3" strokeWidth={1.7} />
+                        {t("panel.removeFolderFromWorkspace")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
             const { entry, depth } = row;
             const isDirectory = entry.kind === "directory";
             const open = expanded.has(entry.path);
             const Icon = isDirectory ? (open ? FolderOpen : Folder) : FileCode2;
-            const badge = current ? badgeFor(current.path, entry.path) : null;
+            const root = rootFor(roots, entry.path);
+            const badge = root ? badgeFor(root.path, entry.path) : null;
             const isActive = entry.path === activePath;
             return (
               <button

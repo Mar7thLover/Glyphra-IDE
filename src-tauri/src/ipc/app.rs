@@ -24,7 +24,10 @@ pub const PREPARE_RESTART_EVENT: &str = "prepare-restart";
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/lib/ipc/gen/LaunchRequest.ts")]
 pub struct LaunchRequest {
+    /// Primary workspace root (first folder). Kept for single-root consumers.
     pub project_path: Option<String>,
+    /// Every workspace root in order. Empty for file-only launches.
+    pub folders: Vec<String>,
     pub file_path: Option<String>,
 }
 
@@ -94,8 +97,10 @@ pub fn launch_request_from_args(args: &[String], cwd: &str) -> Option<LaunchRequ
 fn resolve_launch_path(path: &Path) -> Option<LaunchRequest> {
     let canonical = crate::paths::simplified(&path.canonicalize().ok()?);
     if canonical.is_dir() {
+        let dir = canonical.to_string_lossy().into_owned();
         return Some(LaunchRequest {
-            project_path: Some(canonical.to_string_lossy().into_owned()),
+            project_path: Some(dir.clone()),
+            folders: vec![dir],
             file_path: None,
         });
     }
@@ -108,9 +113,10 @@ fn resolve_launch_path(path: &Path) -> Option<LaunchRequest> {
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.to_ascii_lowercase().ends_with(".glyphra-workspace"))
     {
-        if let Some(project) = workspace_project(&canonical) {
+        if let Some(folders) = workspace_folders(&canonical) {
             return Some(LaunchRequest {
-                project_path: Some(project.to_string_lossy().into_owned()),
+                project_path: folders.first().cloned(),
+                folders,
                 file_path: None,
             });
         }
@@ -118,25 +124,41 @@ fn resolve_launch_path(path: &Path) -> Option<LaunchRequest> {
 
     Some(LaunchRequest {
         project_path: None,
+        folders: Vec::new(),
         file_path: Some(canonical.to_string_lossy().into_owned()),
     })
 }
 
-fn workspace_project(descriptor_path: &Path) -> Option<PathBuf> {
+/// Every folder in a `.glyphra-workspace` descriptor, canonicalized.
+fn workspace_folders(descriptor_path: &Path) -> Option<Vec<String>> {
     let content = fs::read_to_string(descriptor_path).ok()?;
     let descriptor: WorkspaceDescriptor = serde_json::from_str(&content).ok()?;
-    let folder = descriptor
-        .folder
-        .or_else(|| descriptor.folders?.into_iter().next().map(|item| item.path))
-        .unwrap_or_else(|| ".".into());
-    let folder = PathBuf::from(folder);
-    let folder = if folder.is_absolute() {
-        folder
-    } else {
-        descriptor_path.parent()?.join(folder)
-    };
-    let canonical = crate::paths::simplified(&folder.canonicalize().ok()?);
-    canonical.is_dir().then_some(canonical)
+    let mut raw = Vec::new();
+    if let Some(folder) = descriptor.folder {
+        raw.push(folder);
+    }
+    if let Some(folders) = descriptor.folders {
+        raw.extend(folders.into_iter().map(|item| item.path));
+    }
+    if raw.is_empty() {
+        raw.push(".".into());
+    }
+    let mut folders = Vec::new();
+    for folder in raw {
+        let folder = PathBuf::from(folder);
+        let folder = if folder.is_absolute() {
+            folder
+        } else {
+            descriptor_path.parent()?.join(folder)
+        };
+        if let Ok(canonical) = folder.canonicalize() {
+            let canonical = crate::paths::simplified(&canonical);
+            if canonical.is_dir() {
+                folders.push(canonical.to_string_lossy().into_owned());
+            }
+        }
+    }
+    (!folders.is_empty()).then_some(folders)
 }
 
 /// Called by `tauri-plugin-single-instance` for Explorer, file-association,
@@ -219,7 +241,8 @@ pub async fn window_open_project(
     file_path: Option<String>,
 ) -> Result<String, String> {
     let request = LaunchRequest {
-        project_path: Some(project_path),
+        project_path: Some(project_path.clone()),
+        folders: vec![project_path],
         file_path,
     };
     let main_exists = app.get_webview_window(WELCOME_WINDOW_LABEL).is_some();
@@ -412,14 +435,11 @@ mod tests {
         let cwd = std::env::current_dir().expect("current dir");
         let args = vec!["glyphra".to_string(), ".".to_string()];
         let request = launch_request_from_args(&args, &cwd.to_string_lossy()).expect("request");
-        assert_eq!(
-            request.project_path.as_deref(),
-            Some(
-                crate::paths::simplified(&cwd.canonicalize().unwrap())
-                    .to_string_lossy()
-                    .as_ref()
-            )
-        );
+        let expected = crate::paths::simplified(&cwd.canonicalize().unwrap())
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(request.project_path.as_deref(), Some(expected.as_str()));
+        assert_eq!(request.folders, vec![expected]);
         assert_eq!(request.file_path, None);
     }
 
@@ -429,10 +449,12 @@ mod tests {
         assert!(!state.is_main_ready());
         state.replace_pending(LaunchRequest {
             project_path: Some("/projects/first".into()),
+            folders: vec!["/projects/first".into()],
             file_path: None,
         });
         state.replace_pending(LaunchRequest {
             project_path: Some("/projects/second".into()),
+            folders: vec!["/projects/second".into()],
             file_path: Some("/projects/second/main.rs".into()),
         });
         state.mark_main_ready();
@@ -442,6 +464,7 @@ mod tests {
             state.take_pending(),
             Some(LaunchRequest {
                 project_path: Some("/projects/second".into()),
+                folders: vec!["/projects/second".into()],
                 file_path: Some("/projects/second/main.rs".into()),
             })
         );
@@ -460,14 +483,47 @@ mod tests {
             descriptor.to_string_lossy().into_owned(),
         ];
         let request = launch_request_from_args(&args, ".").expect("request");
+        let expected = crate::paths::simplified(&project.canonicalize().unwrap())
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(request.project_path.as_deref(), Some(expected.as_str()));
+        assert_eq!(request.folders, vec![expected]);
+        assert_eq!(request.file_path, None);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolves_multi_folder_workspace_descriptor() {
+        let root =
+            std::env::temp_dir().join(format!("glyphra-launch-multi-{}", std::process::id()));
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir_all(&first).expect("create first");
+        fs::create_dir_all(&second).expect("create second");
+        let descriptor = root.join("multi.glyphra-workspace");
+        fs::write(
+            &descriptor,
+            r#"{"folders":[{"path":"first"},{"path":"second"}]}"#,
+        )
+        .expect("write descriptor");
+
+        let args = vec![
+            "glyphra".to_string(),
+            descriptor.to_string_lossy().into_owned(),
+        ];
+        let request = launch_request_from_args(&args, ".").expect("request");
+        let first_expected = crate::paths::simplified(&first.canonicalize().unwrap())
+            .to_string_lossy()
+            .into_owned();
+        let second_expected = crate::paths::simplified(&second.canonicalize().unwrap())
+            .to_string_lossy()
+            .into_owned();
         assert_eq!(
             request.project_path.as_deref(),
-            Some(
-                crate::paths::simplified(&project.canonicalize().unwrap())
-                    .to_string_lossy()
-                    .as_ref()
-            )
+            Some(first_expected.as_str())
         );
+        assert_eq!(request.folders, vec![first_expected, second_expected]);
         assert_eq!(request.file_path, None);
 
         let _ = fs::remove_dir_all(root);
@@ -483,6 +539,7 @@ mod tests {
         let args = vec!["glyphra".to_string(), file.to_string_lossy().into_owned()];
         let request = launch_request_from_args(&args, ".").expect("request");
         assert_eq!(request.project_path, None);
+        assert!(request.folders.is_empty());
         assert_eq!(
             request.file_path.as_deref(),
             Some(

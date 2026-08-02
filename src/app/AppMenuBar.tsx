@@ -12,7 +12,7 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore, type SettingsSection } from "@/lib/stores/uiStore";
-import { closeCurrentProject, pickFile, pickProject } from "@/lib/workspaceActions";
+import { closeCurrentProject, addFolderToWorkspace, pickFile, pickProject } from "@/lib/workspaceActions";
 
 type MenuId = "file" | "edit" | "view" | "terminal" | "settings" | "help";
 
@@ -107,6 +107,11 @@ export default function AppMenuBar() {
         label: t("menu.openFile"),
         shortcut: "Ctrl+Shift+O",
         action: () => pickFile(t("menu.openFile"), unsaved),
+      },
+      {
+        label: t("menu.addFolderToWorkspace"),
+        disabled: !hasProject,
+        action: () => addFolderToWorkspace(t("panel.addFolderTitle")),
       },
       {
         label: t("menu.save"),

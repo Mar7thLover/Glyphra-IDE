@@ -10,22 +10,25 @@ export interface ProjectRuleInfo {
 }
 
 interface FileIndexState {
-  projectPath: string | null;
+  /** Workspace roots this index covers (absolute paths). */
+  roots: string[];
+  /** Absolute file paths across every root. */
   files: string[];
+  /** Display folders (absolute) derived from `files`. */
   folders: string[];
   symbols: ProjectSymbol[];
   rules: ProjectRuleInfo[];
   indexed: boolean;
   loading: boolean;
   error: string | null;
-  ensureIndexed: (projectPath: string) => Promise<string[]>;
-  refresh: (projectPath: string) => Promise<string[]>;
+  ensureIndexed: (roots: string[]) => Promise<string[]>;
+  refresh: (roots: string[]) => Promise<string[]>;
   clear: () => void;
 }
 
-function joinProject(root: string, relative: string) {
+function joinRoot(root: string, relative: string) {
   const base = root.replace(/[\\/]+$/, "");
-  const sep = root.includes("\\") ? "\\" : "/";
+  const sep = base.includes("\\") ? "\\" : "/";
   return `${base}${sep}${relative.replace(/\//g, sep)}`;
 }
 
@@ -85,7 +88,7 @@ export function discoverRules(projectPath: string, files: string[]): ProjectRule
       return {
         name,
         kind,
-        path: absoluteFromIndex(projectPath, relativePath),
+        path: joinRoot(projectPath, relativePath),
         relativePath,
       } satisfies ProjectRuleInfo;
     })
@@ -120,8 +123,16 @@ export function rankSymbols(
     .map((item) => item.symbol);
 }
 
+function sameRoots(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  const normalize = (path: string) => path.replace(/\\/g, "/").toLowerCase();
+  const sortedA = [...a].map(normalize).sort();
+  const sortedB = [...b].map(normalize).sort();
+  return sortedA.every((value, index) => value === sortedB[index]);
+}
+
 export const useFileIndexStore = create<FileIndexState>((set, get) => ({
-  projectPath: null,
+  roots: [],
   files: [],
   folders: [],
   symbols: [],
@@ -130,56 +141,63 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
   loading: false,
   error: null,
 
-  ensureIndexed: async (projectPath) => {
+  ensureIndexed: async (roots) => {
     const state = get();
-    if (state.projectPath === projectPath && state.indexed && !state.loading) {
+    if (sameRoots(state.roots, roots) && state.indexed && !state.loading) {
       return state.files;
     }
-    if (state.projectPath === projectPath && state.loading) return state.files;
-    return get().refresh(projectPath);
+    if (sameRoots(state.roots, roots) && state.loading) return state.files;
+    return get().refresh(roots);
   },
 
-  refresh: async (projectPath) => {
+  refresh: async (roots) => {
     set({
       loading: true,
       error: null,
-      projectPath,
+      roots,
       indexed: false,
     });
+    const seen = new Set<string>();
+    const files: string[] = [];
+    const rules: ProjectRuleInfo[] = [];
+    const symbols: ProjectSymbol[] = [];
     try {
-      const raw = await ipc.gitExecReadonly(projectPath, [
-        "ls-files",
-        "-co",
-        "--exclude-standard",
-      ]);
-      const files = raw
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((relative) => relative.replace(/\\/g, "/"));
-      // De-dupe while preserving order.
-      const unique = [...new Set(files)];
-      const folders = collectFolders(unique);
-      const rules = discoverRules(projectPath, unique);
-      // Publish file/folder/rule results immediately; symbol scanning has a
-      // separate bounded Rust pass and may finish a little later on large repos.
-      if (get().projectPath !== projectPath) return unique;
-      set({ files: unique, folders, rules });
-      const symbols = await ipc.projectSymbols(projectPath, unique);
-      if (get().projectPath !== projectPath) return unique;
-      set({
-        files: unique,
-        folders,
-        symbols,
-        rules,
-        indexed: true,
-        loading: false,
-        error: null,
-      });
-      return unique;
+      for (const root of roots) {
+        const raw = await ipc.gitExecReadonly(root, [
+          "ls-files",
+          "-co",
+          "--exclude-standard",
+        ]);
+        const relativeFiles = raw
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((relative) => relative.replace(/\\/g, "/"));
+        for (const relative of relativeFiles) {
+          const absolute = joinRoot(root, relative);
+          if (!seen.has(absolute)) {
+            seen.add(absolute);
+            files.push(absolute);
+          }
+        }
+        rules.push(...discoverRules(root, relativeFiles));
+        // Symbols come back with root-relative paths; rebase to absolute so
+        // every workspace root can be disambiguated.
+        const rootSymbols = await ipc.projectSymbols(root, relativeFiles);
+        for (const symbol of rootSymbols) {
+          symbols.push({
+            ...symbol,
+            path: joinRoot(root, symbol.path),
+          });
+        }
+      }
+      const folders = collectFolders(files);
+      if (!sameRoots(get().roots, roots)) return files;
+      set({ files, folders, rules, symbols, indexed: true, loading: false, error: null });
+      return files;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (get().projectPath === projectPath) {
+      if (sameRoots(get().roots, roots)) {
         set({
           files: [],
           folders: [],
@@ -196,7 +214,7 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
 
   clear: () =>
     set({
-      projectPath: null,
+      roots: [],
       files: [],
       folders: [],
       symbols: [],
@@ -206,7 +224,3 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
       error: null,
     }),
 }));
-
-export function absoluteFromIndex(projectPath: string, relative: string) {
-  return joinProject(projectPath, relative);
-}

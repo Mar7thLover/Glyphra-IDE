@@ -35,8 +35,7 @@ export async function pickFile(dialogTitle: string, unsavedPrompt: string) {
   const path = await openDialog({ directory: false, multiple: false, title: dialogTitle });
   if (typeof path !== "string") return;
 
-  const opened = await openFilePath(path, unsavedPrompt);
-  if (!opened) return;
+  await openFilePath(path, unsavedPrompt);
 }
 
 export async function openFilePath(path: string, _unsavedPrompt: string) {
@@ -66,6 +65,33 @@ export async function openProjectPath(path: string, unsavedPrompt: string) {
   await useProjectStore.getState().openProject(path);
   const openedProject = useProjectStore.getState().current;
   return Boolean(openedProject && samePath(openedProject.path, path));
+}
+
+/** Open a multi-folder workspace (from a `.glyphra-workspace` launch). */
+export async function openWorkspacePaths(paths: string[], unsavedPrompt: string) {
+  if (paths.length === 0) return false;
+  const current = useProjectStore.getState().current;
+  if (current && paths.length === 1 && samePath(current.path, paths[0]!)) return true;
+  if (hasDirtyEditors() && !window.confirm(unsavedPrompt)) return false;
+  if (current) await stopProjectAgents(current.path);
+  else if (useEditorStore.getState().tabs.length > 0) {
+    await useProjectStore.getState().closeProject();
+  }
+  await useProjectStore.getState().openWorkspace(paths);
+  const opened = useProjectStore.getState();
+  return opened.roots.length > 0;
+}
+
+/** Add another folder to the current workspace (VSCode "Add Folder to Workspace"). */
+export async function addFolderToWorkspace(dialogTitle: string) {
+  const current = useProjectStore.getState().current;
+  if (!current) {
+    await pickProject(dialogTitle, "");
+    return;
+  }
+  const path = await openDialog({ directory: true, title: dialogTitle });
+  if (typeof path !== "string") return;
+  await useProjectStore.getState().addFolder(path);
 }
 
 export async function closeCurrentProject(unsavedPrompt: string) {

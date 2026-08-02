@@ -7,7 +7,6 @@ import { dispatchEditorCommand } from "@/lib/editorCommands";
 import { commandMatches } from "@/lib/keybindings";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import {
-  absoluteFromIndex,
   rankFiles,
   rankSymbols,
   useFileIndexStore,
@@ -19,6 +18,7 @@ import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useSearchStore } from "@/lib/stores/searchStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { THEME_VARIANTS, useUiStore } from "@/lib/stores/uiStore";
+import { addFolderToWorkspace } from "@/lib/workspaceActions";
 
 const itemClass =
   "cursor-pointer rounded-lg px-2.5 py-1.5 text-[12px] text-ink aria-selected:bg-hover";
@@ -74,7 +74,9 @@ export default function CommandPalette() {
       return;
     }
     if ((mode === "files" || mode === "symbols") && projectPath) {
-      void useFileIndexStore.getState().ensureIndexed(projectPath);
+      void useFileIndexStore.getState().ensureIndexed(
+        useProjectStore.getState().roots.map((root) => root.path),
+      );
     }
   }, [open, mode, projectPath]);
 
@@ -172,9 +174,7 @@ export default function CommandPalette() {
                   onSelect={() =>
                     run(() => {
                       if (!projectPath) return;
-                      void useEditorStore
-                        .getState()
-                        .openFile(absoluteFromIndex(projectPath, relative));
+                      void useEditorStore.getState().openFile(relative);
                     })
                   }
                   className={`${itemClass} font-mono text-[11px]`}
@@ -201,10 +201,9 @@ export default function CommandPalette() {
                   onSelect={() =>
                     run(() => {
                       if (!projectPath) return;
-                      void useEditorStore.getState().openFile(
-                        absoluteFromIndex(projectPath, symbol.path),
-                        { line: symbol.line },
-                      );
+                      void useEditorStore.getState().openFile(symbol.path, {
+                        line: symbol.line,
+                      });
                     })
                   }
                   className={`${itemClass} flex items-center gap-2`}
@@ -272,6 +271,15 @@ export default function CommandPalette() {
                 </Command.Item>
                 {hasProject && (
                   <>
+                    <Command.Item
+                      value="add folder to workspace"
+                      onSelect={() =>
+                        run(() => void addFolderToWorkspace(t("panel.addFolderTitle")))
+                      }
+                      className={itemClass}
+                    >
+                      {t("menu.addFolderToWorkspace")}
+                    </Command.Item>
                     <Command.Item
                       value="search files"
                       onSelect={() =>

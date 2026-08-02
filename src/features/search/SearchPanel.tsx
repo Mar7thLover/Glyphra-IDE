@@ -92,7 +92,8 @@ function OptionButton({
 
 export default function SearchPanel() {
   const { t } = useTranslation();
-  const current = useProjectStore((s) => s.current);
+  const roots = useProjectStore((s) => s.roots);
+  const rootPaths = useMemo(() => roots.map((root) => root.path), [roots]);
   const query = useSearchStore((s) => s.query);
   const options = useSearchStore((s) => s.options);
   const hits = useSearchStore((s) => s.hits);
@@ -110,13 +111,11 @@ export default function SearchPanel() {
   const [includeText, setIncludeText] = useState("");
   const [excludeText, setExcludeText] = useState("");
 
-  const roots = useMemo(() => (current ? [current.path] : []), [current]);
-
   useEffect(() => {
-    if (roots.length === 0 || !query.trim()) return;
-    const timer = setTimeout(() => void run(roots, query), 250);
+    if (rootPaths.length === 0 || !query.trim()) return;
+    const timer = setTimeout(() => void run(rootPaths, query), 250);
     return () => clearTimeout(timer);
-  }, [roots, query, run]);
+  }, [rootPaths, query, run]);
 
   useEffect(() => {
     setOptions({
@@ -132,17 +131,18 @@ export default function SearchPanel() {
   }, [includeText, excludeText, setOptions]);
 
   const groups = useMemo(() => {
-    if (!current) return [] as SearchGroup[];
+    const primary = roots[0]?.path;
+    if (!primary) return [] as SearchGroup[];
     const byPath = new Map<string, SearchGroup>();
     for (const hit of hits) {
       let group = byPath.get(hit.path);
       if (!group) {
-        const relativePath = projectRelativePath(hit.root || current.path, hit.path);
+        const relativePath = projectRelativePath(hit.root || primary, hit.path);
         const segments = relativePath.split("/");
         group = {
           name: segments.pop() || relativePath,
           directory: segments.join("/"),
-          root: hit.root || current.path,
+          root: hit.root || primary,
           hits: [],
         };
         byPath.set(hit.path, group);
@@ -150,23 +150,23 @@ export default function SearchPanel() {
       group.hits.push(hit);
     }
     return [...byPath.values()];
-  }, [current, hits]);
+  }, [roots, hits]);
 
   const flattenedHits = useMemo(() => groups.flatMap((group) => group.hits), [groups]);
-  const multiRoot = current !== null && groups.some((group) => group.root !== current.path);
+  const multiRoot = roots.length > 1;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (roots.length > 0) void run(roots, query);
+    if (rootPaths.length > 0) void run(rootPaths, query);
   };
 
   const onReplaceAll = () => {
-    if (!query.trim() || !replacement.trim() || roots.length === 0) return;
+    if (!query.trim() || !replacement.trim() || rootPaths.length === 0) return;
     const message = t("search.replaceConfirm", {
       files: hits.length > 0 ? new Set(hits.map((hit) => hit.path)).size : 0,
     });
     if (!window.confirm(message)) return;
-    void replaceAll(roots, replacement);
+    void replaceAll(rootPaths, replacement);
   };
 
   return (
@@ -286,7 +286,7 @@ export default function SearchPanel() {
         </div>
       )}
 
-      {!current ? (
+      {rootPaths.length === 0 ? (
         <EmptyState title={t("search.needProject")} />
       ) : hits.length === 0 && !searching ? (
         <EmptyState
@@ -329,7 +329,7 @@ export default function SearchPanel() {
               <button
                 type="button"
                 onClick={() => void openFile(hit.path, { line: hit.line })}
-                title={`${projectRelativePath(hit.root || current.path, hit.path)}:${hit.line}`}
+                title={`${projectRelativePath(hit.root || (rootPaths[0] ?? ""), hit.path)}:${hit.line}`}
                 className="group flex w-full items-start gap-2 border-b border-line/40 py-1.5 pl-3 pr-2 text-left transition-colors hover:bg-hover"
               >
                 <span className="w-7 shrink-0 pt-px text-right font-mono text-[9.5px] tabular-nums text-ink-3 group-hover:text-ink-2">

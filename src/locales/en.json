@@ -23,7 +23,11 @@
     "agent": "Agent",
     "settings": "Settings",
     "recent": "Recent",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "workspace": "Workspace · {{count}} folders",
+    "workspaceRootMenu": "Workspace folder actions",
+    "removeFolderFromWorkspace": "Remove Folder from Workspace",
+    "addFolderTitle": "Add Folder to Workspace"
   },
   "empty": {
     "title": "Read. Review. Steer.",
@@ -74,6 +78,7 @@
     "help": "Help",
     "openProject": "Open Project…",
     "openFile": "Open File…",
+    "addFolderToWorkspace": "Add Folder to Workspace…",
     "save": "Save",
     "closeProject": "Close Project",
     "exit": "Exit Glyphra",

@@ -23,7 +23,11 @@
     "agent": "Agent",
     "settings": "设置",
     "recent": "最近项目",
-    "comingSoon": "即将推出"
+    "comingSoon": "即将推出",
+    "workspace": "工作区 · {{count}} 个文件夹",
+    "workspaceRootMenu": "工作区文件夹操作",
+    "removeFolderFromWorkspace": "从工作区移除文件夹",
+    "addFolderTitle": "添加文件夹到工作区"
   },
   "empty": {
     "title": "阅读 · 审阅 · 驾驭",
@@ -74,6 +78,7 @@
     "help": "帮助",
     "openProject": "打开项目…",
     "openFile": "打开文件…",
+    "addFolderToWorkspace": "添加文件夹到工作区…",
     "save": "保存",
     "closeProject": "关闭项目",
     "exit": "退出 Glyphra",

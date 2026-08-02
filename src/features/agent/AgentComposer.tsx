@@ -57,7 +57,6 @@ import {
 } from "@/lib/stores/composerStore";
 import { useEditorStore } from "@/lib/stores/editorStore";
 import {
-  absoluteFromIndex,
   rankFiles,
   rankSymbols,
   useFileIndexStore,
@@ -333,25 +332,25 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
     const perGroup = mentionMatch.kind === null ? 14 : 40;
 
     const files = showFiles
-      ? rankFiles(indexedFiles, query, perGroup).map((relativePath) => ({
-          id: `mention-file-${relativePath}`,
-          label: relativePath.split("/").pop() ?? relativePath,
-          detail: relativePath,
+      ? rankFiles(indexedFiles, query, perGroup).map((path) => ({
+          id: `mention-file-${path}`,
+          label: path.split("/").pop() ?? path,
+          detail: path,
           group: "file" as const,
-          path: absoluteFromIndex(projectPath, relativePath),
-          relativePath,
-          content: `Workspace file: ${relativePath}`,
+          path,
+          relativePath: path,
+          content: `Workspace file: ${path}`,
         }))
       : [];
     const folders = showFolders
-      ? rankFiles(indexedFolders, query, perGroup).map((relativePath) => ({
-          id: `mention-folder-${relativePath}`,
-          label: relativePath.split("/").pop() ?? relativePath,
-          detail: relativePath,
+      ? rankFiles(indexedFolders, query, perGroup).map((path) => ({
+          id: `mention-folder-${path}`,
+          label: path.split("/").pop() ?? path,
+          detail: path,
           group: "folder" as const,
-          path: absoluteFromIndex(projectPath, relativePath),
-          relativePath,
-          content: `Workspace folder: ${relativePath}`,
+          path,
+          relativePath: path,
+          content: `Workspace folder: ${path}`,
         }))
       : [];
     const symbols = showSymbols
@@ -360,7 +359,7 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
           label: symbol.name,
           detail: `${symbol.kind} · ${symbol.path}:${symbol.line}`,
           group: "symbol" as const,
-          path: absoluteFromIndex(projectPath, symbol.path),
+          path: symbol.path,
           relativePath: symbol.path,
           line: symbol.line,
           content: `${symbol.signature}\nIndexed at ${symbol.path}:${symbol.line}`,
@@ -399,7 +398,9 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
 
   useEffect(() => {
     if (!projectPath) return;
-    void useFileIndexStore.getState().ensureIndexed(projectPath);
+    void useFileIndexStore.getState().ensureIndexed(
+      useProjectStore.getState().roots.map((root) => root.path),
+    );
   }, [projectPath]);
 
   useEffect(() => {
@@ -563,10 +564,7 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
       async (path) => (await ipc.fsRead(path)).content,
       {
         indexedFiles: projectPath
-          ? indexedFiles.map((relativePath) => ({
-              relativePath,
-              path: absoluteFromIndex(projectPath, relativePath),
-            }))
+          ? indexedFiles.map((path) => ({ relativePath: path, path }))
           : [],
       },
     );

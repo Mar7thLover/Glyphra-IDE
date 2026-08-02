@@ -10,25 +10,42 @@ import { useReviewStore } from "@/lib/stores/reviewStore";
 const WATCH_DEBOUNCE_MS = 300;
 
 interface ProjectState {
+  /** Primary workspace root. Agent sessions, checkpoints, git and recovery all key off this. */
   current: ProjectInfo | null;
+  /** Ordered workspace roots; `roots[0]` is always `current`. */
+  roots: ProjectInfo[];
   recents: RecentProject[];
-  entries: DirEntryInfo[];
+  /** Root path → root-level listing. */
+  entriesByRoot: Record<string, DirEntryInfo[]>;
   /** Expanded directory → children. Patched on watch events. */
   children: Record<string, DirEntryInfo[]>;
   expanded: string[];
-  watcherId: number | null;
+  /** Root path → active fs watcher id. */
+  watcherIds: Record<string, number | null>;
   loading: boolean;
   error: string | null;
   loadRecents: () => Promise<void>;
   openProject: (path: string) => Promise<void>;
+  openWorkspace: (paths: string[]) => Promise<void>;
+  addFolder: (path: string) => Promise<ProjectInfo | null>;
+  removeFolder: (path: string) => Promise<void>;
   closeProject: () => Promise<void>;
-  listCurrentRoot: () => Promise<void>;
+  listRoot: (path: string) => Promise<void>;
   toggleDirectory: (entry: DirEntryInfo) => Promise<void>;
-  stopWatcher: () => Promise<void>;
+  stopWatcher: (rootPath?: string) => Promise<void>;
+  rootForFile: (path: string) => string | null;
 }
 
 function asMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function normalizePath(path: string) {
+  return path
+    .replace(/^\\\\\?\\/, "")
+    .replace(/\\/g, "/")
+    .replace(/\/+$/, "")
+    .toLowerCase();
 }
 
 function parentDir(path: string) {
@@ -37,7 +54,7 @@ function parentDir(path: string) {
   return path.slice(0, idx);
 }
 
-/** Collect project root + every expanded ancestor that may own a changed path. */
+/** Collect a root + every expanded ancestor that may own a changed path. */
 function dirsToRefresh(projectRoot: string, event: FsEvent, expanded: string[]) {
   const targets = new Set<string>([projectRoot]);
   const expandedSet = new Set(expanded);
@@ -56,28 +73,30 @@ function dirsToRefresh(projectRoot: string, event: FsEvent, expanded: string[]) 
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingEvent: FsEvent | null = null;
+let pendingEvent: { root: string; event: FsEvent } | null = null;
 let refreshInFlight: Promise<void> | null = null;
-let queuedEvent: FsEvent | null = null;
+let queuedEvent: { root: string; event: FsEvent } | null = null;
 
 const IGNORED_WATCH_SEGMENTS = new Set([".git", "node_modules", "target", "dist", ".vite"]);
 
-function relevantEvent(event: FsEvent, projectRoot: string): FsEvent | null {
-  const root = projectRoot.replace(/\\/g, "/").replace(/\/$/, "");
+function relevantEvent(event: FsEvent, root: string): FsEvent | null {
+  const normalizedRoot = root.replace(/\\/g, "/").replace(/\/$/, "");
   const paths = event.paths.filter((path) => {
     const normalized = path.replace(/\\/g, "/");
-    const relative = normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : normalized;
+    const relative = normalized.startsWith(`${normalizedRoot}/`)
+      ? normalized.slice(normalizedRoot.length + 1)
+      : normalized;
     return !relative.split("/").some((segment) => IGNORED_WATCH_SEGMENTS.has(segment));
   });
   return paths.length > 0 ? { ...event, paths } : null;
 }
 
-function enqueueRefresh(event: FsEvent) {
+function enqueueRefresh(payload: { root: string; event: FsEvent }) {
   if (refreshInFlight) {
-    queuedEvent = event;
+    queuedEvent = payload;
     return;
   }
-  refreshInFlight = refreshFromEvent(event).finally(() => {
+  refreshInFlight = refreshFromEvent(payload).finally(() => {
     refreshInFlight = null;
     const next = queuedEvent;
     queuedEvent = null;
@@ -118,22 +137,22 @@ function clearProjectScopedStores() {
   });
 }
 
-async function refreshFromEvent(event: FsEvent) {
-  const { current, expanded } = useProjectStore.getState();
-  if (!current) return;
+async function refreshFromEvent({ root, event }: { root: string; event: FsEvent }) {
+  const { expanded, roots } = useProjectStore.getState();
+  if (!root || !roots.some((item) => normalizePath(item.path) === normalizePath(root))) return;
 
-  const targets = dirsToRefresh(current.path, event, expanded);
+  const targets = dirsToRefresh(root, event, expanded);
   const nextChildren: Record<string, DirEntryInfo[]> = {
     ...useProjectStore.getState().children,
   };
-  let nextEntries = useProjectStore.getState().entries;
+  let nextEntries = useProjectStore.getState().entriesByRoot[root];
   const missing = new Set<string>();
 
   await Promise.all(
     targets.map(async (dir) => {
       try {
         const listed = await ipc.fsList(dir);
-        if (dir === current.path) nextEntries = listed;
+        if (normalizePath(dir) === normalizePath(root)) nextEntries = listed;
         else nextChildren[dir] = listed;
       } catch {
         missing.add(dir);
@@ -142,33 +161,54 @@ async function refreshFromEvent(event: FsEvent) {
     }),
   );
 
-  // Drop only directories we failed to re-list (deleted/moved). Keep other
-  // expansions so nested watches don't collapse the tree.
   const nextExpanded = expanded.filter((path) => !missing.has(path));
   for (const path of Object.keys(nextChildren)) {
     if (!nextExpanded.includes(path)) delete nextChildren[path];
   }
 
   useProjectStore.setState({
-    entries: nextEntries,
+    entriesByRoot: { ...useProjectStore.getState().entriesByRoot, [root]: nextEntries },
     children: nextChildren,
     expanded: nextExpanded,
     error: null,
   });
-  void useGitStore.getState().refresh(current.path);
-  void useReviewStore.getState().refreshWorkingTree(current.path);
+  const primary = useProjectStore.getState().current?.path;
+  if (primary) {
+    void useGitStore.getState().refresh(primary);
+    void useReviewStore.getState().refreshWorkingTree(primary);
+  }
   // Agent (and other) writers must refresh clean open tabs so the editor
   // never silently overwrites disk with a stale buffer.
   void useEditorStore.getState().syncFromDisk(event.paths);
 }
 
+async function startRootWatcher(rootPath: string) {
+  const watcherId = await ipc.fsWatchStart(rootPath, (event) => {
+    const relevant = relevantEvent(event, rootPath);
+    if (!relevant) return;
+    pendingEvent = { root: rootPath, event: relevant };
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const latest = pendingEvent;
+      pendingEvent = null;
+      debounceTimer = null;
+      if (!latest) return;
+      enqueueRefresh(latest);
+    }, WATCH_DEBOUNCE_MS);
+  });
+  useProjectStore.setState((state) => ({
+    watcherIds: { ...state.watcherIds, [rootPath]: watcherId },
+  }));
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   current: null,
+  roots: [],
   recents: [],
-  entries: [],
+  entriesByRoot: {},
   children: {},
   expanded: [],
-  watcherId: null,
+  watcherIds: {},
   loading: false,
   error: null,
 
@@ -181,37 +221,108 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   openProject: async (path) => {
-    set({ loading: true, error: null, children: {}, expanded: [] });
+    await get().openWorkspace([path]);
+  },
+
+  openWorkspace: async (paths) => {
+    const unique = [...new Set(paths.map((path) => path.replace(/\\/g, "/")))];
+    if (unique.length === 0) return;
+    set({ loading: true, error: null });
     try {
       const previousPath = get().current?.path;
       await get().stopWatcher();
-      const current = await ipc.projectOpen(path);
-      if (previousPath && previousPath !== current.path) clearProjectScopedStores();
-      set({ current, loading: false });
-      await Promise.all([get().listCurrentRoot(), get().loadRecents()]);
-      // Warm the shared Ctrl+P/composer index on every project open so rules
-      // and repository-wide mentions are ready before the first agent prompt.
-      void useFileIndexStore.getState().refresh(current.path);
-      // Hydrate pending checkpoint/worktree review state for status and inline
-      // editor controls without requiring the Review panel to be opened first.
-      void useReviewStore.getState().refresh(current.path);
-
-      const watcherId = await ipc.fsWatchStart(current.path, (event) => {
-        const relevant = relevantEvent(event, current.path);
-        if (!relevant) return;
-        pendingEvent = relevant;
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          const latest = pendingEvent;
-          pendingEvent = null;
-          debounceTimer = null;
-          if (!latest) return;
-          enqueueRefresh(latest);
-        }, WATCH_DEBOUNCE_MS);
+      const opened = await Promise.all(unique.map((path) => ipc.projectOpen(path)));
+      const primaryChanged =
+        previousPath != null && !opened.some((info) => normalizePath(info.path) === normalizePath(previousPath));
+      if (primaryChanged) clearProjectScopedStores();
+      set({
+        current: opened[0],
+        roots: opened,
+        entriesByRoot: {},
+        children: {},
+        expanded: [],
+        loading: false,
+        watcherIds: {},
       });
-      set({ watcherId });
+      await Promise.all(opened.map((info) => get().listRoot(info.path)));
+      await get().loadRecents();
+      // Warm the shared Ctrl+P/composer index across every root.
+      void useFileIndexStore.getState().refresh(opened.map((info) => info.path));
+      const primary = useProjectStore.getState().current?.path;
+      if (primary) void useReviewStore.getState().refresh(primary);
+      await Promise.all(opened.map((info) => startRootWatcher(info.path)));
     } catch (error) {
       set({ loading: false, error: asMessage(error) });
+    }
+  },
+
+  addFolder: async (path) => {
+    const { roots } = get();
+    if (roots.some((info) => normalizePath(info.path) === normalizePath(path))) {
+      return roots.find((info) => normalizePath(info.path) === normalizePath(path)) ?? null;
+    }
+    set({ loading: true, error: null });
+    try {
+      const info = await ipc.projectOpen(path);
+      const nextRoots = [...roots, info];
+      set({
+        roots: nextRoots,
+        entriesByRoot: { ...get().entriesByRoot, [info.path]: [] },
+        loading: false,
+      });
+      await get().listRoot(info.path);
+      await get().loadRecents();
+      const rootPaths = nextRoots.map((root) => root.path);
+      void useFileIndexStore.getState().refresh(rootPaths);
+      await startRootWatcher(info.path);
+      return info;
+    } catch (error) {
+      set({ loading: false, error: asMessage(error) });
+      return null;
+    }
+  },
+
+  removeFolder: async (path) => {
+    const { roots, current } = get();
+    const index = roots.findIndex((info) => normalizePath(info.path) === normalizePath(path));
+    if (index < 0) return;
+    await get().stopWatcher(path);
+    const removedPrimary = normalizePath(current?.path ?? "") === normalizePath(path);
+    const nextRoots = roots.filter((_, itemIndex) => itemIndex !== index);
+    if (nextRoots.length === 0) {
+      await get().closeProject();
+      return;
+    }
+    const entriesByRoot = { ...get().entriesByRoot };
+    delete entriesByRoot[roots[index]!.path];
+    const children = { ...get().children };
+    for (const key of Object.keys(children)) {
+      if (normalizePath(key).startsWith(`${normalizePath(path)}/`)) delete children[key];
+    }
+    const expanded = get().expanded.filter(
+      (item) => !normalizePath(item).startsWith(`${normalizePath(path)}/`),
+    );
+    if (removedPrimary) {
+      clearProjectScopedStores();
+      set({
+        current: nextRoots[0],
+        roots: nextRoots,
+        entriesByRoot,
+        children,
+        expanded,
+        watcherIds: { ...get().watcherIds, [path]: null },
+      });
+      const rootPaths = nextRoots.map((root) => root.path);
+      void useFileIndexStore.getState().refresh(rootPaths);
+      if (nextRoots[0]) void useReviewStore.getState().refresh(nextRoots[0].path);
+    } else {
+      set({
+        roots: nextRoots,
+        entriesByRoot,
+        children,
+        expanded,
+        watcherIds: { ...get().watcherIds, [path]: null },
+      });
     }
   },
 
@@ -225,10 +336,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       queuedEvent = null;
       set({
         current: null,
-        entries: [],
+        roots: [],
+        entriesByRoot: {},
         children: {},
         expanded: [],
-        watcherId: null,
+        watcherIds: {},
         loading: false,
         error: null,
       });
@@ -236,13 +348,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  listCurrentRoot: async () => {
-    const { current } = get();
-    if (!current) return;
+  listRoot: async (path) => {
     set({ loading: true, error: null });
     try {
-      const entries = await ipc.fsList(current.path);
-      set({ entries, loading: false });
+      const entries = await ipc.fsList(path);
+      set((state) => ({
+        entriesByRoot: { ...state.entriesByRoot, [path]: entries },
+        loading: false,
+      }));
     } catch (error) {
       set({ loading: false, error: asMessage(error) });
     }
@@ -266,15 +379,42 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set((state) => ({ expanded: [...state.expanded, entry.path] }));
   },
 
-  stopWatcher: async () => {
+  stopWatcher: async (rootPath?: string) => {
     if (debounceTimer) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
       pendingEvent = null;
     }
-    const { watcherId } = get();
-    if (watcherId === null) return;
-    await ipc.fsWatchStop(watcherId);
-    set({ watcherId: null });
+    const { watcherIds } = get();
+    const targets = rootPath
+      ? watcherIds[rootPath] != null
+        ? [[rootPath, watcherIds[rootPath]] as const]
+        : []
+      : Object.entries(watcherIds);
+    const stopAll = targets.map(async ([root, watcherId]) => {
+      if (watcherId == null) return;
+      try {
+        await ipc.fsWatchStop(watcherId);
+      } catch {
+        // A watcher may already be gone with its window.
+      }
+      useProjectStore.setState((state) => ({
+        watcherIds: { ...state.watcherIds, [root]: null },
+      }));
+    });
+    await Promise.all(stopAll);
+  },
+
+  rootForFile: (path) => {
+    const normalized = normalizePath(path);
+    for (const info of get().roots) {
+      const root = normalizePath(info.path);
+      if (normalized === root || normalized.startsWith(`${root}/`)) return info.path;
+    }
+    return null;
   },
 }));
+
+export function rootDisplayName(root: ProjectInfo): string {
+  return root.name;
+}

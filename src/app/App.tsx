@@ -21,12 +21,17 @@ import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { useOnboardingStore } from "@/lib/stores/onboardingStore";
 import { usePaletteStore } from "@/lib/stores/paletteStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
-import { useProjectStore } from "@/lib/stores/projectStore";
+import { normalizePath, useProjectStore } from "@/lib/stores/projectStore";
 import { useReviewStore } from "@/lib/stores/reviewStore";
 import { useTerminalStore } from "@/lib/stores/terminalStore";
 import { useUiStore } from "@/lib/stores/uiStore";
 import { useUpdaterStore } from "@/lib/stores/updaterStore";
-import { openFilePath, openProjectPath, pickFile, pickProject } from "@/lib/workspaceActions";
+import {
+  openFilePath,
+  openWorkspacePaths,
+  pickFile,
+  pickProject,
+} from "@/lib/workspaceActions";
 
 import ActivityRail from "./ActivityRail";
 import EditorArea from "./EditorArea";
@@ -43,18 +48,17 @@ let launchQueue = Promise.resolve();
 
 function enqueueLaunchRequest(request: LaunchRequest) {
   launchQueue = launchQueue.then(async () => {
-    if (request.projectPath) {
-      const opened = await openProjectPath(
-        request.projectPath,
-        i18n.t("menu.unsavedProject"),
-      );
+    const unsaved = i18n.t("menu.unsavedProject");
+    const folders = request.folders ?? (request.projectPath ? [request.projectPath] : []);
+    if (folders.length > 0) {
+      const opened = await openWorkspacePaths(folders, unsaved);
       if (opened && request.filePath) {
         await useEditorStore.getState().openFile(request.filePath);
       }
       return;
     }
     if (request.filePath) {
-      await openFilePath(request.filePath, i18n.t("menu.unsavedProject"));
+      await openFilePath(request.filePath, unsaved);
     }
   });
 }
@@ -78,6 +82,7 @@ export default function App() {
   const setHostOs = useUiStore((s) => s.setHostOs);
   const maybeAutoOpen = useOnboardingStore((s) => s.maybeAutoOpen);
   const hasProject = useProjectStore((s) => !!s.current);
+  const hasOpenFiles = useEditorStore((s) => s.tabs.length > 0);
   const projectPath = useProjectStore((s) => s.current?.path ?? null);
   const openEditorPaths = useEditorStore((s) => s.tabs.map((tab) => tab.path).join("\0"));
   const settingsOpen = useUiStore((s) => s.settingsOpen);
@@ -295,17 +300,15 @@ export default function App() {
   }, [projectPath]);
 
   useEffect(() => {
-    const normalize = (path: string) =>
-      path.replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-    const root = projectPath ? normalize(projectPath) : null;
+    const rootPaths = useProjectStore.getState().roots.map((root) => root.path);
     const looseFiles = openEditorPaths
       .split("\0")
       .filter(Boolean)
-      .filter((path) => {
-        if (!root) return true;
-        const normalized = normalize(path);
-        return normalized !== root && !normalized.startsWith(`${root}/`);
-      });
+      .filter((path) => !rootPaths.some((root) => {
+        const normalized = normalizePath(path);
+        const normalizedRoot = normalizePath(root);
+        return normalized === normalizedRoot || normalized.startsWith(`${normalizedRoot}/`);
+      }));
     if (looseFiles.length === 0) return;
 
     let disposed = false;
@@ -352,7 +355,7 @@ export default function App() {
         <SettingsPage />
       ) : (
         <div className="flex min-h-0 flex-1">
-          {hasProject ? (
+          {hasProject || hasOpenFiles ? (
             <>
               <ActivityRail />
               <SideBar />

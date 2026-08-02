@@ -7,6 +7,7 @@ vi.mock("@/lib/ipc/ipc", () => ({
     fsList: vi.fn(),
     fsWatchStart: vi.fn(),
     fsWatchStop: vi.fn(),
+    gitExecReadonly: vi.fn(),
   },
 }));
 
@@ -18,11 +19,12 @@ describe("projectStore", () => {
   beforeEach(() => {
     useProjectStore.setState({
       current: null,
+      roots: [],
       recents: [],
-      entries: [],
+      entriesByRoot: {},
       children: {},
       expanded: [],
-      watcherId: null,
+      watcherIds: {},
       loading: false,
       error: null,
     });
@@ -31,6 +33,7 @@ describe("projectStore", () => {
     vi.mocked(ipc.fsList).mockReset();
     vi.mocked(ipc.fsWatchStart).mockReset();
     vi.mocked(ipc.fsWatchStop).mockReset();
+    vi.mocked(ipc.gitExecReadonly).mockReset();
   });
 
   it("opens a project, lists the root, and starts a watcher", async () => {
@@ -47,16 +50,91 @@ describe("projectStore", () => {
     await useProjectStore.getState().openProject("/repo");
     const state = useProjectStore.getState();
     expect(state.current?.path).toBe("/repo");
-    expect(state.entries).toHaveLength(2);
-    expect(state.watcherId).toBe(7);
+    expect(state.roots.map((root) => root.path)).toEqual(["/repo"]);
+    expect(state.entriesByRoot["/repo"]).toHaveLength(2);
+    expect(state.watcherIds["/repo"]).toBe(7);
     expect(state.recents[0]?.name).toBe("repo");
+  });
+
+  it("opens a multi-folder workspace with per-root entries and watchers", async () => {
+    vi.mocked(ipc.projectOpen).mockImplementation(async (path: string) => ({
+      path,
+      name: path.split("/").pop() ?? path,
+    }));
+    vi.mocked(ipc.projectRecent).mockResolvedValue([]);
+    vi.mocked(ipc.fsList).mockImplementation(async (path: string) =>
+      path === "/first"
+        ? [{ path: "/first/a.ts", name: "a.ts", kind: "file" }]
+        : [{ path: "/second/b.ts", name: "b.ts", kind: "file" }],
+    );
+    vi.mocked(ipc.fsWatchStart).mockResolvedValue(1);
+
+    await useProjectStore.getState().openWorkspace(["/first", "/second"]);
+    const state = useProjectStore.getState();
+    expect(state.current?.path).toBe("/first");
+    expect(state.roots.map((root) => root.path)).toEqual(["/first", "/second"]);
+    expect(state.entriesByRoot["/first"]).toHaveLength(1);
+    expect(state.entriesByRoot["/second"]).toHaveLength(1);
+    expect(state.watcherIds["/first"]).toBe(1);
+    expect(state.watcherIds["/second"]).toBe(1);
+  });
+
+  it("adds and removes workspace folders without losing the primary root", async () => {
+    vi.mocked(ipc.projectOpen).mockImplementation(async (path: string) => ({
+      path,
+      name: path.split("/").pop() ?? path,
+    }));
+    vi.mocked(ipc.projectRecent).mockResolvedValue([]);
+    vi.mocked(ipc.fsList).mockResolvedValue([]);
+    vi.mocked(ipc.fsWatchStart).mockResolvedValue(1);
+
+    await useProjectStore.getState().openWorkspace(["/first"]);
+    await useProjectStore.getState().addFolder("/second");
+    expect(useProjectStore.getState().roots.map((root) => root.path)).toEqual([
+      "/first",
+      "/second",
+    ]);
+    expect(useProjectStore.getState().current?.path).toBe("/first");
+
+    await useProjectStore.getState().removeFolder("/second");
+    expect(useProjectStore.getState().roots.map((root) => root.path)).toEqual(["/first"]);
+    expect(useProjectStore.getState().current?.path).toBe("/first");
+  });
+
+  it("promotes the next root when the primary folder is removed", async () => {
+    vi.mocked(ipc.projectOpen).mockImplementation(async (path: string) => ({
+      path,
+      name: path.split("/").pop() ?? path,
+    }));
+    vi.mocked(ipc.projectRecent).mockResolvedValue([]);
+    vi.mocked(ipc.fsList).mockResolvedValue([]);
+    vi.mocked(ipc.fsWatchStart).mockResolvedValue(1);
+
+    await useProjectStore.getState().openWorkspace(["/first", "/second"]);
+    await useProjectStore.getState().removeFolder("/first");
+    expect(useProjectStore.getState().current?.path).toBe("/second");
+    expect(useProjectStore.getState().roots.map((root) => root.path)).toEqual(["/second"]);
+  });
+
+  it("resolves the workspace root for a file path", async () => {
+    useProjectStore.setState({
+      current: { path: "/first", name: "first" },
+      roots: [
+        { path: "/first", name: "first" },
+        { path: "/second", name: "second" },
+      ],
+    });
+    expect(useProjectStore.getState().rootForFile("/first/src/a.ts")).toBe("/first");
+    expect(useProjectStore.getState().rootForFile("/second/b.ts")).toBe("/second");
+    expect(useProjectStore.getState().rootForFile("/elsewhere/c.ts")).toBeNull();
   });
 
   it("closes the project, watcher, and project-scoped editor state", async () => {
     useProjectStore.setState({
       current: { path: "/repo", name: "repo" },
-      watcherId: 7,
-      entries: [{ path: "/repo/a.ts", name: "a.ts", kind: "file" }],
+      roots: [{ path: "/repo", name: "repo" }],
+      watcherIds: { "/repo": 7 },
+      entriesByRoot: { "/repo": [{ path: "/repo/a.ts", name: "a.ts", kind: "file" }] },
       expanded: ["/repo/src"],
     });
     useEditorStore.setState({
@@ -84,14 +162,15 @@ describe("projectStore", () => {
 
     expect(ipc.fsWatchStop).toHaveBeenCalledWith(7);
     expect(useProjectStore.getState().current).toBeNull();
-    expect(useProjectStore.getState().entries).toEqual([]);
+    expect(useProjectStore.getState().entriesByRoot).toEqual({});
     expect(useEditorStore.getState().tabs).toEqual([]);
   });
 
   it("expands directories and caches children", async () => {
     useProjectStore.setState({
       current: { path: "/repo", name: "repo" },
-      entries: [{ path: "/repo/src", name: "src", kind: "directory" }],
+      roots: [{ path: "/repo", name: "repo" }],
+      entriesByRoot: { "/repo": [{ path: "/repo/src", name: "src", kind: "directory" }] },
     });
     vi.mocked(ipc.fsList).mockResolvedValue([
       { path: "/repo/src/main.ts", name: "main.ts", kind: "file" },
