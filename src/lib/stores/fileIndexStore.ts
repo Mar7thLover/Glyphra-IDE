@@ -131,6 +131,36 @@ function sameRoots(a: string[], b: string[]) {
   return sortedA.every((value, index) => value === sortedB[index]);
 }
 
+/** Segments that never belong in the Ctrl+P / mention index. `git ls-files -co`
+ *  lists untracked files too, so a game-assets tree of 100k+ files would
+ *  otherwise flood the index with paths nobody can fuzzy-open usefully. */
+const INDEX_PRUNE_SEGMENTS = new Set([
+  "node_modules",
+  "target",
+  "dist",
+  ".vite",
+  ".git",
+  "bin",
+  "build",
+  "obj",
+  "out",
+  "logs",
+  "tmp",
+  "dump",
+]);
+/** Hard cap on indexed paths across the whole workspace (tracked files first). */
+const MAX_INDEX_FILES = 60_000;
+/** Cap on paths handed to the backend symbol scan per root (its own scan is
+ *  bounded too, but shipping 100k+ paths over IPC is a waste on asset-heavy
+ *  projects). */
+const MAX_SYMBOL_SCAN_PATHS = 20_000;
+
+function pruneIndexFiles(files: string[]): string[] {
+  return files.filter(
+    (relative) => !relative.split("/").some((segment) => INDEX_PRUNE_SEGMENTS.has(segment)),
+  );
+}
+
 export const useFileIndexStore = create<FileIndexState>((set, get) => ({
   roots: [],
   files: [],
@@ -168,22 +198,29 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
           "-co",
           "--exclude-standard",
         ]);
-        const relativeFiles = raw
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((relative) => relative.replace(/\\/g, "/"));
+        const relativeFiles = pruneIndexFiles(
+          raw
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((relative) => relative.replace(/\\/g, "/")),
+        );
         for (const relative of relativeFiles) {
           const absolute = joinRoot(root, relative);
           if (!seen.has(absolute)) {
             seen.add(absolute);
             files.push(absolute);
           }
+          if (files.length >= MAX_INDEX_FILES) break;
         }
         rules.push(...discoverRules(root, relativeFiles));
         // Symbols come back with root-relative paths; rebase to absolute so
-        // every workspace root can be disambiguated.
-        const rootSymbols = await ipc.projectSymbols(root, relativeFiles);
+        // every workspace root can be disambiguated. Cap what we send: the
+        // backend scan is bounded anyway, and huge path lists only cost IPC.
+        const rootSymbols = await ipc.projectSymbols(
+          root,
+          relativeFiles.slice(0, MAX_SYMBOL_SCAN_PATHS),
+        );
         for (const symbol of rootSymbols) {
           symbols.push({
             ...symbol,
@@ -191,6 +228,7 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
           });
         }
       }
+      if (files.length > MAX_INDEX_FILES) files.length = MAX_INDEX_FILES;
       const folders = collectFolders(files);
       if (!sameRoots(get().roots, roots)) return files;
       set({ files, folders, rules, symbols, indexed: true, loading: false, error: null });

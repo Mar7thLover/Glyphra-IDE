@@ -355,6 +355,59 @@ pub async fn fs_write(
     .map_err(|err| format!("file write task failed: {err}"))?
 }
 
+/// Directories never worth watching. Recursive watchers register one OS watch
+/// handle per directory, so a project with tens of thousands of subdirectories
+/// (game assets, build trees) can exhaust system handle capacity and freeze the
+/// machine — prune these names and cap registration outright.
+const WATCH_PRUNE_DIRS: [&str; 10] = [
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    ".vite",
+    "bin",
+    "build",
+    "obj",
+    "out",
+    "logs",
+];
+const MAX_WATCH_DIRS: usize = 8_000;
+
+/// Bounded breadth-first collection of directories to watch (root first, then
+/// shallow directories before deep ones). Pruned names are skipped and the
+/// total count is capped so registration cost stays proportional to the UI's
+/// needs instead of the tree's size.
+fn collect_watch_dirs(root: &std::path::Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let mut queue = std::collections::VecDeque::from([root.to_path_buf()]);
+    while let Some(dir) = queue.pop_front() {
+        if dirs.len() >= MAX_WATCH_DIRS {
+            break;
+        }
+        dirs.push(dir.clone());
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if dirs.len() >= MAX_WATCH_DIRS {
+                break;
+            }
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if WATCH_PRUNE_DIRS.iter().any(|pruned| name == *pruned) {
+                continue;
+            }
+            queue.push_back(entry.path());
+        }
+    }
+    dirs
+}
+
 #[tauri::command]
 pub fn fs_watch_start(
     state: State<'_, AppState>,
@@ -365,14 +418,14 @@ pub fn fs_watch_start(
         .canonicalize()
         .map_err(|err| format!("failed to resolve watch path: {err}"))?;
     let requested = crate::paths::simplified(&requested);
-    let (watch_path, recursive, file_filter) = if requested.is_dir() {
-        (requested, RecursiveMode::Recursive, None)
+    let (watch_dirs, file_filter) = if requested.is_dir() {
+        (collect_watch_dirs(&requested), None)
     } else if requested.is_file() {
         let parent = requested
             .parent()
             .ok_or_else(|| format!("{} has no parent directory", requested.display()))?
             .to_path_buf();
-        (parent, RecursiveMode::NonRecursive, Some(requested))
+        (vec![parent], Some(requested))
     } else {
         return Err(format!(
             "{} is not a file or directory",
@@ -415,9 +468,13 @@ pub fn fs_watch_start(
     )
     .map_err(|err| format!("failed to create watcher: {err}"))?;
 
-    watcher
-        .watch(&watch_path, recursive)
-        .map_err(|err| format!("failed to watch {}: {err}", watch_path.display()))?;
+    // One handle per directory on Windows: register each directory explicitly
+    // instead of a single recursive watch so pruned trees stay unwatched.
+    for dir in &watch_dirs {
+        if let Err(err) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+            tracing::debug!(target: "fs-watch", %err, "skip unwatchable dir {}", dir.display());
+        }
+    }
 
     state
         .watchers
@@ -950,5 +1007,55 @@ const hydrateContext = () => {};
         assert!(is_symbol_source("src/main.rs"));
         assert!(!is_symbol_source("assets/logo.png"));
         assert!(!is_symbol_source("README.md"));
+    }
+
+    #[test]
+    fn watch_dirs_prune_heavy_trees_and_keep_the_root() {
+        let root = std::env::temp_dir().join(format!("glyphra-watch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src/deep")).unwrap();
+        std::fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        std::fs::create_dir_all(root.join(".git/objects")).unwrap();
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::create_dir_all(root.join("resources/tex")).unwrap();
+
+        let dirs = collect_watch_dirs(&root);
+        let names: Vec<String> = dirs
+            .iter()
+            .filter_map(|dir| dir.strip_prefix(&root).ok())
+            .map(|dir| dir.to_string_lossy().replace('\\', "/"))
+            .collect();
+
+        assert!(names.contains(&"".to_string()), "{names:?}");
+        assert!(names.contains(&"src".to_string()), "{names:?}");
+        assert!(names.contains(&"src/deep".to_string()), "{names:?}");
+        assert!(names.contains(&"resources/tex".to_string()), "{names:?}");
+        assert!(
+            !names.iter().any(|n| n.contains("node_modules")),
+            "{names:?}"
+        );
+        assert!(!names.iter().any(|n| n.starts_with(".git")), "{names:?}");
+        assert!(!names.iter().any(|n| n.starts_with("bin")), "{names:?}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn watch_dirs_respect_the_registration_cap() {
+        let root = std::env::temp_dir().join(format!("glyphra-watch-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // 3_000 subdirectories: the cap is 8_000, so every directory registers.
+        for index in 0..3_000 {
+            std::fs::create_dir_all(root.join(format!("d{index}/leaf"))).unwrap();
+        }
+        let dirs = collect_watch_dirs(&root);
+        assert!(
+            dirs.len() <= MAX_WATCH_DIRS,
+            "{} dirs registered",
+            dirs.len()
+        );
+        assert_eq!(dirs.len(), 1 + 3_000 + 3_000);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

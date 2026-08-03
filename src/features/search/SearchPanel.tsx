@@ -8,7 +8,7 @@ import {
   WholeWord,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { GroupedVirtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 
@@ -43,7 +43,7 @@ function rootName(root: string) {
 const MAX_MARKS_PER_ROW = 100;
 const MAX_ROW_CHARS = 1_000;
 
-function highlightedText(text: string, hit: SearchHit, active: boolean): ReactNode {
+function highlightedText(text: string, hit: SearchHit): ReactNode {
   if (text.length > MAX_ROW_CHARS) {
     return `${text.slice(0, MAX_ROW_CHARS)}…`;
   }
@@ -66,11 +66,7 @@ function highlightedText(text: string, hit: SearchHit, active: boolean): ReactNo
     cursor = end;
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts.length > 0 ? (
-    <Fragment key={active ? "active" : "idle"}>{parts}</Fragment>
-  ) : (
-    text
-  );
+  return parts.length > 0 ? parts : text;
 }
 
 function OptionButton({
@@ -109,6 +105,7 @@ export default function SearchPanel() {
   const options = useSearchStore((s) => s.options);
   const hits = useSearchStore((s) => s.hits);
   const searching = useSearchStore((s) => s.searching);
+  const replacing = useSearchStore((s) => s.replacing);
   const error = useSearchStore((s) => s.error);
   const setQuery = useSearchStore((s) => s.setQuery);
   const setOptions = useSearchStore((s) => s.setOptions);
@@ -126,7 +123,7 @@ export default function SearchPanel() {
     if (rootPaths.length === 0 || !query.trim()) return;
     const timer = setTimeout(() => void run(rootPaths, query), 250);
     return () => clearTimeout(timer);
-  }, [rootPaths, query, run]);
+  }, [rootPaths, query, options, run]);
 
   useEffect(() => {
     setOptions({
@@ -244,10 +241,10 @@ export default function SearchPanel() {
             <button
               type="button"
               onClick={onReplaceAll}
-              disabled={!replacement}
+              disabled={!replacement || replacing}
               className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-accent transition-colors hover:bg-hover disabled:opacity-40"
             >
-              {t("search.replaceAll")}
+              {replacing ? t("search.replacing") : t("search.replaceAll")}
             </button>
           </div>
         )}
@@ -350,7 +347,7 @@ export default function SearchPanel() {
                   {/* `hit.text` arrives windowed and already left-trimmed, with
                       ranges rebased onto it — trimming again here would shift
                       every highlight. */}
-                  {highlightedText(hit.text, hit, false)}
+                  {highlightedText(hit.text, hit)}
                 </span>
               </button>
             );

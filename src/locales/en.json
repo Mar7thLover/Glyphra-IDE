@@ -667,6 +667,7 @@
     "regex": "Use regular expression",
     "replacePlaceholder": "Replace with…",
     "replaceAll": "Replace All",
+    "replacing": "Replacing…",
     "replaceConfirm": "Replace all {{files}} occurrence(s) in the listed files? This cannot be undone.",
     "advanced": "File filters…",
     "advancedHide": "Hide file filters",

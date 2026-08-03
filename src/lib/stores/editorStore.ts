@@ -668,14 +668,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       set((state) => {
         const remapPanePath = (panePath: string | null) =>
           panePath === active.path ? targetPath : panePath;
-        return {
-          loading: false,
-          tabs: state.tabs.map((tab) => {
+        // Saving an untitled buffer onto a path that is already open must not
+        // create a second tab: fold the saved buffer into the existing tab.
+        const existsElsewhere =
+          targetPath !== active.path && state.tabs.some((tab) => tab.path === targetPath);
+        const tabs = state.tabs
+          .filter((tab) => !(existsElsewhere && tab.path === targetPath))
+          .map((tab) => {
             if (tab.path === active.path) {
-              return { ...tab, ...remapped, content: tab.content === active.content ? prepared : tab.content };
+              return {
+                ...tab,
+                ...remapped,
+                content: tab.content === active.content ? prepared : tab.content,
+              };
             }
             return tab;
-          }),
+          });
+        return {
+          loading: false,
+          tabs,
           activePath: remapPanePath(state.activePath),
           primaryPath: remapPanePath(state.primaryPath),
           secondaryPath: remapPanePath(state.secondaryPath),

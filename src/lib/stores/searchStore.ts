@@ -15,6 +15,8 @@ interface SearchState {
   options: SearchOptions;
   hits: SearchHit[];
   searching: boolean;
+  /** A cross-file replace is in flight; guard against concurrent replacements. */
+  replacing: boolean;
   searchId: number | null;
   error: string | null;
   setQuery: (query: string) => void;
@@ -36,19 +38,20 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   options: { ...DEFAULT_SEARCH_OPTIONS },
   hits: [],
   searching: false,
+  replacing: false,
   searchId: null,
   error: null,
 
-  setQuery: (query) => {
-    if (query) {
-      set({ query });
-      return;
-    }
-    runToken += 1;
-    const searchId = get().searchId;
-    if (searchId != null) void ipc.searchCancel(searchId).catch(() => undefined);
-    set({ query: "", hits: [], searching: false, searchId: null, error: null });
-  },
+    setQuery: (query) => {
+      if (query) {
+        set({ query });
+        return;
+      }
+      runToken += 1;
+      const searchId = get().searchId;
+      if (searchId != null) void ipc.searchCancel(searchId).catch(() => undefined);
+      set({ query: "", hits: [], searching: false, searchId: null, error: null });
+    },
 
   setOptions: (options) => {
     const next = { ...get().options, ...options };
@@ -62,8 +65,13 @@ export const useSearchStore = create<SearchState>((set, get) => ({
       set({ hits: [], searching: false });
       return;
     }
+    // Claim the next slot BEFORE the cancel await: `cancel` bumps the token,
+    // so two overlapping runs cannot both capture the same token and both
+    // register a live search (which would also let one overwrite the other's
+    // `searchId`, leaving the older walk uncancellable).
+    const token = runToken + 1;
     await get().cancel();
-    const token = runToken;
+    if (token !== runToken) return;
     set({ query: trimmed, hits: [], searching: true, error: null });
     try {
       const searchId = await ipc.searchStart(
@@ -97,6 +105,8 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   replaceAll: async (roots, replacement) => {
     const trimmed = get().query.trim();
     if (!trimmed || roots.length === 0) return false;
+    if (get().replacing) return false;
+    set({ replacing: true });
     try {
       const summary = await ipc.searchReplace(roots, trimmed, replacement, get().options);
       if (summary.filesChanged > 0) {
@@ -108,6 +118,8 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
       return false;
+    } finally {
+      set({ replacing: false });
     }
   },
 

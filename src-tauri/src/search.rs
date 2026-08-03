@@ -74,7 +74,7 @@ pub struct SearchManager {
     cancels: Mutex<std::collections::HashMap<(String, u32), Arc<AtomicBool>>>,
 }
 
-const MAX_HITS: usize = 100_000;
+const MAX_HITS: usize = 20_000;
 const REPLACE_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const REPLACE_MAX_FILES: usize = 10_000;
 const MAX_FAILED_REPORTS: usize = 20;

@@ -76,8 +76,34 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingEvent: { root: string; event: FsEvent } | null = null;
 let refreshInFlight: Promise<void> | null = null;
 let queuedEvent: { root: string; event: FsEvent } | null = null;
+/** Trailing throttle for the git-status side effects of fs events. On a repo
+ *  with hundreds of thousands of files each `git status` takes seconds, so a
+ *  churning tree must not spawn a fresh pair of git processes per event. */
+let gitRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
-const IGNORED_WATCH_SEGMENTS = new Set([".git", "node_modules", "target", "dist", ".vite"]);
+function scheduleGitAndReviewRefresh(primary: string) {
+  if (gitRefreshTimer) return;
+  gitRefreshTimer = setTimeout(() => {
+    gitRefreshTimer = null;
+    void useGitStore.getState().refresh(primary);
+    void useReviewStore.getState().refreshWorkingTree(primary);
+  }, 1_500);
+}
+
+const IGNORED_WATCH_SEGMENTS = new Set([
+  ".git",
+  "node_modules",
+  "target",
+  "dist",
+  ".vite",
+  "bin",
+  "build",
+  "obj",
+  "out",
+  "logs",
+  "tmp",
+  "dump",
+]);
 
 function relevantEvent(event: FsEvent, root: string): FsEvent | null {
   const normalizedRoot = root.replace(/\\/g, "/").replace(/\/$/, "");
@@ -173,10 +199,7 @@ async function refreshFromEvent({ root, event }: { root: string; event: FsEvent 
     error: null,
   });
   const primary = useProjectStore.getState().current?.path;
-  if (primary) {
-    void useGitStore.getState().refresh(primary);
-    void useReviewStore.getState().refreshWorkingTree(primary);
-  }
+  if (primary) scheduleGitAndReviewRefresh(primary);
   // Agent (and other) writers must refresh clean open tabs so the editor
   // never silently overwrites disk with a stale buffer.
   void useEditorStore.getState().syncFromDisk(event.paths);
@@ -228,10 +251,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const unique = [...new Set(paths.map((path) => path.replace(/\\/g, "/")))];
     if (unique.length === 0) return;
     set({ loading: true, error: null });
+    // Validate every root before touching state or watchers: a failure here
+    // must leave the current workspace fully intact.
+    let opened: ProjectInfo[];
+    try {
+      opened = [];
+      for (const path of unique) opened.push(await ipc.projectOpen(path));
+    } catch (error) {
+      set({ loading: false, error: asMessage(error) });
+      return;
+    }
     try {
       const previousPath = get().current?.path;
       await get().stopWatcher();
-      const opened = await Promise.all(unique.map((path) => ipc.projectOpen(path)));
       const primaryChanged =
         previousPath != null && !opened.some((info) => normalizePath(info.path) === normalizePath(previousPath));
       if (primaryChanged) clearProjectScopedStores();
@@ -252,6 +284,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (primary) void useReviewStore.getState().refresh(primary);
       await Promise.all(opened.map((info) => startRootWatcher(info.path)));
     } catch (error) {
+      // State may be partially applied; restart watchers for whatever roots
+      // are now set so the explorer does not go silent.
+      const current = useProjectStore.getState().roots;
+      await Promise.all(
+        current.map((info) => startRootWatcher(info.path).catch(() => undefined)),
+      );
       set({ loading: false, error: asMessage(error) });
     }
   },
@@ -334,6 +372,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       debounceTimer = null;
       pendingEvent = null;
       queuedEvent = null;
+      if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
+      gitRefreshTimer = null;
       set({
         current: null,
         roots: [],
