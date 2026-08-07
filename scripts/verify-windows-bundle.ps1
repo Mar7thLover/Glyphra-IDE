@@ -6,9 +6,7 @@ $bundleRoot = Join-Path $releaseRoot "bundle"
 $maxInstallerBytes = 30MB
 $runtimeNames = @(
   "codex-app-server-daemon.mjs",
-  "demo-edit-turn.jsonl",
-  "harness-bridge.mjs",
-  "replay-agent.mjs"
+  "harness-bridge.mjs"
 )
 
 $portable = Join-Path $releaseRoot "glyphra.exe"

@@ -39,6 +39,43 @@ VSCode-style multi-root workspaces, better search, and single-file editing.
 
 ### Fixed
 
+- **Opening a folder could exhaust system memory and take the machine down.**
+  Loading a workspace refreshed the review queue, which ran one
+  `git_diff_file` per working-tree entry through `Promise.all` — no concurrency
+  limit. A freshly opened folder routinely reports thousands of untracked
+  files, and each of those calls spawned `git show`, `git diff` *and* a full
+  `git status --untracked-files=all` over the whole repository, then returned
+  both revisions of the file in full over IPC. Thousands of git processes
+  started at once, each holding its own copy of the tree. The fan-out is now
+  bounded on every axis: at most 6 diffs in flight, 100 diffed eagerly (the
+  rest hydrate on selection), 2000 working-tree entries tracked, and
+  `git_diff_file` asks git for the status of the single path it is diffing
+  instead of the entire repository.
+- Git and review state were refreshed twice concurrently on every folder open —
+  once from the project store and once from the App project-change effect. Only
+  the effect does it now.
+- Git subprocess output is capped at 8 MiB per call (line-aligned), with the
+  child killed at the cap. `git status --untracked-files=all` and
+  `git ls-files -co` are proportional to the size of the tree, so opening a
+  large unignored folder used to materialize the whole listing in Rust,
+  serialize it over IPC and parse it again in the webview. Status listings are
+  additionally capped at 5000 entries and diff text at 4 MiB per side.
+- Opening a subdirectory of a repository scanned and reported the *entire*
+  repository: porcelain paths are repository-root relative, so nothing resolved
+  against the opened folder and every explorer badge was wrong. The scan is now
+  limited to the opened subtree and rebased onto it, and HEAD lookups use
+  `HEAD:./path` so a tracked file under a subdirectory root is no longer
+  mistaken for a new one.
+- The file watcher registered up to 8000 directories synchronously on the IPC
+  thread — on Windows that is a 16 KiB buffer plus two kernel handles each
+  (~128 MiB and 16 000 handles per workspace root) and one `read_dir` per
+  directory, freezing the UI for the duration. Registration and teardown now
+  run on the blocking pool, and the cap is 2048 directories (breadth-first, so
+  the levels the explorer shows are the ones that get watched).
+- The Ctrl+P index cap was per root rather than global, and folder derivation
+  from it was unbounded — every path prefix became its own string, several
+  times the size of the index it came from, built on the main thread while the
+  workspace loaded.
 - **Search could exhaust system memory.** Result lines were sent whole, with one
   highlight range per match on the line and one DOM node per range — a single
   minified line (routine in `dist/` or `node_modules/`) was megabytes of text and

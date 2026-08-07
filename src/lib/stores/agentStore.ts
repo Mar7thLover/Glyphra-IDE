@@ -251,11 +251,11 @@ function pickReadyBackend(backends: AgentDetectInfo[], preferred: StartableBacke
   }
   const preferredInfo = backends.find((b) => b.backend === preferred);
   if (preferredInfo?.installed) return preferred;
-  const order: StartableBackend[] = ["codex-acp", "claude-acp", "opencode-acp", "pi-agent", "fixture"];
+  const order: StartableBackend[] = ["codex-acp", "claude-acp", "opencode-acp", "pi-agent"];
   for (const id of order) {
     if (backends.some((b) => b.backend === id && b.installed)) return id;
   }
-  return "fixture";
+  return "auto";
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
@@ -443,7 +443,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       ? useHarnessStore.getState().harnesses.find((item) => `custom:${item.id}` === selectedBackend)
       : null;
     const info = get().backends.find((b) => b.backend === selectedBackend);
-    if ((!custom && !info) || (info && !info.installed && selectedBackend !== "fixture")) {
+    if ((!custom && !info) || (info && !info.installed)) {
       set({
         error: info
           ? `${selectedBackend} is not installed. ${info.detail}`
@@ -493,7 +493,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               endpoint: custom.endpoint ?? null,
               model: custom.model ?? null,
             }
-          : info && info.backend !== "fixture"
+          : info
             ? {
                 protocol: info.protocol as CustomAgentProtocol,
                 command: info.command,

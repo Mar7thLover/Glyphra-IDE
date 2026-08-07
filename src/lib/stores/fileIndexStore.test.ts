@@ -33,6 +33,18 @@ describe("fileIndexStore fuzzy ranking", () => {
     ).toEqual(["src", "src/features", "src/features/agent", "src/features/editor"]);
   });
 
+  it("stops deriving folders at the cap on a deep asset tree", () => {
+    // Every path prefix becomes its own string, so a deep tree yields several
+    // times more folders than files — all built synchronously while a project
+    // is opening.
+    const files = Array.from(
+      { length: 500 },
+      (_, index) => `assets/pack${index}/mesh/lod0/variant/item-${index}.bin`,
+    );
+    expect(collectFolders(files, 100)).toHaveLength(100);
+    expect(collectFolders(files).length).toBeLessThanOrEqual(500 * 5);
+  });
+
   it("discovers supported nested rule files with root rules first", () => {
     const rules = discoverRules("C:\\repo", [
       "packages/app/AGENTS.md",

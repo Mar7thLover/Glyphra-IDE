@@ -280,8 +280,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await get().loadRecents();
       // Warm the shared Ctrl+P/composer index across every root.
       void useFileIndexStore.getState().refresh(opened.map((info) => info.path));
-      const primary = useProjectStore.getState().current?.path;
-      if (primary) void useReviewStore.getState().refresh(primary);
+      // Git and review state are refreshed by the single project-change effect
+      // in App.tsx. Kicking them off here too ran two full working-tree scans
+      // concurrently on every folder open.
       await Promise.all(opened.map((info) => startRootWatcher(info.path)));
     } catch (error) {
       // State may be partially applied; restart watchers for whatever roots
@@ -352,7 +353,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       });
       const rootPaths = nextRoots.map((root) => root.path);
       void useFileIndexStore.getState().refresh(rootPaths);
-      if (nextRoots[0]) void useReviewStore.getState().refresh(nextRoots[0].path);
+      // The new primary drives App.tsx's project-change effect, which refreshes
+      // git and review state once.
     } else {
       set({
         roots: nextRoots,

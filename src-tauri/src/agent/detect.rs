@@ -11,7 +11,7 @@ use crate::process_ext::std_command;
 pub struct AgentDetectInfo {
     pub backend: String,
     pub label: String,
-    /// True only when the harness itself (or fixture runtime) is present.
+    /// True only when the harness itself is present.
     pub installed: bool,
     pub detail: String,
     /// Wire protocol Glyphra should use for this harness.
@@ -64,19 +64,6 @@ pub fn detect_agents() -> Vec<AgentDetectInfo> {
             label: "Custom harness".into(),
             installed: false,
             detail: "Add an ACP, JSONL, shell, or HTTP harness in Agent settings.".into(),
-            protocol: "acp".into(),
-            command: None,
-            args: vec![],
-        },
-        AgentDetectInfo {
-            backend: "fixture".into(),
-            label: "Offline fixture".into(),
-            installed: which("node").is_some(),
-            detail: if which("node").is_some() {
-                "Offline fixture agent (Node). Good for UI/workflow tests.".into()
-            } else {
-                "Node.js 20 or newer is required for fixture replay.".into()
-            },
             protocol: "acp".into(),
             command: None,
             args: vec![],
@@ -194,7 +181,6 @@ mod tests {
         assert!(backends.contains(&"codex-acp"));
         assert!(backends.contains(&"opencode-acp"));
         assert!(backends.contains(&"custom-agent"));
-        assert!(backends.contains(&"fixture"));
         let custom = infos.iter().find(|i| i.backend == "custom-agent").unwrap();
         assert!(!custom.installed);
     }
@@ -202,15 +188,10 @@ mod tests {
     #[test]
     fn installed_harnesses_have_commands_and_protocols() {
         let infos = detect_agents();
-        for info in infos
-            .iter()
-            .filter(|info| info.installed && info.backend != "fixture")
-        {
+        for info in infos.iter().filter(|info| info.installed) {
             assert!(info.command.is_some());
             assert!(!info.protocol.is_empty());
         }
-        let fixture = infos.iter().find(|i| i.backend == "fixture").unwrap();
-        assert_eq!(fixture.installed, which("node").is_some());
     }
 
     #[test]

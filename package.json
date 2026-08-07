@@ -18,7 +18,6 @@
     "check:version": "node scripts/check-version-sync.mjs",
     "licenses:check": "node scripts/check-frontend-licenses.mjs && node scripts/generate-third-party.mjs --check",
     "licenses:generate": "node scripts/generate-third-party.mjs",
-    "fixture:agent": "node fixtures/replay-agent.mjs --tape=fixtures/tapes/demo-edit-turn.jsonl",
     "release:build": "pnpm tauri build",
     "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-windows.ps1"
   },

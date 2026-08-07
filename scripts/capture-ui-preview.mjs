@@ -77,8 +77,7 @@ const mockInit = () => {
           return [];
         case "agent_detect":
           return [
-            { backend: "fixture", installed: true, detail: "bundled" },
-            { backend: "codex-acp", installed: false, detail: null },
+            { backend: "codex-acp", installed: true, detail: "Codex preview" },
             { backend: "claude-acp", installed: false, detail: null },
             { backend: "pi-agent", installed: false, detail: null },
           ];

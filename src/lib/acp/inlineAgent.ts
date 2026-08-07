@@ -173,7 +173,7 @@ class InlineAgentRunner {
         "No agent harness is configured for inline editing.",
       );
     }
-    if (info && !info.installed && backend !== "fixture") {
+    if (info && !info.installed) {
       throw new InlineAgentUnavailable(`${backend} is not installed. ${info.detail}`);
     }
 
@@ -195,7 +195,7 @@ class InlineAgentRunner {
             endpoint: custom.endpoint ?? null,
             model: custom.model ?? null,
           }
-        : info && info.backend !== "fixture"
+        : info
           ? {
               protocol: info.protocol as CustomAgentProtocol,
               command: info.command,

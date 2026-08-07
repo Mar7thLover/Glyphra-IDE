@@ -78,7 +78,7 @@ D:\Projects\Glyphra-IDE
 │  ├─ app/            # 布局壳、theme(Mica/明暗)、i18n 初始化、错误边界
 │  ├─ lib/
 │  │  ├─ ipc/         # invoke/channel 薄封装 + gen/(ts-rs 产物,勿手改)
-│  │  ├─ acp/         # AgentBus、TauriStream 桥、fixture 回放器、会话存档
+│  │  ├─ acp/         # AgentBus、TauriStream 桥、会话存档
 │  │  └─ stores/      # zustand: project/editor/agent/review/ui
 │  ├─ features/
 │  │  ├─ editor/      # CM6 装配、tabs、语言懒加载、大文件降级
@@ -93,7 +93,7 @@ D:\Projects\Glyphra-IDE
 │  ├─ src/gitx/       # cli.rs checkpoints.rs(shadow repo)
 │  ├─ src/{pty.rs, search.rs, watcher.rs, vault.rs, settings.rs, perf.rs}
 │  └─ tauri.conf.json / capabilities/
-├─ fixtures/                     # ACP JSONL 录像 + replay-agent.mjs(假 agent)
+├─ fixtures/                     # 协议 framing 测试样本
 ├─ scripts/                      # smoke.ps1、size-check、bindings drift 校验
 └─ .github/workflows/{ci.yml, release.yml}
 ```
@@ -119,7 +119,7 @@ interface AgentSession {  // UI 唯一消费面,纯 ACP 语义
 
 - 客户端能力全开:`fs`(读写经 Glyphra → checkpoint 预像天然捕获)、`terminal`(转接 Rust pty)。
 - 崩溃处理:exit → session 标记 crashed → "重启并恢复"(优先 session/resume、其次 session/load，否则新会话注入本地对话上下文继续);30s 内 3 崩熔断并展示 stderr 尾部。
-- **fixture 录制/回放**:recorder.rs 落双向带时间戳 JSONL;replay-agent.mjs 按时序重放;vitest 以 Web Streams 直喂 SDK 断言 store —— **零 LLM 的确定性 UI 测试**,同一 fixture 供 Rust framing 单测复用。
+- **确定性协议测试**:recorder.rs 可落双向带时间戳 JSONL;vitest 以 Web Streams 直喂 SDK 断言 store，Rust framing 单测复用静态样本。
 
 ## Provider / Auth(核心用户需求)
 
@@ -137,8 +137,8 @@ interface AgentSession {  // UI 唯一消费面,纯 ACP 语义
 → **退出**:冷启动 <1.2s;空闲 RSS <150MB;首屏 JS <300KB gz;CI 绿。
 → **演示**:秒开 → 打开本仓库 → 开 3 文件切标签 → 切暗色 Mica 生效 → 切中文界面。
 
-**M1 Agent 核心** ✅:supervisor(spawn/env/framing/exit/win32job);TauriStream+sdk 接通;codex-acp 全链(initialize→authenticate→session/new→prompt);claude-agent-acp 同;`custom-agent` 兼容层(Pi/任意 CLI:命令模板、环境变量、stdio-jsonl/ACP 模式、record/replay);聊天 UI(virtuoso followOutput+streamdown 懒 chunk);工具卡状态机(pending/in_progress/completed/failed,diff/terminal 折叠);计划卡;审批弹窗(键盘 y/n/a);预设映射+setMode;recorder+真实 fixture 各一组;fixture 回放 vitest;Provider 注册表+vault+自定义 Provider 表单/测试连接/CODEX_CONFIG 物化;onboarding(agent_detect+winget/irm/自定义命令安装卡);会话存档 JSONL+列表(原生恢复或上下文续接)。
-→ **退出**:两家真流跑通;fixture 测试零 LLM 全绿;1k tokens/s 注入不掉帧;自定义 Provider 经 OpenRouter 真连成功且 `~/.codex/config.toml` 校验和不变。
+**M1 Agent 核心** ✅:supervisor(spawn/env/framing/exit/win32job);TauriStream+sdk 接通;codex-acp 全链(initialize→authenticate→session/new→prompt);claude-agent-acp 同;`custom-agent` 兼容层(Pi/任意 CLI:命令模板、环境变量、stdio-jsonl/ACP 模式、record);聊天 UI(virtuoso followOutput+streamdown 懒 chunk);工具卡状态机(pending/in_progress/completed/failed,diff/terminal 折叠);计划卡;审批弹窗(键盘 y/n/a);预设映射+setMode;确定性 framing/store 测试;Provider 注册表+vault+自定义 Provider 表单/测试连接/CODEX_CONFIG 物化;onboarding(agent_detect+winget/irm/自定义命令安装卡);会话存档 JSONL+列表(原生恢复或上下文续接)。
+→ **退出**:两家真流跑通;协议与 store 测试零 LLM 全绿;1k tokens/s 注入不掉帧;自定义 Provider 经 OpenRouter 真连成功且 `~/.codex/config.toml` 校验和不变。
 → **演示**:onboarding 检出 CLI → "标准"预设让 Claude 小重构 → 审批写文件 → 切 Codex+OpenRouter 自定义端点 → 重启后会话列表可见。
 
 **M2 评审与终端** ✅（M2.5 harden 亦已合入）:checkpoints.rs shadow repo(`GIT_DIR=%LOCALAPPDATA%/Glyphra/checkpoints/<hash>/git` + `GIT_WORK_TREE=<ws>` + 临时 GIT_INDEX_FILE;excludes 合并+嵌套 .git 探测);**三层预像:L1 ACP fs 写前捕获 / L2 git-clean 文件取 `git show HEAD:` / L3 turn 前仅快照脏文件集**;每 turn 粒度(非 Cline 的每 tool-call);评审队列(按 turn 分组,±徽标);unifiedMergeView 逐 hunk 接/拒(拒=还原该 hunk 落盘);turn 级整体还原(shadow checkout);与手工编辑共存(基线=预像,不锁文件);xterm 懒加载+webgl/回退+插件;pty.rs(ConPTY、8ms 合帧、job 归属);命令面板(cmdk);全局搜索(流式批推+虚拟列表+跳转);git 状态徽标;**IME 专项手测**;"编辑型 turn" fixture。
@@ -163,7 +163,7 @@ CI(windows-latest 每 PR):release 构建 → `glyphra.exe --smoke` → 断言 TT
 | # | 风险 | 缓解 |
 |---|---|---|
 | 1 | Codex 仅认 Responses API,DeepSeek 直连等不通 | 连接测试器前置报错;文案引导 LiteLLM/OpenRouter;内置 OpenRouter 预设 |
-| 2 | ACP 适配器更名/破坏性变更(已发生过一次) | `npx <pkg>@<pinned>` 锁版;AgentBus 隔离;fixture 回归当金丝雀;升级独立 PR |
+| 2 | ACP 适配器更名/破坏性变更(已发生过一次) | `npx <pkg>@<pinned>` 锁版;AgentBus 隔离;协议回归测试当金丝雀;升级独立 PR |
 | 3 | WebView2+中文 IME+CM6 组合缺陷 | 锁最新 @codemirror/view;M2 IME 手测门禁;composition 期禁自定义 decorations |
 | 4 | portable-pty ConPTY 标志缺失→resize 伪影 | 触发即切 psmux 补丁系/vendor;xterm DOM 回退 |
 | 5 | 适配器需 Node ≥20,部分用户无 Node | onboarding 检测+winget 引导;roadmap:codex app-server 原生 Rust 客户端去 Node 化 |
@@ -173,7 +173,7 @@ CI(windows-latest 每 PR):release 构建 → `glyphra.exe --smoke` → 断言 TT
 
 ## 验证
 
-每里程碑:`cargo test`(framing/checkpoints/搜索,复用 fixtures)+ `vitest`(store/组件/fixture 回放)+ CI smoke(预算)+ ts-rs drift + size-limit;里程碑末按"演示脚本"真机手测;M2 起固定 IME 检查单;M3 干净 Win11 虚拟机装/升级演练;tauri-driver e2e 冒烟可选不作门禁[Windows 稳定性实现时复核]。
+每里程碑:`cargo test`(framing/checkpoints/搜索,复用静态样本)+ `vitest`(store/组件)+ CI smoke(预算)+ ts-rs drift + size-limit;里程碑末按"演示脚本"真机手测;M2 起固定 IME 检查单;M3 干净 Win11 虚拟机装/升级演练;tauri-driver e2e 冒烟可选不作门禁[Windows 稳定性实现时复核]。
 
 ## Roadmap(v1 后)
 

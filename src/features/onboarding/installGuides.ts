@@ -16,7 +16,7 @@ export function runtimeGuides(os: HostOs): InstallGuide[] {
     {
       id: "node",
       title: "Node.js ≥ 20",
-      summary: "Runs native-protocol bridges and the offline fixture agent; no npx adapter download is needed.",
+      summary: "Runs the native-protocol bridges used by supported Agent CLIs.",
       required: true,
       commands: windows
         ? [
@@ -95,13 +95,6 @@ export function agentGuides(os: HostOs): InstallGuide[] {
           command: "npx -y @earendil-works/pi-coding-agent",
         },
       ],
-    },
-    {
-      id: "fixture",
-      title: "Fixture agent",
-      summary: "Offline ACP peer bundled with Glyphra — needs Node only.",
-      required: false,
-      commands: [{ label: "bundled", command: "node fixtures/replay-agent.mjs" }],
     },
   ];
 }

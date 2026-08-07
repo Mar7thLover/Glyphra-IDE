@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   ipc,
   type CkptFileContents,
@@ -9,6 +10,23 @@ import {
 } from "@/lib/ipc/ipc";
 
 export const WORKTREE_GROUP_ID = "__working-tree__";
+
+/** Every `gitDiffFile` spawns git subprocesses and returns both revisions of the
+ *  file in full. Fanning that out over a whole working tree — which is what
+ *  opening a folder used to do — launches one process pair per changed or
+ *  untracked file at once and pulls every one of them into memory. Newly opened
+ *  folders routinely report thousands of untracked files, so the fan-out is
+ *  bounded on three axes: how many entries are tracked at all, how many get an
+ *  eager diff, and how many of those run concurrently. */
+const DIFF_CONCURRENCY = 6;
+/** Working-tree entries kept in the store. Beyond this the list is unusable as
+ *  a review queue anyway, and each entry costs an object plus a summary. */
+export const MAX_WORKING_TREE_FILES = 2_000;
+/** Entries diffed up front. The rest stay placeholders until selected —
+ *  `selectFile` already hydrates on demand. */
+export const MAX_EAGER_WORKING_TREE_DIFFS = 100;
+/** Checkpoint files given a hunk summary per refresh. */
+const MAX_CHECKPOINT_SUMMARIES = 2_000;
 
 export type ReviewDecision = "accepted" | "rejected";
 
@@ -203,31 +221,37 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   refresh: async (projectPath) => {
     set({ loading: true, error: null });
     try {
-      const [turns, statuses] = await Promise.all([
+      const [turns, allStatuses] = await Promise.all([
         ipc.ckptListTurns(projectPath),
         ipc.gitStatus(projectPath),
       ]);
-      const checkpointSummaries = await Promise.all(
-        turns.flatMap((turn) =>
-          turn.files.map(async (file) => {
-            const key = reviewFileKey(turn.id, file.path);
-            try {
-              const result = await ipc.ckptHunks(projectPath, turn.id, file.path);
-              return [key, result.summary] as const;
-            } catch {
-              return [key, EMPTY_SUMMARY] as const;
-            }
-          }),
-        ),
+      const statuses = allStatuses.slice(0, MAX_WORKING_TREE_FILES);
+      const checkpointSummaries = await mapWithConcurrency(
+        checkpointFiles(turns).slice(0, MAX_CHECKPOINT_SUMMARIES),
+        DIFF_CONCURRENCY,
+        async (file) => {
+          const key = reviewFileKey(file.turnId, file.path);
+          try {
+            const result = await ipc.ckptHunks(projectPath, file.turnId, file.path);
+            return [key, result.summary] as const;
+          } catch {
+            return [key, EMPTY_SUMMARY] as const;
+          }
+        },
       );
-      const workingTree = await Promise.all(
-        statuses.map(async (entry) => {
+      const workingTree = await mapWithConcurrency(
+        statuses,
+        DIFF_CONCURRENCY,
+        async (entry, index) => {
+          if (index >= MAX_EAGER_WORKING_TREE_DIFFS) {
+            return placeholderWorktree(entry.path, entry.status);
+          }
           try {
             return await ipc.gitDiffFile(projectPath, entry.path, "HEAD");
           } catch {
             return placeholderWorktree(entry.path, entry.status);
           }
-        }),
+        },
       );
       const summaries = Object.fromEntries(checkpointSummaries);
       for (const file of workingTree) {
@@ -277,7 +301,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   refreshWorkingTree: async (projectPath) => {
     try {
-      const statuses = await ipc.gitStatus(projectPath);
+      const statuses = (await ipc.gitStatus(projectPath)).slice(0, MAX_WORKING_TREE_FILES);
       const existing = new Map(get().workingTree.map((file) => [file.path, file]));
       const workingTree = statuses.map(
         (entry) => existing.get(entry.path) ?? placeholderWorktree(entry.path, entry.status),

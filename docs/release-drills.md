@@ -17,9 +17,9 @@ Glyphra installation.
    Programs entry, desktop shortcut (if selected), and Explorer file/folder
    context menu entries.
 4. Launch Glyphra, open a folder, edit and save a UTF-8 file, open the terminal,
-   and run the bundled offline replay agent.
+   and run a smoke turn against an installed Agent CLI.
 5. Close every Glyphra window. In Task Manager, confirm that no `glyphra.exe`,
-   replay-agent, harness-bridge, shell, or PTY child remains.
+   harness-bridge, shell, or PTY child remains.
 6. Uninstall Glyphra and confirm the application and Explorer registrations are
    removed.
 7. Repeat steps 1–6 with the MSI installer.

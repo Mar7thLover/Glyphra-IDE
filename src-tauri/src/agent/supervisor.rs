@@ -412,14 +412,6 @@ fn resolve_command(
             "npx".into(),
             vec!["-y".into(), "@earendil-works/pi-coding-agent".into()],
         )),
-        "fixture" => {
-            let script = runtime_resources::resolve(app, "replay-agent.mjs")?;
-            let mut args = vec![script.to_string_lossy().to_string()];
-            if let Ok(tape) = runtime_resources::resolve(app, "demo-edit-turn.jsonl") {
-                args.push(format!("--tape={}", tape.display()));
-            }
-            Ok(("node".into(), args))
-        }
         "custom-agent" => Err("custom-agent requires an explicit command".into()),
         other => Err(format!("unknown agent backend: {other}")),
     }

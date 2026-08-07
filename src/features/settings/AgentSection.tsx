@@ -77,7 +77,6 @@ export default function AgentSection() {
           onChange={(v) => setPref("defaultBackend", v as StartableBackend)}
         >
           <option value="auto">Auto-detect installed harness</option>
-          <option value="fixture">{t("agent.fixture")}</option>
           <option value="codex-acp">Codex (native app-server)</option>
           <option value="claude-acp">Claude (native stream-json)</option>
           <option value="pi-agent">Pi (native JSON)</option>

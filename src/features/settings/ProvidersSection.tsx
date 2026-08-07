@@ -7,6 +7,21 @@ import { useProviderStore } from "@/lib/stores/providerStore";
 
 import { SettingsField, SettingsInput, SettingsSelect } from "./SettingsField";
 
+const PROVIDER_DEFAULTS: Record<
+  ProviderKind,
+  { name: string; baseUrl: string; model: string }
+> = {
+  "openai-key": { name: "OpenAI", baseUrl: "", model: "gpt-5" },
+  "custom-openai": { name: "Custom OpenAI", baseUrl: "", model: "gpt-4.1-mini" },
+  "anthropic-key": {
+    name: "Anthropic",
+    baseUrl: "",
+    model: "claude-sonnet-4-20250514",
+  },
+  "codex-login": { name: "Codex / ChatGPT", baseUrl: "", model: "" },
+  "claude-subscription": { name: "Claude", baseUrl: "", model: "" },
+};
+
 /** Models + API keys + subscription-backed providers. */
 export default function ProvidersSection() {
   const { t } = useTranslation();
@@ -24,34 +39,58 @@ export default function ProvidersSection() {
   const queryUsage = useProviderStore((s) => s.queryUsage);
   const openRouterPreset = useProviderStore((s) => s.openRouterPreset);
 
-  const [name, setName] = useState("Custom OpenAI");
-  const [baseUrl, setBaseUrl] = useState("https://openrouter.ai/api/v1");
-  const [model, setModel] = useState("openai/gpt-4.1-mini");
+  const [name, setName] = useState(PROVIDER_DEFAULTS["openai-key"].name);
+  const [baseUrl, setBaseUrl] = useState(PROVIDER_DEFAULTS["openai-key"].baseUrl);
+  const [model, setModel] = useState(PROVIDER_DEFAULTS["openai-key"].model);
   const [secret, setSecret] = useState("");
-  const [kind, setKind] = useState<ProviderKind>("custom-openai");
+  const [kind, setKind] = useState<ProviderKind>("openai-key");
   const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const needsEndpoint = kind === "custom-openai" || kind === "openai-key";
+  const needsEndpoint = kind === "custom-openai";
+  const needsModel =
+    kind === "custom-openai" || kind === "openai-key" || kind === "anthropic-key";
   const needsSecret = kind !== "codex-login" && kind !== "claude-subscription";
+
+  const changeKind = (nextKind: ProviderKind) => {
+    const defaults = PROVIDER_DEFAULTS[nextKind];
+    setKind(nextKind);
+    setName(defaults.name);
+    setBaseUrl(defaults.baseUrl);
+    setModel(defaults.model);
+    setSecret("");
+    setFormError(null);
+  };
 
   const save = async () => {
     setFormError(null);
+    if (!name.trim()) {
+      setFormError(t("settings.nameRequired"));
+      return;
+    }
     if (needsSecret && !secret.trim()) {
       setFormError(t("settings.secretRequired"));
       return;
     }
-    await upsert({
+    if (needsEndpoint && !baseUrl.trim()) {
+      setFormError(t("settings.endpointRequired"));
+      return;
+    }
+    if (needsModel && !model.trim()) {
+      setFormError(t("settings.modelRequired"));
+      return;
+    }
+    const saved = await upsert({
       kind,
-      name,
-      baseUrl: needsEndpoint ? baseUrl : null,
-      model: needsEndpoint ? model : null,
-      secret: secret || null,
+      name: name.trim(),
+      baseUrl: needsEndpoint ? baseUrl.trim() : null,
+      model: needsModel ? model.trim() : null,
+      secret: secret.trim() || null,
     });
-    setSecret("");
+    if (saved) setSecret("");
   };
 
   return (
@@ -63,26 +102,46 @@ export default function ProvidersSection() {
           {t("settings.addProvider")}
         </div>
         <SettingsField label={t("settings.providerKind")}>
-          <SettingsSelect value={kind} onChange={(v) => setKind(v as ProviderKind)}>
-            <option value="custom-openai">{t("settings.kindCustomOpenai")}</option>
+          <SettingsSelect value={kind} onChange={(v) => changeKind(v as ProviderKind)}>
             <option value="openai-key">{t("settings.kindOpenai")}</option>
             <option value="anthropic-key">{t("settings.kindAnthropic")}</option>
             <option value="codex-login">{t("settings.kindCodex")}</option>
             <option value="claude-subscription">{t("settings.kindClaudeSub")}</option>
+            <option value="custom-openai">{t("settings.kindCustomOpenai")}</option>
           </SettingsSelect>
         </SettingsField>
+        <p className="rounded-md border border-line bg-hover px-2.5 py-2 text-[10px] leading-relaxed text-ink-3">
+          {t(`settings.${
+            kind === "openai-key"
+              ? "kindOpenaiHint"
+              : kind === "anthropic-key"
+                ? "kindAnthropicHint"
+                : kind === "codex-login"
+                  ? "kindCodexHint"
+                  : kind === "claude-subscription"
+                    ? "kindClaudeSubHint"
+                    : "kindCustomOpenaiHint"
+          }`)}
+        </p>
         <SettingsField label={t("settings.providerName")}>
           <SettingsInput value={name} onChange={(e) => setName(e.target.value)} />
         </SettingsField>
         {needsEndpoint && (
-          <>
-            <SettingsField label="base_url">
-              <SettingsInput value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-            </SettingsField>
-            <SettingsField label="model">
-              <SettingsInput value={model} onChange={(e) => setModel(e.target.value)} />
-            </SettingsField>
-          </>
+          <SettingsField
+            label={t("settings.providerEndpoint")}
+            hint={t("settings.providerEndpointHint")}
+          >
+            <SettingsInput
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://example.com/v1"
+            />
+          </SettingsField>
+        )}
+        {needsModel && (
+          <SettingsField label={t("settings.providerModel")}>
+            <SettingsInput value={model} onChange={(e) => setModel(e.target.value)} />
+          </SettingsField>
         )}
         {needsSecret && (
           <SettingsField label={t("settings.providerSecret")}>
@@ -106,20 +165,22 @@ export default function ProvidersSection() {
             <Plus className="size-3" />
             {t("settings.providerSave")}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              const preset = openRouterPreset();
-              setKind(preset.kind);
-              setName(preset.name);
-              setBaseUrl(preset.baseUrl);
-              setModel(preset.model);
-              setFormError(t("settings.openRouterNeedKey"));
-            }}
-            className="h-7 rounded-md border border-line px-2 text-[11px] text-ink-2 hover:bg-hover"
-          >
-            OpenRouter
-          </button>
+          {kind === "custom-openai" && (
+            <button
+              type="button"
+              onClick={() => {
+                const preset = openRouterPreset();
+                setKind(preset.kind);
+                setName(preset.name);
+                setBaseUrl(preset.baseUrl);
+                setModel(preset.model);
+                setFormError(t("settings.openRouterNeedKey"));
+              }}
+              className="h-7 rounded-md border border-line px-2 text-[11px] text-ink-2 hover:bg-hover"
+            >
+              OpenRouter
+            </button>
+          )}
         </div>
       </div>
 

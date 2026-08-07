@@ -120,9 +120,9 @@ Both formats use the system WebView2 runtime and download the Microsoft
 bootstrapper only when WebView2 is missing. The NSIS installer supports silent
 install with `/S`; MSI supports `msiexec /i <package.msi> /quiet`.
 
-The build also bundles the agent protocol bridge and offline fixture under the
-installed `runtime/` directory. `pnpm build:runtime` regenerates these standalone
-Node payloads; release builds run it automatically. Background CLI processes use
+The build also bundles the agent protocol bridges under the installed `runtime/`
+directory. `pnpm build:runtime` regenerates these standalone Node payloads;
+release builds run it automatically. Background CLI processes use
 hidden Windows process creation so Git, Node, PowerShell, and provider probes do
 not open external console windows.
 

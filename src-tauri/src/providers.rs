@@ -100,15 +100,23 @@ pub fn upsert(app: &AppHandle, input: ProviderUpsert) -> Result<ProviderRecord, 
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
+    let base_url = match &input.kind {
+        ProviderKind::CustomOpenai => Some(
+            input
+                .base_url
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| "custom OpenAI provider endpoint is required".to_string())?,
+        ),
+        _ => None,
+    };
     if let Some(secret) = input.secret.as_ref().filter(|s| !s.is_empty()) {
         vault::set_secret(app, &id, secret)?;
     }
-
     let record = ProviderRecord {
         id: id.clone(),
         kind: input.kind,
         name: input.name,
-        base_url: input.base_url,
+        base_url,
         model: input.model,
         has_secret: vault::probe(app, &id)?,
     };
@@ -154,9 +162,13 @@ pub fn materialize_spawn_env(
             );
             env.insert(env_key.clone(), secret);
 
-            let base_url = provider
-                .base_url
-                .unwrap_or_else(|| "https://api.openai.com/v1".into());
+            let base_url = match provider.kind {
+                ProviderKind::OpenaiKey => "https://api.openai.com/v1".into(),
+                ProviderKind::CustomOpenai => provider
+                    .base_url
+                    .unwrap_or_else(|| "https://api.openai.com/v1".into()),
+                _ => unreachable!(),
+            };
             let model = provider.model.unwrap_or_else(|| "gpt-5".into());
             let short = &provider.id[..provider.id.len().min(8)];
             let provider_key = format!("glyphra_{short}");
@@ -361,14 +373,16 @@ async fn usage_api(
 ) -> Result<ProviderUsageSnapshot, String> {
     let secret = vault::read_secret(app, &provider.id)?
         .ok_or_else(|| "provider secret missing".to_string())?;
-    let base = provider
-        .base_url
-        .as_deref()
-        .unwrap_or(match provider.kind {
-            ProviderKind::AnthropicKey => "https://api.anthropic.com/v1",
-            _ => "https://api.openai.com/v1",
-        })
-        .trim_end_matches('/');
+    let base = match provider.kind {
+        ProviderKind::AnthropicKey => "https://api.anthropic.com/v1",
+        ProviderKind::OpenaiKey => "https://api.openai.com/v1",
+        ProviderKind::CustomOpenai => provider
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com/v1"),
+        ProviderKind::CodexLogin | ProviderKind::ClaudeSubscription => unreachable!(),
+    }
+    .trim_end_matches('/');
     let client = reqwest::Client::new();
     let mut request = client.get(format!("{base}/models"));
     request = match provider.kind {
@@ -550,11 +564,15 @@ pub async fn test_connection(
         ProviderKind::OpenaiKey | ProviderKind::CustomOpenai => {}
     }
 
-    let base = provider
-        .base_url
-        .as_deref()
-        .unwrap_or("https://api.openai.com/v1")
-        .trim_end_matches('/');
+    let base = match provider.kind {
+        ProviderKind::OpenaiKey => "https://api.openai.com/v1",
+        ProviderKind::CustomOpenai => provider
+            .base_url
+            .as_deref()
+            .unwrap_or("https://api.openai.com/v1"),
+        _ => unreachable!(),
+    }
+    .trim_end_matches('/');
     let url = format!("{base}/responses");
     let secret = vault::read_secret(app, &provider.id)?.unwrap_or_default();
     if secret.is_empty() {

@@ -63,12 +63,19 @@ export function rankFiles(files: string[], query: string, limit = 40): string[] 
   return scored.slice(0, limit).map((item) => item.path);
 }
 
-export function collectFolders(files: string[]): string[] {
+/** Folders derived per project open. Every distinct path prefix becomes its own
+ *  string, so an unbounded derivation costs several times the file index it is
+ *  built from — on the main thread, while the workspace is loading. The result
+ *  only feeds a ranked `@`-mention list, which shows a handful at a time. */
+const MAX_INDEX_FOLDERS = 20_000;
+
+export function collectFolders(files: string[], max = MAX_INDEX_FOLDERS): string[] {
   const folders = new Set<string>();
   for (const file of files) {
     const segments = file.replace(/\\/g, "/").split("/");
     for (let index = 1; index < segments.length; index += 1) {
       folders.add(segments.slice(0, index).join("/"));
+      if (folders.size >= max) return [...folders].sort((a, b) => a.localeCompare(b));
     }
   }
   return [...folders].sort((a, b) => a.localeCompare(b));
@@ -193,6 +200,9 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
     const symbols: ProjectSymbol[] = [];
     try {
       for (const root of roots) {
+        // The cap is global, not per root: a later root must not be able to
+        // push the index past it.
+        if (files.length >= MAX_INDEX_FILES) break;
         const raw = await ipc.gitExecReadonly(root, [
           "ls-files",
           "-co",
@@ -204,14 +214,14 @@ export const useFileIndexStore = create<FileIndexState>((set, get) => ({
             .map((line) => line.trim())
             .filter(Boolean)
             .map((relative) => relative.replace(/\\/g, "/")),
-        );
+        ).slice(0, MAX_INDEX_FILES);
         for (const relative of relativeFiles) {
+          if (files.length >= MAX_INDEX_FILES) break;
           const absolute = joinRoot(root, relative);
           if (!seen.has(absolute)) {
             seen.add(absolute);
             files.push(absolute);
           }
-          if (files.length >= MAX_INDEX_FILES) break;
         }
         rules.push(...discoverRules(root, relativeFiles));
         // Symbols come back with root-relative paths; rebase to absolute so

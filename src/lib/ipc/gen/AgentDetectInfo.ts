@@ -2,7 +2,7 @@
 
 export type AgentDetectInfo = { backend: string, label: string, 
 /**
- * True only when the harness itself (or fixture runtime) is present.
+ * True only when the harness itself is present.
  */
 installed: boolean, detail: string, 
 /**

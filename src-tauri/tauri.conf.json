@@ -54,9 +54,7 @@
     "resources": {
       "../THIRD-PARTY.md": "THIRD-PARTY.md",
       "resources/runtime/harness-bridge.mjs": "runtime/harness-bridge.mjs",
-      "resources/runtime/codex-app-server-daemon.mjs": "runtime/codex-app-server-daemon.mjs",
-      "resources/runtime/replay-agent.mjs": "runtime/replay-agent.mjs",
-      "resources/runtime/demo-edit-turn.jsonl": "runtime/demo-edit-turn.jsonl"
+      "resources/runtime/codex-app-server-daemon.mjs": "runtime/codex-app-server-daemon.mjs"
     },
     "icon": [
       "icons/32x32.png",

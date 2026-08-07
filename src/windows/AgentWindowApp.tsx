@@ -110,7 +110,6 @@ export default function AgentWindowApp() {
   );
   const backendInfo = backends.find((b) => b.backend === backend);
   const backendReady =
-    backend === "fixture" ||
     Boolean(backendInfo?.installed) ||
     (backend.startsWith("custom:") &&
       customHarnesses.some((item) => `custom:${item.id}` === backend));

@@ -7,7 +7,7 @@ export type AgentBackendKind =
   | "opencode-acp"
   | "custom-agent";
 
-export type StartableBackend = AgentBackendKind | "auto" | "fixture" | `custom:${string}`;
+export type StartableBackend = AgentBackendKind | "auto" | `custom:${string}`;
 
 /** Maps to INITIAL_AGENT_MODE / session set_mode. */
 export type AgentPermissionMode = "safe" | "standard" | "unleashed";

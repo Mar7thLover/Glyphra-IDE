@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { build } from "esbuild";
@@ -11,7 +11,6 @@ await mkdir(output, { recursive: true });
 for (const entry of [
   "scripts/harness-bridge.mjs",
   "scripts/codex-app-server-daemon.mjs",
-  "fixtures/replay-agent.mjs",
 ]) {
   await build({
     entryPoints: [resolve(root, entry)],
@@ -24,8 +23,3 @@ for (const entry of [
     sourcemap: false,
   });
 }
-
-await copyFile(
-  resolve(root, "fixtures/tapes/demo-edit-turn.jsonl"),
-  resolve(output, "demo-edit-turn.jsonl"),
-);

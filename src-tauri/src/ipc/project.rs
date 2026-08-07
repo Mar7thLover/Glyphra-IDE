@@ -371,7 +371,14 @@ const WATCH_PRUNE_DIRS: [&str; 10] = [
     "out",
     "logs",
 ];
-const MAX_WATCH_DIRS: usize = 8_000;
+/// Registration is not free memory: `notify`'s Windows backend keeps one
+/// `ReadDirectoryChangesW` request per watched directory, each holding a 16 KiB
+/// buffer plus a directory handle, a semaphore and an OVERLAPPED — roughly
+/// 16 MiB and 4 000 kernel handles per 1 000 directories, *per workspace root*.
+/// The explorer only needs the root and the levels near it, and breadth-first
+/// collection puts those first, so cap the registration low enough that a
+/// multi-root workspace over an asset tree stays affordable.
+const MAX_WATCH_DIRS: usize = 2_048;
 
 /// Bounded breadth-first collection of directories to watch (root first, then
 /// shallow directories before deep ones). Pruned names are skipped and the
@@ -408,12 +415,14 @@ fn collect_watch_dirs(root: &std::path::Path) -> Vec<PathBuf> {
     dirs
 }
 
-#[tauri::command]
-pub fn fs_watch_start(
-    state: State<'_, AppState>,
+/// Directory walk + watch registration for one root. Sync, and slow enough on a
+/// cold tree (one `read_dir` and one OS watch per directory) that it must never
+/// run on the thread that serves the UI.
+fn build_watcher(
     path: String,
     channel: Channel<FsEvent>,
-) -> Result<u64, String> {
+    watcher_id: u64,
+) -> Result<RecommendedWatcher, String> {
     let requested = PathBuf::from(&path)
         .canonicalize()
         .map_err(|err| format!("failed to resolve watch path: {err}"))?;
@@ -432,10 +441,6 @@ pub fn fs_watch_start(
             requested.display()
         ));
     };
-    let watcher_id = state
-        .next_watcher_id
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        + 1;
 
     let mut watcher = RecommendedWatcher::new(
         move |result: notify::Result<Event>| match result {
@@ -476,6 +481,24 @@ pub fn fs_watch_start(
         }
     }
 
+    Ok(watcher)
+}
+
+#[tauri::command]
+pub async fn fs_watch_start(
+    state: State<'_, AppState>,
+    path: String,
+    channel: Channel<FsEvent>,
+) -> Result<u64, String> {
+    let watcher_id = state
+        .next_watcher_id
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
+    let watcher =
+        tauri::async_runtime::spawn_blocking(move || build_watcher(path, channel, watcher_id))
+            .await
+            .map_err(|err| format!("watch task failed: {err}"))??;
+
     state
         .watchers
         .lock()
@@ -487,11 +510,17 @@ pub fn fs_watch_start(
 
 #[tauri::command]
 pub fn fs_watch_stop(state: State<'_, AppState>, watcher_id: u64) -> Result<(), String> {
-    state
+    let watcher = state
         .watchers
         .lock()
         .map_err(|_| "watcher lock poisoned".to_string())?
         .remove(&watcher_id);
+    // Dropping the watcher cancels and joins one pending OS read per watched
+    // directory. Doing that inline would stall the UI thread for as long as
+    // registration did, so hand the teardown to the blocking pool.
+    if let Some(watcher) = watcher {
+        tauri::async_runtime::spawn_blocking(move || drop(watcher));
+    }
     Ok(())
 }
 
@@ -1044,17 +1073,21 @@ const hydrateContext = () => {};
     fn watch_dirs_respect_the_registration_cap() {
         let root = std::env::temp_dir().join(format!("glyphra-watch-cap-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        // 3_000 subdirectories: the cap is 8_000, so every directory registers.
+        // 6_000 directories against a 2_048 cap: registration must stop at the
+        // cap instead of scaling with the tree (each watch costs ~16 KiB and
+        // two kernel handles).
         for index in 0..3_000 {
             std::fs::create_dir_all(root.join(format!("d{index}/leaf"))).unwrap();
         }
         let dirs = collect_watch_dirs(&root);
+        assert_eq!(dirs.len(), MAX_WATCH_DIRS, "{} dirs registered", dirs.len());
+        // Breadth-first: the root and its immediate children win the budget, so
+        // the explorer's visible levels stay watched.
+        assert_eq!(dirs[0], root);
         assert!(
-            dirs.len() <= MAX_WATCH_DIRS,
-            "{} dirs registered",
-            dirs.len()
+            dirs.iter().all(|dir| dir.strip_prefix(&root).is_ok()),
+            "watch set escaped the root"
         );
-        assert_eq!(dirs.len(), 1 + 3_000 + 3_000);
 
         let _ = std::fs::remove_dir_all(&root);
     }

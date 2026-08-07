@@ -46,12 +46,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
             .join(RUNTIME_DIR);
-        for name in [
-            "harness-bridge.mjs",
-            "codex-app-server-daemon.mjs",
-            "replay-agent.mjs",
-            "demo-edit-turn.jsonl",
-        ] {
+        for name in ["harness-bridge.mjs", "codex-app-server-daemon.mjs"] {
             assert!(root.join(name).is_file(), "missing runtime resource {name}");
         }
     }

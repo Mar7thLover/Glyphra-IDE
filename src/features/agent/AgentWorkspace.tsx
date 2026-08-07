@@ -131,14 +131,12 @@ export default function AgentWorkspace() {
 
   const backendInfo = backends.find((b) => b.backend === backend);
   const backendReady =
-    backend === "fixture" ||
     Boolean(backendInfo?.installed) ||
     (backend.startsWith("custom:") &&
       customHarnesses.some((item) => `custom:${item.id}` === backend));
 
   const running = session?.status === "running" || session?.status === "busy";
   const crashed = session?.status === "crashed";
-  const isFixture = backend === "fixture";
   const readOnly = Boolean(viewingArchiveId);
   const hasConversation = Boolean(
     session ||
@@ -298,12 +296,6 @@ export default function AgentWorkspace() {
         {mode === "unleashed" && (
           <Notice tone="danger">
             <span>{t("agent.modeUnleashedWarn")}</span>
-          </Notice>
-        )}
-
-        {isFixture && !running && !readOnly && (
-          <Notice>
-            <span>{t("agent.fixtureHint")}</span>
           </Notice>
         )}
 

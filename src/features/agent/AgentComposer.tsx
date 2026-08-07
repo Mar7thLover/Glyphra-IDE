@@ -91,7 +91,6 @@ type MentionItem = {
 
 export function providerCompatible(backend: StartableBackend, kind: string): boolean {
   if (!kind) return true;
-  if (backend === "fixture") return true;
   if (backend === "codex-acp") {
     return kind === "custom-openai" || kind === "openai-key" || kind === "codex-login";
   }
@@ -110,9 +109,7 @@ const backendLabel = (backend: string) =>
         ? "Pi"
         : backend === "opencode-acp"
           ? "OpenCode"
-        : backend === "fixture"
-          ? "Fixture"
-          : backend;
+        : backend;
 
 /**
  * Floating glass composer shared by the docked panel and the Agents window.
@@ -199,7 +196,7 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
   const customHarness = backend.startsWith("custom:")
     ? customHarnesses.find((item) => `custom:${item.id}` === backend)
     : null;
-  const backendReady = backend === "fixture" || Boolean(backendInfo?.installed) || Boolean(customHarness);
+  const backendReady = Boolean(backendInfo?.installed) || Boolean(customHarness);
   const running =
     session?.status === "running" ||
     session?.status === "busy" ||
@@ -739,7 +736,7 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
         value: b.backend,
         label: backendLabel(b.backend),
         hint: b.installed ? b.detail || t("agent.ready") : t("agent.missing"),
-        disabled: !b.installed && b.backend !== "fixture",
+        disabled: !b.installed,
       })),
     ...customHarnesses.map((harness) => ({
       value: `custom:${harness.id}`,
@@ -884,12 +881,6 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
       ),
   );
   const showProvider = Boolean(providerId) || customNeedsProvider;
-  const attachedRuleCount = projectRules.filter((rule) =>
-    references.some(
-      (reference) => reference.kind === "rule" && reference.path === rule.path,
-    ),
-  ).length;
-
   const ModeIcon = mode === "safe" ? Shield : mode === "unleashed" ? Zap : ShieldCheck;
 
   // Everything past the essentials (mode / model) folds behind one chevron so the
@@ -1186,100 +1177,6 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
             </button>
             {optionsExpanded && (
               <>
-                <div className="relative">
-                  <button
-                    type="button"
-                    aria-expanded={rulesOpen}
-                    onClick={() => setRulesOpen((open) => !open)}
-                    title={t("agent.rulesHint")}
-                    className="inline-flex h-6 items-center gap-1 rounded-full border border-line bg-raised/55 px-2 text-[11px] text-ink-2 transition-colors hover:border-line-strong hover:bg-raised hover:text-ink"
-                  >
-                    {indexLoading ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      <ScrollText className="size-3" strokeWidth={1.7} />
-                    )}
-                    {t("agent.rulesStatus", { count: projectRules.length })}
-                    {attachedRuleCount > 0 && (
-                      <span className="rounded-full bg-accent/15 px-1 text-[9px] text-accent">
-                        {attachedRuleCount}
-                      </span>
-                    )}
-                    <ChevronDown
-                      className={`size-2.5 transition-transform ${rulesOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {rulesOpen && (
-                    <div className="glass-float pop-in absolute bottom-full left-0 z-50 mb-2 w-80 rounded-xl p-1.5">
-                      <div className="px-2 pb-1.5 pt-0.5">
-                        <div className="text-[11px] font-medium text-ink">
-                          {t("agent.rulesTitle")}
-                        </div>
-                        <div className="mt-0.5 text-[10px] leading-relaxed text-ink-3">
-                          {t("agent.rulesDescription")}
-                        </div>
-                      </div>
-                      {projectRules.map((rule) => {
-                        const attached = references.some(
-                          (reference) =>
-                            reference.kind === "rule" && reference.path === rule.path,
-                        );
-                        return (
-                          <div
-                            key={rule.path}
-                            className="flex items-center gap-1 rounded-lg hover:bg-hover"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleRuleReference(rule)}
-                              className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
-                              title={
-                                attached
-                                  ? t("agent.rulesDetach")
-                                  : t("agent.rulesAttach")
-                              }
-                            >
-                              <span
-                                className={`grid size-4 shrink-0 place-items-center rounded border ${
-                                  attached
-                                    ? "border-accent bg-accent text-white"
-                                    : "border-line-strong text-transparent"
-                                }`}
-                              >
-                                <Check className="size-2.5" strokeWidth={2.5} />
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block truncate text-[11px] font-medium text-ink">
-                                  {rule.name}
-                                </span>
-                                <span className="block truncate font-mono text-[9.5px] text-ink-3">
-                                  {rule.relativePath}
-                                </span>
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRulesOpen(false);
-                                void useEditorStore.getState().openFile(rule.path);
-                              }}
-                              className="mr-1 rounded-md p-1.5 text-ink-3 hover:bg-active hover:text-ink"
-                              title={t("agent.rulesOpen")}
-                              aria-label={t("agent.rulesOpen")}
-                            >
-                              <FileCode2 className="size-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      {!indexLoading && projectRules.length === 0 && (
-                        <div className="px-2 py-3 text-center text-[10.5px] text-ink-3">
-                          {t("agent.rulesEmpty")}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
                 {!conversationStarted && (
                   <PillSelect
                     value={backend}
@@ -1358,6 +1255,91 @@ export default function AgentComposer({ cwd }: { cwd?: string }) {
                     renderLabel={() => usageLabel}
                   />
                 )}
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-expanded={rulesOpen}
+                    onClick={() => setRulesOpen((open) => !open)}
+                    title={t("agent.rulesHint")}
+                    className="inline-flex h-6 items-center gap-1 rounded-full border border-line bg-raised/55 px-2 text-[11px] text-ink-2 transition-colors hover:border-line-strong hover:bg-raised hover:text-ink"
+                  >
+                    {indexLoading ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <ScrollText className="size-3" strokeWidth={1.7} />
+                    )}
+                    {t("agent.rulesStatus")}
+                    <ChevronDown
+                      className={`size-2.5 transition-transform ${rulesOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {rulesOpen && (
+                    <div className="glass-float pop-in absolute bottom-full right-0 z-50 mb-2 w-80 rounded-xl p-1.5">
+                      <div className="px-2 pb-1.5 pt-0.5">
+                        <div className="text-[11px] font-medium text-ink">
+                          {t("agent.rulesTitle")}
+                        </div>
+                        <div className="mt-0.5 text-[10px] leading-relaxed text-ink-3">
+                          {t("agent.rulesDescription")}
+                        </div>
+                      </div>
+                      {projectRules.map((rule) => {
+                        const attached = references.some(
+                          (reference) =>
+                            reference.kind === "rule" && reference.path === rule.path,
+                        );
+                        return (
+                          <div
+                            key={rule.path}
+                            className="flex items-center gap-1 rounded-lg hover:bg-hover"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleRuleReference(rule)}
+                              className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+                              title={attached ? t("agent.rulesDetach") : t("agent.rulesAttach")}
+                            >
+                              <span
+                                className={`grid size-4 shrink-0 place-items-center rounded border ${
+                                  attached
+                                    ? "border-accent bg-accent text-white"
+                                    : "border-line-strong text-transparent"
+                                }`}
+                              >
+                                <Check className="size-2.5" strokeWidth={2.5} />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-[11px] font-medium text-ink">
+                                  {rule.name}
+                                </span>
+                                <span className="block truncate font-mono text-[9.5px] text-ink-3">
+                                  {rule.relativePath}
+                                </span>
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRulesOpen(false);
+                                void useEditorStore.getState().openFile(rule.path);
+                              }}
+                              className="mr-1 rounded-md p-1.5 text-ink-3 hover:bg-active hover:text-ink"
+                              title={t("agent.rulesOpen")}
+                              aria-label={t("agent.rulesOpen")}
+                            >
+                              <FileCode2 className="size-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {!indexLoading && projectRules.length === 0 && (
+                        <div className="px-2 py-3 text-center text-[10.5px] text-ink-3">
+                          {t("agent.rulesEmpty")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
                 {!conversationStarted && showProvider && providerOptions.length > 1 && (
                   <PillSelect
                     value={providerId ?? ""}

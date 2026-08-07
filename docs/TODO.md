@@ -151,5 +151,5 @@ pnpm release:windows
 ```
 
 Any editor decoration change must pass [ime-checklist.md](./ime-checklist.md).
-Agent protocol changes must pass `pnpm fixture:agent` plus a live smoke test
-against at least two supported harnesses.
+Agent protocol changes must pass the deterministic framing and store tests plus
+a live smoke test against at least two supported harnesses.

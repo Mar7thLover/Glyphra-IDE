@@ -86,7 +86,7 @@ export default function WelcomeHome() {
     { name: "Node", ok: !!runtime?.node.installed },
     { name: "Git", ok: !!runtime?.git.installed },
     ...agents
-      .filter((a) => a.backend !== "custom-agent" && a.backend !== "fixture")
+      .filter((a) => a.backend !== "custom-agent")
       .slice(0, 4)
       .map((a) => ({
         name:

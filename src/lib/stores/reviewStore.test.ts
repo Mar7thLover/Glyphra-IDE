@@ -16,6 +16,8 @@ vi.mock("@/lib/ipc/ipc", () => ({
 import { ipc } from "@/lib/ipc/ipc";
 import {
   generateCommitMessage,
+  MAX_EAGER_WORKING_TREE_DIFFS,
+  MAX_WORKING_TREE_FILES,
   reviewFileKey,
   turnsToRestoreBefore,
   unresolvedReviewCount,
@@ -89,6 +91,49 @@ describe("reviewStore R1 queue", () => {
     expect(state.contents?.path).toBe("src/a.ts");
     expect(unresolvedReviewCount(state)).toBe(3);
     expect(unresolvedReviewGroupCount(state)).toBe(2);
+  });
+
+  // Opening a folder refreshes the review queue, and a freshly opened folder
+  // routinely reports thousands of untracked files. Each `gitDiffFile` spawns
+  // git subprocesses and returns both revisions in full, so an unbounded fan-out
+  // here launched thousands of processes at once and exhausted host memory.
+  it("bounds the working-tree fan-out on a repository with thousands of changes", async () => {
+    const statuses = Array.from({ length: 6_000 }, (_, index) => ({
+      path: `assets/file-${index}.bin`,
+      status: "??",
+    }));
+    vi.mocked(ipc.ckptListTurns).mockResolvedValue([]);
+    vi.mocked(ipc.gitStatus).mockResolvedValue(statuses);
+
+    let live = 0;
+    let peak = 0;
+    vi.mocked(ipc.gitDiffFile).mockImplementation(async (_project, path) => {
+      live += 1;
+      peak = Math.max(peak, live);
+      await Promise.resolve();
+      live -= 1;
+      return {
+        path,
+        status: "added",
+        before: "",
+        after: "x",
+        summary: { additions: 1, deletions: 0, hunks: 1, binary: false, available: true },
+      };
+    });
+
+    await useReviewStore.getState().refresh("/repo");
+
+    const state = useReviewStore.getState();
+    expect(state.workingTree.length).toBe(MAX_WORKING_TREE_FILES);
+    // Eager diffs plus the one `selectFile` performs for the initial selection.
+    expect(vi.mocked(ipc.gitDiffFile).mock.calls.length).toBeLessThanOrEqual(
+      MAX_EAGER_WORKING_TREE_DIFFS + 1,
+    );
+    expect(peak).toBeLessThanOrEqual(8);
+    // Entries past the eager window still appear, as placeholders that hydrate
+    // when selected.
+    expect(state.workingTree.at(-1)?.summary.available).toBe(false);
+    expect(state.workingTree.at(-1)?.status).toBe("added");
   });
 
   it("keeps the existing accept-file write and advances to the next file", async () => {
