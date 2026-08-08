@@ -200,11 +200,20 @@ mod tests {
     }
 
     #[test]
-    fn parses_committed_wire_sample() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../fixtures/tapes/wire-framing-sample.jsonl");
-        let text = fs::read_to_string(&path).expect("wire sample present");
-        let rows = parse_wire_tape(&text).unwrap();
+    fn parses_full_wire_sample() {
+        // Full ACP handshake → prompt → streamed update → end_turn, in the
+        // exact framing the recorder writes.
+        let text = concat!(
+            "{\"t\":0,\"dir\":\"meta\",\"line\":\"glyphra-agent-tape v1\"}\n",
+            "{\"t\":0,\"dir\":\"in\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":\\\"initialize\\\",\\\"params\\\":{\\\"protocolVersion\\\":1}}\"}\n",
+            "{\"t\":2,\"dir\":\"out\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{\\\"protocolVersion\\\":1,\\\"agentCapabilities\\\":{\\\"loadSession\\\":false}}}\"}\n",
+            "{\"t\":4,\"dir\":\"in\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":2,\\\"method\\\":\\\"session/new\\\",\\\"params\\\":{\\\"cwd\\\":\\\"/tmp\\\"}}\"}\n",
+            "{\"t\":6,\"dir\":\"out\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":2,\\\"result\\\":{\\\"sessionId\\\":\\\"sess-demo\\\"}}\"}\n",
+            "{\"t\":8,\"dir\":\"in\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":3,\\\"method\\\":\\\"session/prompt\\\",\\\"params\\\":{\\\"sessionId\\\":\\\"sess-demo\\\",\\\"prompt\\\":[{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"hi\\\"}]}}\"}\n",
+            "{\"t\":10,\"dir\":\"out\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"method\\\":\\\"session/update\\\",\\\"params\\\":{\\\"sessionId\\\":\\\"sess-demo\\\",\\\"update\\\":{\\\"sessionUpdate\\\":\\\"agent_message_chunk\\\",\\\"content\\\":{\\\"type\\\":\\\"text\\\",\\\"text\\\":\\\"Hello from tape\\\"}}}}\"}\n",
+            "{\"t\":12,\"dir\":\"out\",\"line\":\"{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":3,\\\"result\\\":{\\\"stopReason\\\":\\\"end_turn\\\"}}\"}\n",
+        );
+        let rows = parse_wire_tape(text).unwrap();
         assert!(rows.iter().any(|row| row.1 == "in"));
         assert!(rows.iter().any(|row| row.1 == "out"));
         let out_updates = rows

@@ -1,2 +1,0 @@
-{"v":1,"kind":"meta","name":"edit-turn-review","description":"M2/M2.5 editing turn: reviewable diffs via L1/L3 preimage + byte-accurate restore"}
-{"v":1,"kind":"note","text":"Byte-accurate restore is asserted in src-tauri/src/gitx/checkpoints.rs tests (modify/add/delete). UI path: ckpt_* IPC → ReviewPanel/MergeEditor. Agent writes go through fs_write L1; begin_turn also L3-snapshots dirty files."}

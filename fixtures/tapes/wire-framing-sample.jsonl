@@ -1,8 +1,0 @@
-{"t":0,"dir":"meta","line":"glyphra-agent-tape v1"}
-{"t":0,"dir":"in","line":"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":1}}"}
-{"t":2,"dir":"out","line":"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1,\"agentCapabilities\":{\"loadSession\":false}}}"}
-{"t":4,"dir":"in","line":"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":\"/tmp\"}}"}
-{"t":6,"dir":"out","line":"{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"sessionId\":\"sess-demo\"}}"}
-{"t":8,"dir":"in","line":"{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/prompt\",\"params\":{\"sessionId\":\"sess-demo\",\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}"}
-{"t":10,"dir":"out","line":"{\"jsonrpc\":\"2.0\",\"method\":\"session/update\",\"params\":{\"sessionId\":\"sess-demo\",\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"type\":\"text\",\"text\":\"Hello from tape\"}}}}"}
-{"t":12,"dir":"out","line":"{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"stopReason\":\"end_turn\"}}"}

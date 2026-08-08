@@ -1088,8 +1088,7 @@ mod tests {
             )
             .expect("replace utf16");
         assert_eq!(summary.files_changed, 1);
-        let decoded =
-            crate::ipc::project::decode_text(&fs::read(&utf16).unwrap(), None).unwrap();
+        let decoded = crate::ipc::project::decode_text(&fs::read(&utf16).unwrap(), None).unwrap();
         assert_eq!(decoded.content, "HELLO 世界");
         assert_eq!(decoded.encoding, "UTF-16LE");
         assert!(decoded.bom);
