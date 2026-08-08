@@ -6,6 +6,8 @@ use std::{ffi::OsStr, process::Command as StdCommand};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub fn std_command(program: impl AsRef<OsStr>) -> StdCommand {
+    // Only the Windows branch mutates; other platforms return it untouched.
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = StdCommand::new(program);
     #[cfg(windows)]
     {
@@ -16,6 +18,7 @@ pub fn std_command(program: impl AsRef<OsStr>) -> StdCommand {
 }
 
 pub fn tokio_command(program: impl AsRef<OsStr>) -> tokio::process::Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = tokio::process::Command::new(program);
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
