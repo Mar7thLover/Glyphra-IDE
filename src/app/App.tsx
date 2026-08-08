@@ -12,8 +12,10 @@ import {
   restoreEditorRecovery,
 } from "@/lib/editorRecovery";
 import { applyAppearanceSettings } from "@/lib/appearance";
+import { flushPendingEditorChanges } from "@/lib/editorCommands";
 import { ipc, type AppSettings, type LaunchRequest } from "@/lib/ipc/ipc";
 import { commandMatches } from "@/lib/keybindings";
+import { requestUnsavedDecision } from "@/lib/unsavedChanges";
 import { useAgentStore } from "@/lib/stores/agentStore";
 import { useGitStore } from "@/lib/stores/gitStore";
 import { isEditorTabDirty, isUntitledPath, useEditorStore } from "@/lib/stores/editorStore";
@@ -47,20 +49,23 @@ const windowLabel = mainWindow.label;
 let launchQueue = Promise.resolve();
 
 function enqueueLaunchRequest(request: LaunchRequest) {
-  launchQueue = launchQueue.then(async () => {
-    const unsaved = i18n.t("menu.unsavedProject");
-    const folders = request.folders ?? (request.projectPath ? [request.projectPath] : []);
-    if (folders.length > 0) {
-      const opened = await openWorkspacePaths(folders, unsaved);
-      if (opened && request.filePath) {
-        await useEditorStore.getState().openFile(request.filePath);
+  launchQueue = launchQueue
+    .then(async () => {
+      const folders = request.folders ?? (request.projectPath ? [request.projectPath] : []);
+      if (folders.length > 0) {
+        const opened = await openWorkspacePaths(folders);
+        if (opened && request.filePath) {
+          await useEditorStore.getState().openFile(request.filePath);
+        }
+        return;
       }
-      return;
-    }
-    if (request.filePath) {
-      await openFilePath(request.filePath, unsaved);
-    }
-  });
+      if (request.filePath) {
+        await openFilePath(request.filePath);
+      }
+    })
+    // A failed open must not wedge the queue: later launch requests (second
+    // instance, shell open) still have to run.
+    .catch(() => undefined);
 }
 
 
@@ -173,21 +178,50 @@ export default function App() {
     void mainWindow
       .onCloseRequested(async (event) => {
         event.preventDefault();
+        // One close flow at a time — a second click on the close button while
+        // a decision dialog is open must not spawn a second dialog chain.
         if (closing.current) return;
-        const dirty = useEditorStore
-          .getState()
-          .tabs.some(isEditorTabDirty);
-        const currentProject = useProjectStore.getState().current?.path;
-        const protectedByRecovery =
-          !dirty || (currentProject ? await persistEditorRecovery(currentProject) : false);
-        if (dirty && !protectedByRecovery && !window.confirm(i18n.t("menu.unsavedExit"))) return;
         closing.current = true;
-        const agentState = useAgentStore.getState();
-        const ids = agentState.liveSessions
-          .filter((session) => session.projectPath === currentProject)
-          .map((session) => session.archiveId);
-        await Promise.all(ids.map((id) => agentState.closeLiveSession(id)));
-        await mainWindow.destroy();
+        try {
+          flushPendingEditorChanges();
+          const currentProject = useProjectStore.getState().current?.path;
+          const hasDirty = () => useEditorStore.getState().tabs.some(isEditorTabDirty);
+          // Hot exit: with a project open, dirty buffers are snapshotted and
+          // restored on the next launch, so the window closes without dialogs.
+          const protectedByRecovery =
+            !hasDirty() ||
+            (currentProject ? await persistEditorRecovery(currentProject) : false);
+          if (!protectedByRecovery) {
+            // Loose-file mode (or a failed snapshot): decide per file with the
+            // app's own dialog. Cancel keeps the window open. Discarded
+            // buffers are left untouched — they die with the window, and stay
+            // intact if a later Cancel aborts the close.
+            const discarded = new Set<string>();
+            while (true) {
+              const tab = useEditorStore
+                .getState()
+                .tabs.find((item) => isEditorTabDirty(item) && !discarded.has(item.path));
+              if (!tab) break;
+              const decision = await requestUnsavedDecision(tab.name);
+              if (decision === "cancel") return;
+              if (decision === "save") {
+                if (!(await useEditorStore.getState().saveTab(tab.path))) return;
+              } else {
+                discarded.add(tab.path);
+              }
+            }
+          }
+          const agentState = useAgentStore.getState();
+          const ids = agentState.liveSessions
+            .filter((session) => session.projectPath === currentProject)
+            .map((session) => session.archiveId);
+          await Promise.all(ids.map((id) => agentState.closeLiveSession(id)));
+          await mainWindow.destroy();
+        } finally {
+          // Reached only when the close was cancelled or a step threw; the
+          // window is still alive, so allow a later close attempt.
+          closing.current = false;
+        }
       })
       .then((fn) => {
         if (disposed) fn();
@@ -221,7 +255,10 @@ export default function App() {
       disposed = true;
       if (interval !== undefined) window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      flush();
+      // No flush here: by cleanup time a project switch has already wiped the
+      // tabs, so a snapshot write would see zero dirty buffers and delete the
+      // recovery file the transition just persisted. The transition itself
+      // (workspaceActions) and the close flow snapshot while state is intact.
     };
   }, [projectPath]);
 
@@ -236,12 +273,12 @@ export default function App() {
       };
       if (commandMatches(e, "workbench.openFolder", context)) {
         e.preventDefault();
-        void pickProject(i18n.t("empty.openFolder"), i18n.t("menu.unsavedProject"));
+        void pickProject(i18n.t("empty.openFolder"));
         return;
       }
       if (commandMatches(e, "workbench.openFile", context)) {
         e.preventDefault();
-        void pickFile(i18n.t("menu.openFile"), i18n.t("menu.unsavedProject"));
+        void pickFile(i18n.t("menu.openFile"));
         return;
       }
       if (commandMatches(e, "workbench.newFile", context)) {
@@ -312,17 +349,16 @@ export default function App() {
           }
         }),
       );
-      const unsaved = i18n.t("menu.unsavedProject");
       if (dirs.length > 0) {
         const hasWorkspace = Boolean(useProjectStore.getState().current);
         if (!hasWorkspace) {
-          await openWorkspacePaths(dirs, unsaved);
+          await openWorkspacePaths(dirs);
         } else {
           for (const dir of dirs) await useProjectStore.getState().addFolder(dir);
         }
       }
       for (const file of files) {
-        await openFilePath(file, unsaved);
+        await openFilePath(file);
       }
     }).then((fn) => {
       if (disposed) fn();

@@ -3,6 +3,7 @@ import {
   Facet,
   RangeSetBuilder,
   type EditorState,
+  StateEffect,
   StateField,
   Text,
   type Extension,
@@ -11,8 +12,10 @@ import {
   Decoration,
   EditorView,
   GutterMarker,
+  ViewPlugin,
   gutter,
   type DecorationSet,
+  type ViewUpdate,
 } from "@codemirror/view";
 
 interface ModifiedCodeMarkerConfig {
@@ -56,6 +59,9 @@ function buildModifiedCodeMarkers(state: EditorState) {
   const baseline = normalizedText(config.baseline);
   const gutterBuilder = new RangeSetBuilder<ModifiedCodeGutterMarker>();
   const decorationBuilder = new RangeSetBuilder<Decoration>();
+  if (baseline.eq(state.doc)) {
+    return { decorations: decorationBuilder.finish(), gutter: gutterBuilder.finish() };
+  }
   const markedPositions = new Set<number>();
 
   for (const chunk of Chunk.build(baseline, state.doc, { timeout: 20 })) {
@@ -75,13 +81,55 @@ function buildModifiedCodeMarkers(state: EditorState) {
   return { decorations: decorationBuilder.finish(), gutter: gutterBuilder.finish() };
 }
 
+const recomputeMarkers = StateEffect.define<null>();
+
+/**
+ * Diffing the whole document against the baseline is O(doc) with a 20ms diff
+ * budget — far too expensive to run on every keystroke. While typing, existing
+ * markers are only mapped through the changes; the plugin below schedules one
+ * real recompute shortly after the burst ends.
+ */
 const modifiedCodeMarkers = StateField.define<ModifiedCodeMarkers>({
   create: buildModifiedCodeMarkers,
-  update: (markers, transaction) =>
-    transaction.docChanged || transaction.reconfigured
-      ? buildModifiedCodeMarkers(transaction.state)
-      : markers,
+  update: (markers, transaction) => {
+    if (
+      transaction.reconfigured ||
+      transaction.effects.some((effect) => effect.is(recomputeMarkers))
+    ) {
+      return buildModifiedCodeMarkers(transaction.state);
+    }
+    if (transaction.docChanged) {
+      return {
+        decorations: markers.decorations.map(transaction.changes),
+        gutter: markers.gutter.map(transaction.changes),
+      };
+    }
+    return markers;
+  },
 });
+
+const MARKER_REFRESH_MS = 250;
+
+const markerRefreshPlugin = ViewPlugin.fromClass(
+  class {
+    private timer: ReturnType<typeof setTimeout> | null = null;
+
+    constructor(private readonly view: EditorView) {}
+
+    update(update: ViewUpdate) {
+      if (!update.docChanged) return;
+      if (this.timer !== null) clearTimeout(this.timer);
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.view.dispatch({ effects: recomputeMarkers.of(null) });
+      }, MARKER_REFRESH_MS);
+    }
+
+    destroy() {
+      if (this.timer !== null) clearTimeout(this.timer);
+    }
+  },
+);
 
 const modifiedCodeGutter = gutter({
   class: "cm-modified-code-gutter",
@@ -115,6 +163,7 @@ export function modifiedCodeMarkerExtension(
   return [
     modifiedCodeMarkerConfig.of({ baseline, label }),
     modifiedCodeMarkers,
+    markerRefreshPlugin,
     EditorView.decorations.from(modifiedCodeMarkers, (markers) => markers.decorations),
     modifiedCodeGutter,
     modifiedCodeMarkerTheme,

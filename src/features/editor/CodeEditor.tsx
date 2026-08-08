@@ -47,11 +47,16 @@ import {
 import { codeMirrorKey } from "@/lib/keybindings";
 import { ipc, type LspLocation } from "@/lib/ipc/ipc";
 import type { EditorCursor, EditorTab } from "@/lib/stores/editorStore";
-import { useEditorStore } from "@/lib/stores/editorStore";
+import {
+  convertLineEndings,
+  normalizeEol,
+  useEditorStore,
+} from "@/lib/stores/editorStore";
 import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { ensureLspListeners, lspEnabledFor, useLspStore } from "@/lib/stores/lspStore";
 import {
   EDITOR_COMMAND_EVENT,
+  EDITOR_FLUSH_EVENT,
   type EditorCommand,
 } from "@/lib/editorCommands";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
@@ -433,7 +438,7 @@ export default function CodeEditor({
   const [stickyScopes, setStickyScopes] = useState<ScopeLine[]>([]);
   const reviewContextRef = useRef(reviewContext);
   reviewContextRef.current = reviewContext;
-  const lineEnding = tab.content.includes("\r\n") ? "CRLF" : "LF";
+  const lineEnding = tab.eol;
   const effectiveTabSize =
     tab.editorConfig?.tabWidth ?? tab.editorConfig?.indentSize ?? tabSize;
   const effectiveIndentStyle =
@@ -623,7 +628,8 @@ export default function CodeEditor({
     const context = reviewContextRef.current;
     const currentProject = projectPath;
     if (!view || !context || !currentProject) return;
-    const content = view.state.doc.toString();
+    // The buffer is LF; restore the file's real line ending on the way out.
+    const content = convertLineEndings(view.state.doc.toString(), tabRef.current.eol);
     const remaining = getChunks(view.state)?.chunks.length ?? 0;
     flushChange();
     reviewWrite.current = reviewWrite.current
@@ -927,7 +933,10 @@ export default function CodeEditor({
     void ipc
       .ckptFileContents(projectPath, turnId, path)
       .then((contents) => {
-        if (!cancelled) setReviewContext({ turnId, path, before: contents.before });
+        // The buffer is LF-normalized; a CRLF baseline would mark every line
+        // as changed in the merge view.
+        if (!cancelled)
+          setReviewContext({ turnId, path, before: normalizeEol(contents.before) });
       })
       .catch(() => {
         if (!cancelled) setReviewContext(null);
@@ -966,7 +975,6 @@ export default function CodeEditor({
           }),
           lspHoverExtension(getLspContext),
           lintGutter(),
-          EditorState.lineSeparator.of(lineEnding === "CRLF" ? "\r\n" : "\n"),
           keymapCompartment.current.of(
             // Glyphra bindings come first so they win the shared keys; each one
             // returns false when it does not apply, letting the VS Code keymap
@@ -1122,7 +1130,7 @@ export default function CodeEditor({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab.name, tab.path, tab.readOnly, tab.truncated, tab.longLines, lineEnding]);
+  }, [tab.name, tab.path, tab.readOnly, tab.truncated, tab.longLines]);
 
   useEffect(() => {
     // Lazy start: the server for this language only spawns once a matching file
@@ -1172,9 +1180,28 @@ export default function CodeEditor({
     hashRef.current = tab.hash;
     revisionRef.current = revision;
     const current = view.state.doc.toString();
-    if (current === tab.content) return;
+    const next = tab.content;
+    if (current === next) return;
+    // Dispatch only the changed span (common prefix/suffix trimmed) so the
+    // selection and scroll position survive save-time trimming, format-on-save
+    // and external disk syncs instead of jumping to the top of the file.
+    let start = 0;
+    const shortest = Math.min(current.length, next.length);
+    while (start < shortest && current.charCodeAt(start) === next.charCodeAt(start)) {
+      start += 1;
+    }
+    let currentEnd = current.length;
+    let nextEnd = next.length;
+    while (
+      currentEnd > start &&
+      nextEnd > start &&
+      current.charCodeAt(currentEnd - 1) === next.charCodeAt(nextEnd - 1)
+    ) {
+      currentEnd -= 1;
+      nextEnd -= 1;
+    }
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: tab.content },
+      changes: { from: start, to: currentEnd, insert: next.slice(start, nextEnd) },
     });
   }, [tab.hash, tab.revision, tab.content]);
 
@@ -1219,9 +1246,15 @@ export default function CodeEditor({
 
   useEffect(() => {
     // Flush before a pointer action can switch/close the tab, while keeping
-    // ordinary typing off the global React/Zustand render path.
+    // ordinary typing off the global React/Zustand render path. The dedicated
+    // flush event covers keyboard/menu-driven saves and exit flows, which have
+    // no pointer interaction to piggyback on.
     window.addEventListener("pointerdown", flushChange, true);
-    return () => window.removeEventListener("pointerdown", flushChange, true);
+    window.addEventListener(EDITOR_FLUSH_EVENT, flushChange);
+    return () => {
+      window.removeEventListener("pointerdown", flushChange, true);
+      window.removeEventListener(EDITOR_FLUSH_EVENT, flushChange);
+    };
   });
 
   useEffect(() => {

@@ -80,8 +80,6 @@ export default function WelcomeHome() {
     void refreshEnv();
   }, [loadRecents, refreshEnv]);
 
-  const unsavedPrompt = t("menu.unsavedProject");
-
   const envChips: { name: string; ok: boolean }[] = [
     { name: "Node", ok: !!runtime?.node.installed },
     { name: "Git", ok: !!runtime?.git.installed },
@@ -122,13 +120,13 @@ export default function WelcomeHome() {
             label={t("home.openProject")}
             hint={`${t("home.openProjectHint")} · Ctrl+O`}
             accent
-            onClick={() => void pickProject(t("empty.openFolder"), unsavedPrompt)}
+            onClick={() => void pickProject(t("empty.openFolder"))}
           />
           <ActionCard
             icon={FileText}
             label={t("menu.openFile")}
             hint="Ctrl+Shift+O"
-            onClick={() => void pickFile(t("menu.openFile"), unsavedPrompt)}
+            onClick={() => void pickFile(t("menu.openFile"))}
           />
           <ActionCard
             icon={AppWindow}
@@ -173,7 +171,7 @@ export default function WelcomeHome() {
                 <li key={project.path}>
                   <button
                     type="button"
-                    onClick={() => void openProjectPath(project.path, unsavedPrompt)}
+                    onClick={() => void openProjectPath(project.path)}
                     className="group flex w-full items-baseline gap-2.5 px-3.5 py-[7px] text-left transition-colors hover:bg-hover"
                   >
                     <span className="min-w-0 shrink-0 truncate text-[12px] text-ink">

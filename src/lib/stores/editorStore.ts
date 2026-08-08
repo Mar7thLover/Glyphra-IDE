@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 
+import { flushPendingEditorChanges } from "@/lib/editorCommands";
 import {
   ipc,
   type EditorConfigSettings,
@@ -11,19 +12,36 @@ import { useDiagnosticsStore } from "@/lib/stores/diagnosticsStore";
 import { usePrefsStore } from "@/lib/stores/prefsStore";
 import { requestUnsavedDecision } from "@/lib/unsavedChanges";
 
+export type EditorEol = "LF" | "CRLF";
+
+/**
+ * Buffer contents are always LF-normalized in this store and in mounted
+ * CodeMirror views. The file's real line ending lives in `eol` and is applied
+ * once, at write time. Keeping a per-document CodeMirror `lineSeparator`
+ * instead proved disastrous: pasted text is only split on the configured
+ * separator, so pasting LF text into a CRLF file (or vice versa) produced
+ * mixed endings, mega-lines and a full editor remount that destroyed the
+ * undo history.
+ */
 export interface EditorTab {
   path: string;
   name: string;
+  /** LF-normalized buffer contents. */
   content: string;
+  /** LF-normalized contents of the last read/write. */
   savedContent: string;
   hash: string;
   truncated: boolean;
   longLines: boolean;
   readOnly: boolean;
+  /** Decoded with replacement characters — saving would destroy the original bytes. */
+  lossy: boolean;
   encoding: string;
   savedEncoding: string;
   bom: boolean;
   savedBom: boolean;
+  eol: EditorEol;
+  savedEol: EditorEol;
   editorConfig?: EditorConfigSettings | null;
   /**
    * Bumped whenever something other than the editor itself rewrites the buffer
@@ -61,11 +79,24 @@ export const TEXT_ENCODINGS = [
   "ISO-8859-2",
 ] as const;
 
+export function detectEol(content: string): EditorEol {
+  return content.includes("\r\n") ? "CRLF" : "LF";
+}
+
+export function normalizeEol(content: string): string {
+  return content.replace(/\r\n?/g, "\n");
+}
+
+export function convertLineEndings(content: string, eol: EditorEol): string {
+  return content.replace(/\r\n|\r|\n/g, eol === "CRLF" ? "\r\n" : "\n");
+}
+
 export function isEditorTabDirty(tab: EditorTab): boolean {
   return (
     tab.content !== tab.savedContent ||
     tab.encoding !== tab.savedEncoding ||
-    tab.bom !== tab.savedBom
+    tab.bom !== tab.savedBom ||
+    tab.eol !== tab.savedEol
   );
 }
 
@@ -80,7 +111,7 @@ export interface EditorCursor {
  * the heavy language-data bundle itself. */
 export interface EditorDocInfo {
   languageName: string | null;
-  eol: "LF" | "CRLF";
+  eol: EditorEol;
   indentStyle: "space" | "tab";
   indentSize: number;
   /** True when the effective indentation comes from one or more .editorconfig files. */
@@ -104,6 +135,11 @@ export interface OpenFileOptions {
   preview?: boolean;
 }
 
+export interface SaveTabOptions {
+  /** Skip the optimistic disk-hash check and overwrite whatever is on disk. */
+  force?: boolean;
+}
+
 export interface EditorReveal {
   path: string;
   line: number;
@@ -119,14 +155,15 @@ interface EditorState {
   focusedPane: "primary" | "secondary";
   loading: boolean;
   error: string | null;
+  /** Path whose last save hit the optimistic lock (file changed on disk). */
+  conflictPath: string | null;
   reveal: EditorReveal | null;
   cursor: EditorCursor | null;
   docInfo: EditorDocInfo | null;
   recoveryNotice: EditorRecoveryNotice | null;
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>;
   newUntitled: () => void;
-  confirmLeaveActive: () => Promise<boolean>;
-  activateTab: (path: string) => Promise<void>;
+  activateTab: (path: string) => void;
   focusPane: (pane: "primary" | "secondary") => void;
   splitActive: () => void;
   closeSplit: () => void;
@@ -136,15 +173,17 @@ interface EditorState {
   setContent: (path: string, content: string) => void;
   /** Rewrite a buffer from outside the editor and make mounted views follow. */
   applyExternalEdit: (path: string, content: string) => void;
-  setLineEnding: (path: string, eol: EditorDocInfo["eol"]) => void;
+  setLineEnding: (path: string, eol: EditorEol) => void;
   setEncoding: (path: string, encoding: string) => void;
   reopenWithEncoding: (path: string, encoding: string) => Promise<void>;
-  saveTab: (path: string) => Promise<boolean>;
+  saveTab: (path: string, options?: SaveTabOptions) => Promise<boolean>;
   saveActive: () => Promise<void>;
   /** Reload clean open tabs whose paths appear in `paths` (absolute). */
   syncFromDisk: (paths: string[]) => Promise<void>;
   /** Replace one open tab from disk after a controlled checkpoint write. */
   refreshTabFromDisk: (path: string) => Promise<void>;
+  clearError: () => void;
+  clearConflict: (path?: string) => void;
   clearReveal: (token?: number) => void;
   setCursor: (cursor: EditorCursor | null) => void;
   setDocInfo: (info: EditorDocInfo | null) => void;
@@ -163,28 +202,32 @@ function normalizePath(path: string) {
   return path.replace(/\\/g, "/");
 }
 
-export function convertLineEndings(content: string, eol: EditorDocInfo["eol"]): string {
-  return content.replace(/\r\n|\r|\n/g, eol === "CRLF" ? "\r\n" : "\n");
+function isConflictError(error: unknown) {
+  return asMessage(error).includes("changed on disk");
 }
 
 function tabFromRead(
   file: Awaited<ReturnType<typeof ipc.fsRead>>,
   editorConfig: EditorConfigSettings | null = null,
 ): EditorTab {
-  const degrade = file.truncated || file.longLines;
+  const degrade = file.truncated || file.longLines || file.lossy;
+  const content = normalizeEol(file.content);
   return {
     path: file.path,
     name: basename(file.path),
-    content: file.content,
-    savedContent: file.content,
+    content,
+    savedContent: content,
     hash: file.hash,
     truncated: file.truncated,
     longLines: file.longLines,
     readOnly: file.readOnly || degrade,
+    lossy: file.lossy,
     encoding: file.encoding,
     savedEncoding: file.encoding,
     bom: file.bom,
     savedBom: file.bom,
+    eol: detectEol(file.content),
+    savedEol: detectEol(file.content),
     editorConfig,
     preview: null,
   };
@@ -200,10 +243,13 @@ function tabFromPreview(preview: MediaPreviewResult): EditorTab {
     truncated: false,
     longLines: false,
     readOnly: true,
+    lossy: false,
     encoding: "UTF-8",
     savedEncoding: "UTF-8",
     bom: false,
     savedBom: false,
+    eol: "LF",
+    savedEol: "LF",
     preview,
   };
 }
@@ -244,7 +290,26 @@ function encodingFromEditorConfig(config: EditorConfigSettings | null): string |
   }
 }
 
+function eolFromEditorConfig(config: EditorConfigSettings | null): EditorEol | undefined {
+  switch (config?.endOfLine) {
+    case "crlf":
+      return "CRLF";
+    case "lf":
+    case "cr":
+      return "LF";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Close-time guard. Deliberately not used for tab switches or file opens —
+ * dirty buffers stay alive in the store across navigation, exactly like every
+ * other editor. Only destroying a buffer (closing its tab, reopening with a
+ * different encoding) needs a decision.
+ */
 async function prepareToLeave(path: string): Promise<boolean> {
+  flushPendingEditorChanges();
   const tab = useEditorStore.getState().tabs.find((item) => item.path === path);
   if (!tab || !isEditorTabDirty(tab)) return true;
 
@@ -260,6 +325,8 @@ async function prepareToLeave(path: string): Promise<boolean> {
             content: item.savedContent,
             encoding: item.savedEncoding,
             bom: item.savedBom,
+            eol: item.savedEol,
+            revision: (item.revision ?? 0) + 1,
           }
         : item,
     ),
@@ -270,9 +337,20 @@ async function prepareToLeave(path: string): Promise<boolean> {
 let revealToken = 0;
 let untitledCounter = 0;
 
-function untitledTab(): EditorTab {
+function nextUntitledPath(tabs: EditorTab[]): string {
+  // Recovery can restore untitled buffers, so the counter alone is not enough:
+  // skip every index that is already taken.
+  for (const tab of tabs) {
+    if (!isUntitledPath(tab.path)) continue;
+    const index = Number.parseInt(tab.path.slice(UNTITLED_PREFIX.length), 10);
+    if (Number.isFinite(index)) untitledCounter = Math.max(untitledCounter, index);
+  }
   untitledCounter += 1;
-  const path = `${UNTITLED_PREFIX}${untitledCounter}`;
+  return `${UNTITLED_PREFIX}${untitledCounter}`;
+}
+
+function untitledTab(tabs: EditorTab[]): EditorTab {
+  const path = nextUntitledPath(tabs);
   return {
     path,
     name: untitledLabel(path),
@@ -282,11 +360,34 @@ function untitledTab(): EditorTab {
     truncated: false,
     longLines: false,
     readOnly: false,
+    lossy: false,
     encoding: "UTF-8",
     savedEncoding: "UTF-8",
     bom: false,
     savedBom: false,
+    eol: "LF",
+    savedEol: "LF",
   };
+}
+
+/**
+ * Saves are serialized per path. Ctrl+S can arrive twice in one keydown (the
+ * CodeMirror keymap and the window-level shortcut both fire), and two
+ * concurrent writes carrying the same expected hash make the second one fail
+ * the optimistic lock spuriously.
+ */
+const saveQueues = new Map<string, Promise<boolean>>();
+
+function enqueueSave(path: string, run: () => Promise<boolean>): Promise<boolean> {
+  const previous = saveQueues.get(path) ?? Promise.resolve(true);
+  const next = previous
+    .catch(() => false)
+    .then(run)
+    .finally(() => {
+      if (saveQueues.get(path) === next) saveQueues.delete(path);
+    });
+  saveQueues.set(path, next);
+  return next;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -297,13 +398,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   focusedPane: "primary",
   loading: false,
   error: null,
+  conflictPath: null,
   reveal: null,
   cursor: null,
   docInfo: null,
   recoveryNotice: null,
 
   openFile: async (path, options) => {
-    const existing = get().tabs.find((tab) => tab.path === path);
     const line = options?.line;
     const column = options?.column ?? 1;
 
@@ -315,6 +416,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       });
     };
 
+    const existing = get().tabs.find((tab) => tab.path === path);
     if (existing) {
       if (options?.reload && existing.content === existing.savedContent) {
         try {
@@ -340,13 +442,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ),
         }));
       }
-      await get().activateTab(path);
+      get().activateTab(path);
       queueReveal();
       return;
     }
-
-    const activePath = get().activePath;
-    if (activePath && !(await prepareToLeave(activePath))) return;
 
     set({ loading: true, error: null });
     try {
@@ -355,17 +454,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ephemeral: options?.preview === true,
       };
       set((state) => {
-        const replaceable = options?.preview
-          ? state.tabs.find(
-              (item) =>
-                item.ephemeral &&
-                !isEditorTabDirty(item) &&
-                item.path !== state.secondaryPath,
+        // A second open for the same path can race the first (single-click
+        // preview followed by double-click pin). Never append a duplicate.
+        const already = state.tabs.some((item) => item.path === tab.path);
+        const replaceable =
+          !already && options?.preview
+            ? state.tabs.find(
+                (item) =>
+                  item.ephemeral &&
+                  !isEditorTabDirty(item) &&
+                  item.path !== state.secondaryPath,
+              )
+            : null;
+        const tabs = already
+          ? state.tabs.map((item) =>
+              item.path === tab.path && !isEditorTabDirty(item) ? tab : item,
             )
-          : null;
-        const tabs = replaceable
-          ? state.tabs.map((item) => (item.path === replaceable.path ? tab : item))
-          : [...state.tabs, tab];
+          : replaceable
+            ? state.tabs.map((item) => (item.path === replaceable.path ? tab : item))
+            : [...state.tabs, tab];
         return {
           tabs,
           activePath: tab.path,
@@ -387,8 +494,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   newUntitled: () => {
-    const tab = untitledTab();
     set((state) => {
+      const tab = untitledTab(state.tabs);
       const replaceable = state.tabs.find(
         (item) =>
           item.ephemeral &&
@@ -414,28 +521,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  activateTab: async (path) => {
-    const activePath = get().activePath;
-    if (activePath === path) return;
-    if (activePath && !(await prepareToLeave(activePath))) return;
-    if (get().tabs.some((tab) => tab.path === path)) {
-      set((state) => ({
-        activePath: path,
-        primaryPath:
-          state.focusedPane === "primary" || !state.secondaryPath
-            ? path
-            : path === state.primaryPath
-              ? state.secondaryPath
-              : state.primaryPath,
-        secondaryPath:
-          state.focusedPane === "secondary" && state.secondaryPath
-            ? path
-            : path === state.secondaryPath
-              ? state.primaryPath
-              : state.secondaryPath,
-        error: null,
-      }));
-    }
+  activateTab: (path) => {
+    if (get().activePath === path) return;
+    if (!get().tabs.some((tab) => tab.path === path)) return;
+    set((state) => ({
+      activePath: path,
+      primaryPath:
+        state.focusedPane === "primary" || !state.secondaryPath
+          ? path
+          : path === state.primaryPath
+            ? state.secondaryPath
+            : state.primaryPath,
+      secondaryPath:
+        state.focusedPane === "secondary" && state.secondaryPath
+          ? path
+          : path === state.secondaryPath
+            ? state.primaryPath
+            : state.secondaryPath,
+      error: null,
+    }));
   },
 
   focusPane: (focusedPane) => {
@@ -497,11 +601,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ),
     })),
 
-  confirmLeaveActive: async () => {
-    const activePath = get().activePath;
-    return activePath ? prepareToLeave(activePath) : true;
-  },
-
   closeTab: async (path) => {
     if (!(await prepareToLeave(path))) return;
     set((state) => {
@@ -524,27 +623,41 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       const activePath =
         focusedPane === "secondary" && secondaryPath ? secondaryPath : primaryPath;
-      return { tabs, activePath, primaryPath, secondaryPath, focusedPane };
+      return {
+        tabs,
+        activePath,
+        primaryPath,
+        secondaryPath,
+        focusedPane,
+        conflictPath: state.conflictPath === path ? null : state.conflictPath,
+      };
     });
     useDiagnosticsStore.getState().clearFile(path);
   },
 
   setContent: (path, content) => {
-    set((state) => ({
-      // Editing pins an explorer preview so it cannot be replaced.
-      tabs: state.tabs.map((tab) =>
-        tab.path === path ? { ...tab, content, ephemeral: false } : tab,
-      ),
-    }));
+    set((state) => {
+      const target = state.tabs.find((tab) => tab.path === path);
+      // The editor echoes content back after saves and disk syncs; skip the
+      // no-op update instead of re-rendering every subscriber.
+      if (!target || (target.content === content && !target.ephemeral)) return state;
+      return {
+        // Editing pins an explorer preview so it cannot be replaced.
+        tabs: state.tabs.map((tab) =>
+          tab.path === path ? { ...tab, content, ephemeral: false } : tab,
+        ),
+      };
+    });
   },
 
   applyExternalEdit: (path, content) => {
+    const normalized = normalizeEol(content);
     set((state) => ({
       tabs: state.tabs.map((tab) =>
-        tab.path === path && !tab.readOnly && tab.content !== content
+        tab.path === path && !tab.readOnly && tab.content !== normalized
           ? {
               ...tab,
-              content,
+              content: normalized,
               revision: (tab.revision ?? 0) + 1,
               ephemeral: false,
             }
@@ -555,12 +668,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setLineEnding: (path, eol) => {
     set((state) => ({
+      // Metadata only — the buffer stays LF; `eol` is applied at save time.
       tabs: state.tabs.map((tab) =>
-        tab.path === path && !tab.readOnly
-          ? { ...tab, content: convertLineEndings(tab.content, eol) }
-          : tab,
+        tab.path === path && !tab.readOnly ? { ...tab, eol } : tab,
       ),
-      docInfo: state.activePath === path && state.docInfo ? { ...state.docInfo, eol } : state.docInfo,
+      docInfo:
+        state.activePath === path && state.docInfo
+          ? { ...state.docInfo, eol }
+          : state.docInfo,
     }));
   },
 
@@ -594,110 +709,121 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
   },
 
-  saveTab: async (path) => {
-    const active = get().tabs.find((tab) => tab.path === path);
-    if (!active || active.readOnly) return true;
-    const prefs = usePrefsStore.getState();
-    const editorConfig = isUntitledPath(active.path)
-      ? null
-      : await ipc
-          .editorConfigResolve(active.path)
-          .catch(() => active.editorConfig ?? null);
-    const configuredEncoding = encodingFromEditorConfig(editorConfig);
-    const encoding = configuredEncoding ?? active.encoding;
-    const bom = editorConfig?.charset
-      ? editorConfig.charset === "utf-8-bom" || editorConfig.charset.startsWith("utf-16")
-      : active.bom;
-    const prepared = prepareContentForSave(active.path, active.content, {
-      trimTrailingWhitespace:
-        editorConfig?.trimTrailingWhitespace ?? prefs.trimTrailingWhitespace,
-      insertFinalNewline:
-        editorConfig?.insertFinalNewline ?? prefs.insertFinalNewline,
-      removeFinalNewline: editorConfig?.insertFinalNewline === false,
-      formatOnSave: prefs.formatOnSave,
-      tabSize: editorConfig?.indentSize ?? prefs.tabSize,
-      endOfLine:
-        editorConfig?.endOfLine === "lf" ||
-        editorConfig?.endOfLine === "cr" ||
-        editorConfig?.endOfLine === "crlf"
-          ? editorConfig.endOfLine
-          : undefined,
-    });
-    if (
-      prepared === active.savedContent &&
-      encoding === active.savedEncoding &&
-      bom === active.savedBom
-    ) {
-      return true;
-    }
+  saveTab: (path, options) =>
+    enqueueSave(path, async () => {
+      flushPendingEditorChanges();
+      const active = get().tabs.find((tab) => tab.path === path);
+      if (!active || active.readOnly || active.preview) return true;
 
-    // Untitled buffers have no on-disk path: ask for one first (Save As).
-    let targetPath = active.path;
-    if (isUntitledPath(active.path)) {
-      const chosen = await saveDialog({
-        defaultPath: active.name,
-        filters: [
-          { name: "All files", extensions: ["*"] },
-          { name: "Text", extensions: ["txt", "md"] },
-        ],
+      // Untitled buffers have no on-disk path: ask for one first (Save As).
+      let targetPath = active.path;
+      const untitled = isUntitledPath(active.path);
+      if (untitled) {
+        const chosen = await saveDialog({
+          defaultPath: active.name,
+          filters: [
+            { name: "All files", extensions: ["*"] },
+            { name: "Text", extensions: ["txt", "md"] },
+          ],
+        });
+        if (typeof chosen !== "string") return false;
+        targetPath = chosen;
+      }
+
+      const prefs = usePrefsStore.getState();
+      const editorConfig = await ipc
+        .editorConfigResolve(targetPath)
+        .catch(() => active.editorConfig ?? null);
+      const configuredEncoding = encodingFromEditorConfig(editorConfig);
+      const encoding = configuredEncoding ?? active.encoding;
+      const bom = editorConfig?.charset
+        ? editorConfig.charset === "utf-8-bom" || editorConfig.charset.startsWith("utf-16")
+        : active.bom;
+      const eol = eolFromEditorConfig(editorConfig) ?? active.eol;
+      // Hygiene runs on the LF buffer and stays LF; the real line ending is
+      // applied to the wire payload only, so `savedContent` remains comparable
+      // with the live buffer.
+      const prepared = prepareContentForSave(targetPath, active.content, {
+        trimTrailingWhitespace:
+          editorConfig?.trimTrailingWhitespace ?? prefs.trimTrailingWhitespace,
+        insertFinalNewline:
+          editorConfig?.insertFinalNewline ?? prefs.insertFinalNewline,
+        removeFinalNewline: editorConfig?.insertFinalNewline === false,
+        formatOnSave: prefs.formatOnSave,
+        tabSize: editorConfig?.indentSize ?? prefs.tabSize,
+        endOfLine: "lf",
       });
-      if (typeof chosen !== "string") return false;
-      targetPath = chosen;
-    }
+      if (
+        !untitled &&
+        prepared === active.savedContent &&
+        encoding === active.savedEncoding &&
+        bom === active.savedBom &&
+        eol === active.savedEol
+      ) {
+        return true;
+      }
 
-    set({ loading: true, error: null });
-    try {
-      const result = await ipc.fsWrite(
-        targetPath,
-        prepared,
-        isUntitledPath(active.path) ? undefined : active.hash,
-        encoding,
-        bom,
-      );
-      const remapped: Partial<EditorTab> & Record<string, unknown> = {
-        path: targetPath,
-        name: basename(targetPath),
-        hash: result.hash,
-        savedContent: prepared,
-        encoding,
-        savedEncoding: encoding,
-        bom,
-        savedBom: bom,
-        editorConfig,
-      };
-      set((state) => {
-        const remapPanePath = (panePath: string | null) =>
-          panePath === active.path ? targetPath : panePath;
-        // Saving an untitled buffer onto a path that is already open must not
-        // create a second tab: fold the saved buffer into the existing tab.
-        const existsElsewhere =
-          targetPath !== active.path && state.tabs.some((tab) => tab.path === targetPath);
-        const tabs = state.tabs
-          .filter((tab) => !(existsElsewhere && tab.path === targetPath))
-          .map((tab) => {
-            if (tab.path === active.path) {
-              return {
-                ...tab,
-                ...remapped,
-                content: tab.content === active.content ? prepared : tab.content,
-              };
-            }
-            return tab;
-          });
-        return {
-          loading: false,
-          tabs,
-          activePath: remapPanePath(state.activePath),
-          primaryPath: remapPanePath(state.primaryPath),
-          secondaryPath: remapPanePath(state.secondaryPath),
+      set({ loading: true, error: null });
+      try {
+        const result = await ipc.fsWrite(
+          targetPath,
+          convertLineEndings(prepared, eol),
+          untitled || options?.force ? undefined : active.hash,
+          encoding,
+          bom,
+        );
+        const remapped: Partial<EditorTab> = {
+          path: targetPath,
+          name: basename(targetPath),
+          hash: result.hash,
+          savedContent: prepared,
+          encoding,
+          savedEncoding: encoding,
+          bom,
+          savedBom: bom,
+          eol,
+          savedEol: eol,
+          editorConfig,
         };
-      });
-      return true;
-    } catch (error) {
-      set({ loading: false, error: asMessage(error) });
-      return false;
-    }
-  },
+        set((state) => {
+          const remapPanePath = (panePath: string | null) =>
+            panePath === active.path ? targetPath : panePath;
+          // Saving an untitled buffer onto a path that is already open must not
+          // create a second tab: fold the saved buffer into the existing tab.
+          const existsElsewhere =
+            targetPath !== active.path && state.tabs.some((tab) => tab.path === targetPath);
+          const tabs = state.tabs
+            .filter((tab) => !(existsElsewhere && tab.path === targetPath))
+            .map((tab) => {
+              if (tab.path === active.path) {
+                return {
+                  ...tab,
+                  ...remapped,
+                  content: tab.content === active.content ? prepared : tab.content,
+                };
+              }
+              return tab;
+            });
+          return {
+            loading: false,
+            tabs,
+            activePath: remapPanePath(state.activePath),
+            primaryPath: remapPanePath(state.primaryPath),
+            secondaryPath: remapPanePath(state.secondaryPath),
+            conflictPath:
+              state.conflictPath === active.path ? null : state.conflictPath,
+          };
+        });
+        return true;
+      } catch (error) {
+        if (isConflictError(error)) {
+          set({ loading: false, error: null, conflictPath: active.path });
+        } else {
+          set({ loading: false, error: asMessage(error) });
+        }
+        return false;
+      }
+    }),
 
   saveActive: async () => {
     const activePath = get().activePath;
@@ -762,10 +888,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           normalizePath(tab.path) === normalizePath(path) ? next : tab,
         ),
         error: null,
+        conflictPath:
+          state.conflictPath !== null &&
+          normalizePath(state.conflictPath) === normalizePath(path)
+            ? null
+            : state.conflictPath,
       }));
     } catch (error) {
       set({ error: asMessage(error) });
     }
+  },
+
+  clearError: () => set({ error: null }),
+
+  clearConflict: (path) => {
+    set((state) =>
+      path === undefined || state.conflictPath === path ? { conflictPath: null } : state,
+    );
   },
 
   clearReveal: (token) => {

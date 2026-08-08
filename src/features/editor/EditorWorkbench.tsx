@@ -31,6 +31,7 @@ export default function EditorWorkbench() {
   const focusedPane = useEditorStore((s) => s.focusedPane);
   const loading = useEditorStore((s) => s.loading);
   const error = useEditorStore((s) => s.error);
+  const conflictPath = useEditorStore((s) => s.conflictPath);
   const recoveryNotice = useEditorStore((s) => s.recoveryNotice);
   const dismissRecoveryNotice = useEditorStore((s) => s.dismissRecoveryNotice);
   const closeTab = useEditorStore((s) => s.closeTab);
@@ -54,6 +55,10 @@ export default function EditorWorkbench() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The CodeMirror keymap handles its own shortcuts (Ctrl+S in
+      // particular) and prevents the default; running the command a second
+      // time here raced the first save against the optimistic disk lock.
+      if (event.defaultPrevented) return;
       const editorFocus =
         document.activeElement instanceof Element &&
         Boolean(document.activeElement.closest(".cm-editor"));
@@ -103,7 +108,12 @@ export default function EditorWorkbench() {
     ? t("editor.truncatedBanner")
     : active.longLines
       ? t("editor.longLinesBanner")
-      : null;
+      : active.lossy
+        ? t("editor.lossyBanner")
+        : null;
+  const conflictTab = conflictPath
+    ? tabs.find((tab) => tab.path === conflictPath) ?? null
+    : null;
 
   const menuTab = tabMenu ? tabs.find((tab) => tab.path === tabMenu.path) ?? null : null;
   const relativePath = menuTab && projectPath
@@ -317,7 +327,52 @@ export default function EditorWorkbench() {
           </button>
         )}
       </div>
-      {error && <div className="border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>}
+      {error && (
+        <div className="flex items-center gap-2 border-b border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+          <span className="min-w-0 flex-1 break-words">{error}</span>
+          <button
+            type="button"
+            onClick={() => useEditorStore.getState().clearError()}
+            title={t("editor.dismiss")}
+            className="grid size-5 shrink-0 place-items-center rounded hover:bg-hover"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+      {conflictTab && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+          <span className="min-w-0 flex-1">
+            {t("editor.saveConflict", { name: conflictTab.name })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              void useEditorStore.getState().saveTab(conflictTab.path, { force: true });
+            }}
+            className="h-6 shrink-0 rounded-md border border-warn/40 px-2 font-medium hover:bg-warn/15"
+          >
+            {t("editor.overwriteDisk")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void useEditorStore.getState().refreshTabFromDisk(conflictTab.path);
+            }}
+            className="h-6 shrink-0 rounded-md border border-warn/40 px-2 hover:bg-warn/15"
+          >
+            {t("editor.reloadFromDisk")}
+          </button>
+          <button
+            type="button"
+            onClick={() => useEditorStore.getState().clearConflict(conflictTab.path)}
+            title={t("editor.dismiss")}
+            className="grid size-5 shrink-0 place-items-center rounded hover:bg-hover"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       {recoveryNotice && (
         <div className="flex items-center gap-2 border-b border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">
           <span className="flex-1">

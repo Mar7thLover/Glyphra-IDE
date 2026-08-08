@@ -56,6 +56,9 @@ pub struct FileReadResult {
     pub truncated: bool,
     pub long_lines: bool,
     pub read_only: bool,
+    /// Decoded with replacement characters; saving would destroy the original
+    /// bytes, so the frontend opens the buffer read-only.
+    pub lossy: bool,
     pub encoding: String,
     pub bom: bool,
 }
@@ -291,26 +294,31 @@ pub async fn fs_read_with_encoding(
         let metadata = fs::metadata(&path).map_err(|err| format!("failed to stat file: {err}"))?;
         let truncated = metadata.len() > MAX_FILE_BYTES;
         let bytes = if truncated {
-            fs::read(&path)
-                .map_err(|err| format!("failed to read file: {err}"))?
-                .into_iter()
-                .take(MAX_FILE_BYTES as usize)
-                .collect::<Vec<_>>()
+            // Stream only the preview window instead of materializing the
+            // whole file (which can be gigabytes) just to cut it down.
+            let mut bytes = Vec::with_capacity(MAX_FILE_BYTES as usize);
+            fs::File::open(&path)
+                .map_err(|err| format!("failed to open file: {err}"))?
+                .take(MAX_FILE_BYTES)
+                .read_to_end(&mut bytes)
+                .map_err(|err| format!("failed to read file: {err}"))?;
+            bytes
         } else {
             fs::read(&path).map_err(|err| format!("failed to read file: {err}"))?
         };
-        let (content, detected_encoding, bom) = decode_text(&bytes, encoding.as_deref())?;
-        let long_lines = has_long_line(&content);
-        let degrade = truncated || long_lines;
+        let decoded = decode_text(&bytes, encoding.as_deref())?;
+        let long_lines = has_long_line(&decoded.content);
+        let degrade = truncated || long_lines || decoded.lossy;
         Ok(FileReadResult {
             path: path.to_string_lossy().to_string(),
             hash: hash_bytes(&bytes),
-            content,
+            content: decoded.content,
             truncated,
             long_lines,
             read_only: metadata.permissions().readonly() || degrade,
-            encoding: detected_encoding,
-            bom,
+            lossy: decoded.lossy,
+            encoding: decoded.encoding,
+            bom: decoded.bom,
         })
     })
     .await
@@ -346,7 +354,7 @@ pub async fn fs_write(
             fs::create_dir_all(parent).map_err(|err| format!("failed to create parent: {err}"))?;
         }
         let bytes = encode_text(&content, encoding.as_deref(), bom.unwrap_or(false))?;
-        fs::write(&path, &bytes).map_err(|err| format!("failed to write file: {err}"))?;
+        write_atomic(&path, &bytes)?;
         Ok(FileWriteResult {
             hash: hash_bytes(&bytes),
         })
@@ -524,6 +532,43 @@ pub fn fs_watch_stop(state: State<'_, AppState>, watcher_id: u64) -> Result<(), 
     Ok(())
 }
 
+/// Write-then-rename so a crash or power loss mid-save leaves either the old
+/// file or the new file on disk — never a truncated hybrid. `fs::rename`
+/// replaces existing files on every supported platform (MoveFileEx with
+/// MOVEFILE_REPLACE_EXISTING on Windows).
+fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| format!("invalid write target: {}", path.display()))?
+        .to_string_lossy()
+        .into_owned();
+    let temp = parent.join(format!(".{file_name}.glyphra-{}.tmp", std::process::id()));
+
+    let result = (|| {
+        let mut file = fs::File::create(&temp)
+            .map_err(|err| format!("failed to create temporary file: {err}"))?;
+        file.write_all(bytes)
+            .map_err(|err| format!("failed to write file: {err}"))?;
+        // Flush to the platter before the rename makes the write visible.
+        file.sync_all()
+            .map_err(|err| format!("failed to flush file: {err}"))?;
+        drop(file);
+        fs::rename(&temp, path).map_err(|err| format!("failed to replace file: {err}"))
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
 fn hash_bytes(bytes: &[u8]) -> String {
     let mut hasher = DefaultHasher::new();
     bytes.hash(&mut hasher);
@@ -535,10 +580,16 @@ fn encoding_for_label(label: &str) -> Result<&'static Encoding, String> {
         .ok_or_else(|| format!("unsupported text encoding: {label}"))
 }
 
-pub(crate) fn decode_text(
-    bytes: &[u8],
-    requested: Option<&str>,
-) -> Result<(String, String, bool), String> {
+pub(crate) struct DecodedText {
+    pub content: String,
+    pub encoding: String,
+    pub bom: bool,
+    /// Invalid byte sequences were replaced with U+FFFD. The text is safe to
+    /// display but must never be written back over the original file.
+    pub lossy: bool,
+}
+
+pub(crate) fn decode_text(bytes: &[u8], requested: Option<&str>) -> Result<DecodedText, String> {
     let bom_encoding = Encoding::for_bom(bytes);
     let (encoding, skip, bom) = if let Some(label) = requested {
         (encoding_for_label(label)?, 0, false)
@@ -551,14 +602,16 @@ pub(crate) fn decode_text(
         detector.feed(bytes, true);
         (detector.guess(None, true), 0, false)
     };
+    // Decode errors degrade to replacement characters instead of refusing to
+    // open the file: a stray byte in a log or mixed-encoding source must not
+    // make the whole document unopenable.
     let (decoded, had_errors) = encoding.decode_without_bom_handling(&bytes[skip..]);
-    if had_errors {
-        return Err(format!(
-            "file contains invalid byte sequences for {}",
-            encoding.name()
-        ));
-    }
-    Ok((decoded.into_owned(), encoding.name().to_string(), bom))
+    Ok(DecodedText {
+        content: decoded.into_owned(),
+        encoding: encoding.name().to_string(),
+        bom,
+        lossy: had_errors,
+    })
 }
 
 pub(crate) fn encode_text(
@@ -988,20 +1041,53 @@ mod tests {
 
     #[test]
     fn decodes_selected_legacy_encoding_and_roundtrips_utf16_bom() {
-        let (legacy, encoding, bom) =
-            decode_text(b"caf\xe9", Some("windows-1252")).expect("decode windows-1252");
-        assert_eq!(legacy, "café");
-        assert_eq!(encoding, "windows-1252");
-        assert!(!bom);
+        let legacy = decode_text(b"caf\xe9", Some("windows-1252")).expect("decode windows-1252");
+        assert_eq!(legacy.content, "café");
+        assert_eq!(legacy.encoding, "windows-1252");
+        assert!(!legacy.bom);
+        assert!(!legacy.lossy);
 
         let bytes = encode_text("hello 世界", Some("UTF-16LE"), true).expect("encode utf16");
         assert!(bytes.starts_with(b"\xff\xfe"));
-        let (decoded, encoding, bom) = decode_text(&bytes, None).expect("detect utf16");
-        assert_eq!(decoded, "hello 世界");
-        assert_eq!(encoding, "UTF-16LE");
-        assert!(bom);
+        let decoded = decode_text(&bytes, None).expect("detect utf16");
+        assert_eq!(decoded.content, "hello 世界");
+        assert_eq!(decoded.encoding, "UTF-16LE");
+        assert!(decoded.bom);
+        assert!(!decoded.lossy);
 
         assert!(encode_text("世界", Some("windows-1252"), false).is_err());
+    }
+
+    #[test]
+    fn invalid_byte_sequences_decode_lossily_instead_of_failing() {
+        // An explicit UTF-8 read of bytes that are not valid UTF-8 must still
+        // produce displayable text, flagged as lossy so saves are blocked.
+        let decoded = decode_text(b"ok \xff\xfe\xfa bytes", Some("UTF-8")).expect("lossy decode");
+        assert!(decoded.lossy);
+        assert!(decoded.content.contains('\u{FFFD}'));
+        assert!(decoded.content.starts_with("ok "));
+    }
+
+    #[test]
+    fn atomic_write_replaces_existing_content_and_cleans_up_temp_files() {
+        let dir = std::env::temp_dir().join(format!("glyphra-write-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("file.txt");
+
+        write_atomic(&target, b"first").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"first");
+        write_atomic(&target, b"second, longer contents").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"second, longer contents");
+
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

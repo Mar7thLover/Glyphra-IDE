@@ -1,3 +1,4 @@
+import { flushPendingEditorChanges } from "@/lib/editorCommands";
 import {
   ipc,
   type EditorRecoverySnapshot,
@@ -5,8 +6,10 @@ import {
   type FileReadResult,
 } from "@/lib/ipc/ipc";
 import {
+  detectEol,
   isEditorTabDirty,
   isUntitledPath,
+  normalizeEol,
   untitledLabel,
   type EditorTab,
 } from "@/lib/stores/editorStore";
@@ -45,6 +48,9 @@ export function createRecoverySnapshot(
 }
 
 async function writeCurrentRecovery(projectPath: string): Promise<boolean> {
+  // Pull any debounced keystrokes into the store first, or the snapshot can
+  // miss the last ~140ms of typing before a crash or forced close.
+  flushPendingEditorChanges();
   const state = useEditorStore.getState();
   const snapshot = createRecoverySnapshot(projectPath, state.tabs, state.activePath);
   try {
@@ -82,40 +88,48 @@ function recoveredTab(
   disk: FileReadResult | null,
 ): { tab: EditorTab; conflict: boolean } {
   if (!disk) {
+    const content = normalizeEol(recovery.content);
     return {
       tab: {
         path: recovery.path,
         name: isUntitledPath(recovery.path)
           ? untitledLabel(recovery.path)
           : basename(recovery.path),
-        content: recovery.content,
+        content,
         savedContent: "",
         hash: "",
         truncated: false,
         longLines: false,
         readOnly: false,
+        lossy: false,
         encoding: recovery.encoding ?? "UTF-8",
         savedEncoding: recovery.encoding ?? "UTF-8",
         bom: recovery.bom ?? false,
         savedBom: recovery.bom ?? false,
+        eol: detectEol(recovery.content),
+        savedEol: detectEol(recovery.content),
       },
       conflict: recovery.baseHash !== "",
     };
   }
+  const diskEol = detectEol(disk.content);
   return {
     tab: {
       path: disk.path,
       name: basename(disk.path),
-      content: recovery.content,
-      savedContent: disk.content,
+      content: normalizeEol(recovery.content),
+      savedContent: normalizeEol(disk.content),
       hash: disk.hash,
       truncated: disk.truncated,
       longLines: disk.longLines,
-      readOnly: disk.readOnly || disk.truncated || disk.longLines,
+      readOnly: disk.readOnly || disk.truncated || disk.longLines || disk.lossy,
+      lossy: disk.lossy,
       encoding: recovery.encoding ?? disk.encoding,
       savedEncoding: disk.encoding,
       bom: recovery.bom ?? disk.bom,
       savedBom: disk.bom,
+      eol: diskEol,
+      savedEol: diskEol,
     },
     conflict: recovery.baseHash !== disk.hash,
   };

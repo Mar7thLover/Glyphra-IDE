@@ -39,6 +39,62 @@ VSCode-style multi-root workspaces, better search, and single-file editing.
 
 ### Fixed
 
+- **Pasting could visually collapse the document into mega-lines and wipe the
+  undo history.** Buffers were mounted with a per-document CodeMirror
+  `lineSeparator` matching the file's endings, but CodeMirror splits inserted
+  text on that exact separator only: pasting LF text into a CRLF file (or CRLF
+  clipboard content into an LF file — the Windows default) left literal
+  `\r`/`\n` characters inside lines, flipped the detected line ending, and
+  remounted the whole editor with the other separator — at which point every
+  original line break stopped being one. Buffers are now always LF-normalized
+  in memory; the real line ending is tracked per tab and applied only when
+  writing to disk. Paste, EOL switching (now instant metadata, no buffer
+  rewrite), mixed-ending files and undo history all behave.
+- **Saving could silently lose the last ~140ms of typing.** The editor
+  debounces its store sync; menu/keyboard-driven saves, close flows, recovery
+  snapshots and exit all read the store without flushing that debounce. Every
+  consumer now flushes mounted editors synchronously before reading buffers.
+- **Save could fail spuriously with "file changed on disk".** Two saves racing
+  (held-down Ctrl+S, double-clicked save button, close-dialog save) both
+  carried the same expected disk hash; the loser's write tripped the
+  optimistic lock. Saves are serialized per file.
+- **A real save conflict was a dead end.** The optimistic-lock failure now
+  shows a banner with "Overwrite disk version" and "Reload from disk" instead
+  of an undismissable error; generic editor errors gained a dismiss button.
+- **Switching tabs or opening a file no longer interrogates you about unsaved
+  changes.** Dirty buffers simply stay alive across navigation, like every
+  other editor. The save/discard/cancel dialog now appears only where a buffer
+  is actually about to be destroyed: closing a tab, reopening with a different
+  encoding, or leaving loose-file mode.
+- **Exiting and switching projects could destroy unsaved work.** The close
+  flow relied on `window.confirm` (a no-op in some webviews — the window
+  could refuse to close, or close losing edits), and switching projects wiped
+  tabs first and then wrote a "nothing dirty" recovery snapshot over the one
+  that held the edits. Exit and project switches now flush editors, hot-stash
+  dirty buffers into the recovery snapshot when a project is open, and walk
+  per-file save dialogs in loose-file mode; the stale cleanup that deleted the
+  just-written snapshot is gone. A failed launch request no longer wedges the
+  queue for every later "open with Glyphra".
+- **Files with a few invalid bytes refused to open at all.** Decode errors now
+  degrade to a lossy, read-only view (invalid sequences shown as `�`) with a
+  banner pointing at "Reopen with encoding" — instead of an opaque error. The
+  search-replace path skips lossy files so it can never destroy original bytes.
+- **Saves are atomic.** Writes go to a temp file that is flushed and renamed
+  over the target, so a crash mid-save leaves the old or the new file — never
+  a truncated hybrid. Truncated big-file reads also stopped materializing the
+  whole file in memory first.
+- Save-time trimming/formatting and external disk syncs no longer yank the
+  cursor to the top of the file: the editor applies the minimal changed span
+  instead of replacing the whole document.
+- The modified-code gutter re-diffed the entire document against the saved
+  baseline on every keystroke (with a 20ms diff budget on the UI thread).
+  Markers now map through edits while typing and rebuild once, shortly after
+  the burst ends.
+- `Ctrl+N` untitled numbering no longer collides with untitled buffers
+  restored from recovery, and two racing opens of the same file no longer
+  create duplicate tabs.
+- Accepting inline-review hunks in a CRLF file no longer rewrites the whole
+  file with LF endings.
 - **Opening a folder could exhaust system memory and take the machine down.**
   Loading a workspace refreshed the review queue, which ran one
   `git_diff_file` per working-tree entry through `Promise.all` — no concurrency

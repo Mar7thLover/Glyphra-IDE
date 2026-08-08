@@ -3,7 +3,6 @@ import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
 import { useUiStore, type Panel } from "@/lib/stores/uiStore";
-import { useEditorStore } from "@/lib/stores/editorStore";
 import { useGitStore } from "@/lib/stores/gitStore";
 
 const mainItems: { id: Panel; icon: LucideIcon }[] = [
@@ -54,13 +53,9 @@ export default function ActivityRail() {
         type="button"
         title={t("rail.gitReview")}
         onClick={() => {
-          if (reviewActive) {
-            showWorkspace("editor");
-            return;
-          }
-          void useEditorStore.getState().confirmLeaveActive().then((leave) => {
-            if (leave) showWorkspace("git-review");
-          });
+          // Buffers live in the store, not the view — switching workspace
+          // views never loses edits, so no confirmation is needed.
+          showWorkspace(reviewActive ? "editor" : "git-review");
         }}
         className={`relative grid size-9 place-items-center rounded-[10px] transition-colors duration-100 ${
           reviewActive ? "text-ink" : "text-ink-3 hover:text-ink-2"

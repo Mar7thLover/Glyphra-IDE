@@ -563,10 +563,16 @@ fn replace_in_file(
     if encoding_rs::Encoding::for_bom(&bytes).is_none() && bytes.contains(&0) {
         return None;
     }
-    let (text, encoding, bom) = match crate::ipc::project::decode_text(&bytes, None) {
+    let decoded = match crate::ipc::project::decode_text(&bytes, None) {
         Ok(decoded) => decoded,
         Err(err) => return Some(Err(err)),
     };
+    // A lossy decode cannot round-trip: writing it back would replace the
+    // original bytes with U+FFFD. Skip the file, as for binary content.
+    if decoded.lossy {
+        return None;
+    }
+    let (text, encoding, bom) = (decoded.content, decoded.encoding, decoded.bom);
 
     let spans = match collect_spans(matcher, text.as_bytes()) {
         Ok(spans) => spans,
@@ -1082,11 +1088,11 @@ mod tests {
             )
             .expect("replace utf16");
         assert_eq!(summary.files_changed, 1);
-        let (decoded, encoding, bom) =
+        let decoded =
             crate::ipc::project::decode_text(&fs::read(&utf16).unwrap(), None).unwrap();
-        assert_eq!(decoded, "HELLO 世界");
-        assert_eq!(encoding, "UTF-16LE");
-        assert!(bom);
+        assert_eq!(decoded.content, "HELLO 世界");
+        assert_eq!(decoded.encoding, "UTF-16LE");
+        assert!(decoded.bom);
 
         let _ = fs::remove_dir_all(&root);
     }

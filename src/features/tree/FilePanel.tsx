@@ -99,7 +99,7 @@ export default function FilePanel() {
       <div className="flex flex-1 flex-col px-3 py-2.5">
         <button
           type="button"
-          onClick={() => void pickProject(t("empty.openFolder"), t("menu.unsavedProject"))}
+          onClick={() => void pickProject(t("empty.openFolder"))}
           className="inline-flex items-center gap-1.5 px-1 py-1 text-left text-[11px] text-ink-2 transition-colors hover:text-ink"
         >
           <FolderOpen className="size-3.5 text-ink-3" strokeWidth={1.6} />

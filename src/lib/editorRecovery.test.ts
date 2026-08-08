@@ -18,6 +18,9 @@ const utf8 = {
   savedEncoding: "UTF-8",
   bom: false,
   savedBom: false,
+  eol: "LF" as const,
+  savedEol: "LF" as const,
+  lossy: false,
 };
 
 const cleanTab: EditorTab = {
@@ -102,6 +105,7 @@ describe("editor recovery", () => {
       truncated: false,
       longLines: false,
       readOnly: false,
+      lossy: false,
       encoding: "UTF-8",
       bom: false,
     });

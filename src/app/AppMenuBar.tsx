@@ -95,7 +95,6 @@ export default function AppMenuBar() {
   const openSettings = (section: SettingsSection) => {
     useUiStore.getState().openSettings(section);
   };
-  const unsaved = t("menu.unsavedProject");
   const entries: Record<MenuId, MenuEntry[]> = {
     file: [
       {
@@ -106,12 +105,12 @@ export default function AppMenuBar() {
       {
         label: t("menu.openProject"),
         shortcut: "Ctrl+O",
-        action: () => pickProject(t("empty.openFolder"), unsaved),
+        action: () => pickProject(t("empty.openFolder")),
       },
       {
         label: t("menu.openFile"),
         shortcut: "Ctrl+Shift+O",
-        action: () => pickFile(t("menu.openFile"), unsaved),
+        action: () => pickFile(t("menu.openFile")),
       },
       {
         label: t("menu.addFolderToWorkspace"),
@@ -137,7 +136,7 @@ export default function AppMenuBar() {
       {
         label: t("menu.closeProject"),
         disabled: !hasProject,
-        action: () => closeCurrentProject(unsaved),
+        action: () => closeCurrentProject(),
       },
       { separator: true, label: "" },
       {

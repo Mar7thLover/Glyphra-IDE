@@ -158,14 +158,21 @@ export default function StatusBar() {
                   setEncoding(activeTab.path, encoding);
                 }
               }}
-              disabled={activeTab.readOnly}
+              // A lossy decode opens read-only, but "reopen with encoding" is
+              // exactly the way out of it — keep the select usable and only
+              // block the save-encoding conversions.
+              disabled={activeTab.readOnly && !activeTab.lossy}
               title={t("status.encodingHint")}
               aria-label={t("status.encodingHint")}
               className="h-5 max-w-28 rounded border-0 bg-transparent px-1 text-[10.5px] text-ink-3 outline-none hover:bg-hover disabled:opacity-50"
             >
               <optgroup label={t("status.saveEncoding")}>
                 {TEXT_ENCODINGS.map((encoding) => (
-                  <option key={`convert:${encoding}`} value={`convert:${encoding}`}>
+                  <option
+                    key={`convert:${encoding}`}
+                    value={`convert:${encoding}`}
+                    disabled={activeTab.readOnly}
+                  >
                     {encoding}
                     {encoding === activeTab.encoding && activeTab.bom ? " BOM" : ""}
                   </option>

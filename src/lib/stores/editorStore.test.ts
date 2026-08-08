@@ -17,15 +17,39 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { ipc } from "@/lib/ipc/ipc";
 import { useUnsavedChangesStore } from "@/lib/unsavedChanges";
-import { convertLineEndings, isUntitledPath, useEditorStore } from "./editorStore";
+import {
+  convertLineEndings,
+  detectEol,
+  isEditorTabDirty,
+  isUntitledPath,
+  normalizeEol,
+  useEditorStore,
+  type EditorTab,
+} from "./editorStore";
 
-const fileEncoding = { encoding: "UTF-8", bom: false };
-const tabEncoding = {
+const fileEncoding = { encoding: "UTF-8", bom: false, lossy: false };
+const tabDefaults = {
   encoding: "UTF-8",
   savedEncoding: "UTF-8",
   bom: false,
   savedBom: false,
+  eol: "LF" as const,
+  savedEol: "LF" as const,
+  lossy: false,
+  truncated: false,
+  longLines: false,
+  readOnly: false,
 };
+
+function makeTab(overrides: Partial<EditorTab> & Pick<EditorTab, "path" | "name">): EditorTab {
+  return {
+    content: "",
+    savedContent: "",
+    hash: "",
+    ...tabDefaults,
+    ...overrides,
+  };
+}
 
 describe("editorStore", () => {
   beforeEach(() => {
@@ -37,6 +61,7 @@ describe("editorStore", () => {
       focusedPane: "primary",
       loading: false,
       error: null,
+      conflictPath: null,
       reveal: null,
       cursor: null,
       docInfo: null,
@@ -83,6 +108,74 @@ describe("editorStore", () => {
     expect(state.tabs[0]?.readOnly).toBe(true);
   });
 
+  it("marks lossily decoded files read-only", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/mixed.log",
+      content: "ok � line",
+      hash: "l1",
+      truncated: false,
+      longLines: false,
+      readOnly: true,
+      encoding: "UTF-8",
+      bom: false,
+      lossy: true,
+    });
+
+    await useEditorStore.getState().openFile("/tmp/mixed.log");
+    const tab = useEditorStore.getState().tabs[0];
+    expect(tab?.lossy).toBe(true);
+    expect(tab?.readOnly).toBe(true);
+  });
+
+  it("normalizes CRLF files to LF buffers and records the real line ending", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/win.txt",
+      content: "a\r\nb\r\n",
+      hash: "h1",
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      ...fileEncoding,
+    });
+
+    await useEditorStore.getState().openFile("/tmp/win.txt");
+    const tab = useEditorStore.getState().tabs[0];
+    expect(tab?.content).toBe("a\nb\n");
+    expect(tab?.savedContent).toBe("a\nb\n");
+    expect(tab?.eol).toBe("CRLF");
+    expect(isEditorTabDirty(tab!)).toBe(false);
+  });
+
+  it("converts the buffer back to CRLF at save time only", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/win.txt",
+      content: "a\r\nb\r\n",
+      hash: "h1",
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      ...fileEncoding,
+    });
+    vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "h2" });
+
+    await useEditorStore.getState().openFile("/tmp/win.txt");
+    useEditorStore.getState().setContent("/tmp/win.txt", "a\nb\nc\n");
+    await useEditorStore.getState().saveActive();
+
+    expect(ipc.fsWrite).toHaveBeenCalledWith(
+      "/tmp/win.txt",
+      "a\r\nb\r\nc\r\n",
+      "h1",
+      "UTF-8",
+      false,
+    );
+    const saved = useEditorStore.getState().tabs[0];
+    // The store keeps the LF form so buffer and savedContent stay comparable.
+    expect(saved?.savedContent).toBe("a\nb\nc\n");
+    expect(saved?.eol).toBe("CRLF");
+    expect(isEditorTabDirty(saved!)).toBe(false);
+  });
+
   it("queues a reveal target when opening with a line", async () => {
     vi.mocked(ipc.fsRead).mockResolvedValue({
       path: "/tmp/a.ts",
@@ -103,31 +196,37 @@ describe("editorStore", () => {
     });
   });
 
+  it("does not create duplicate tabs when two opens race", async () => {
+    vi.mocked(ipc.fsRead).mockImplementation(async (path: string) => ({
+      path,
+      content: "x\n",
+      hash: `hash:${path}`,
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      ...fileEncoding,
+    }));
+
+    await Promise.all([
+      useEditorStore.getState().openFile("/tmp/a.ts", { preview: true }),
+      useEditorStore.getState().openFile("/tmp/a.ts", { preview: false }),
+    ]);
+    expect(
+      useEditorStore.getState().tabs.filter((tab) => tab.path === "/tmp/a.ts"),
+    ).toHaveLength(1);
+  });
+
   it("reloads clean tabs from disk on syncFromDisk", async () => {
     useEditorStore.setState({
       tabs: [
-        {
-          path: "/tmp/a.ts",
-          name: "a.ts",
-          content: "old",
-          savedContent: "old",
-          ...tabEncoding,
-          hash: "h1",
-          truncated: false,
-          longLines: false,
-          readOnly: false,
-        },
-        {
+        makeTab({ path: "/tmp/a.ts", name: "a.ts", content: "old", savedContent: "old", hash: "h1" }),
+        makeTab({
           path: "/tmp/dirty.ts",
           name: "dirty.ts",
           content: "local",
           savedContent: "disk",
-          ...tabEncoding,
           hash: "d1",
-          truncated: false,
-          longLines: false,
-          readOnly: false,
-        },
+        }),
       ],
       activePath: "/tmp/a.ts",
     });
@@ -186,6 +285,64 @@ describe("editorStore", () => {
     expect(saved?.savedContent).toBe("const x = 2;\n");
   });
 
+  it("serializes concurrent saves so only one write reaches disk", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/a.ts",
+      content: "one\n",
+      hash: "h1",
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      ...fileEncoding,
+    });
+    vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "h2" });
+
+    await useEditorStore.getState().openFile("/tmp/a.ts");
+    useEditorStore.getState().setContent("/tmp/a.ts", "two\n");
+    // Both fire in the same tick — the double Ctrl+S scenario. The second
+    // save must observe the first one's result and skip the write.
+    await Promise.all([
+      useEditorStore.getState().saveTab("/tmp/a.ts"),
+      useEditorStore.getState().saveTab("/tmp/a.ts"),
+    ]);
+    expect(ipc.fsWrite).toHaveBeenCalledTimes(1);
+  });
+
+  it("flags an optimistic-lock failure as a conflict instead of a plain error", async () => {
+    vi.mocked(ipc.fsRead).mockResolvedValue({
+      path: "/tmp/a.ts",
+      content: "one\n",
+      hash: "h1",
+      truncated: false,
+      longLines: false,
+      readOnly: false,
+      ...fileEncoding,
+    });
+    vi.mocked(ipc.fsWrite).mockRejectedValue(
+      new Error("file changed on disk; reload before saving"),
+    );
+
+    await useEditorStore.getState().openFile("/tmp/a.ts");
+    useEditorStore.getState().setContent("/tmp/a.ts", "two\n");
+    const saved = await useEditorStore.getState().saveTab("/tmp/a.ts");
+    expect(saved).toBe(false);
+    const state = useEditorStore.getState();
+    expect(state.conflictPath).toBe("/tmp/a.ts");
+    expect(state.error).toBeNull();
+
+    // Force-save overwrites without the hash and clears the conflict.
+    vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "h3" });
+    await useEditorStore.getState().saveTab("/tmp/a.ts", { force: true });
+    expect(ipc.fsWrite).toHaveBeenLastCalledWith(
+      "/tmp/a.ts",
+      "two\n",
+      undefined,
+      "UTF-8",
+      false,
+    );
+    expect(useEditorStore.getState().conflictPath).toBeNull();
+  });
+
   it("opens binary and media files as previews without reading them as text", async () => {
     vi.mocked(ipc.fsMediaPreview).mockResolvedValue({
       path: "/tmp/logo.png",
@@ -235,23 +392,16 @@ describe("editorStore", () => {
     expect(useEditorStore.getState().secondaryPath).toBeNull();
   });
 
-  it("converts line endings and marks the buffer dirty", () => {
+  it("switches line endings as metadata without rewriting the buffer", () => {
     expect(convertLineEndings("a\r\nb\rc\n", "LF")).toBe("a\nb\nc\n");
     expect(convertLineEndings("a\nb\n", "CRLF")).toBe("a\r\nb\r\n");
+    expect(normalizeEol("a\r\nb\rc\n")).toBe("a\nb\nc\n");
+    expect(detectEol("a\r\nb")).toBe("CRLF");
+    expect(detectEol("a\nb")).toBe("LF");
 
     useEditorStore.setState({
       tabs: [
-        {
-          path: "/tmp/a.ts",
-          name: "a.ts",
-          content: "a\nb\n",
-          savedContent: "a\nb\n",
-          ...tabEncoding,
-          hash: "h1",
-          truncated: false,
-          longLines: false,
-          readOnly: false,
-        },
+        makeTab({ path: "/tmp/a.ts", name: "a.ts", content: "a\nb\n", savedContent: "a\nb\n", hash: "h1" }),
       ],
       activePath: "/tmp/a.ts",
       docInfo: {
@@ -265,37 +415,32 @@ describe("editorStore", () => {
 
     useEditorStore.getState().setLineEnding("/tmp/a.ts", "CRLF");
     const state = useEditorStore.getState();
-    expect(state.tabs[0]?.content).toBe("a\r\nb\r\n");
-    expect(state.tabs[0]?.content).not.toBe(state.tabs[0]?.savedContent);
+    // Buffer stays LF — only the save-time line ending changes.
+    expect(state.tabs[0]?.content).toBe("a\nb\n");
+    expect(state.tabs[0]?.eol).toBe("CRLF");
+    expect(isEditorTabDirty(state.tabs[0]!)).toBe(true);
     expect(state.docInfo?.eol).toBe("CRLF");
   });
 
   it("bumps a revision on external edits so mounted views follow", () => {
     useEditorStore.setState({
       tabs: [
-        {
+        makeTab({
           path: "/tmp/a.ts",
           name: "a.ts",
           content: "const value = 1;",
           savedContent: "const value = 1;",
-          ...tabEncoding,
           hash: "h1",
-          truncated: false,
-          longLines: false,
-          readOnly: false,
           ephemeral: true,
-        },
-        {
+        }),
+        makeTab({
           path: "/tmp/locked.ts",
           name: "locked.ts",
           content: "frozen",
           savedContent: "frozen",
-          ...tabEncoding,
           hash: "h2",
-          truncated: false,
-          longLines: false,
           readOnly: true,
-        },
+        }),
       ],
     });
 
@@ -343,6 +488,7 @@ describe("editorStore", () => {
       readOnly: false,
       encoding: "windows-1252",
       bom: false,
+      lossy: false,
     });
     vi.mocked(ipc.fsWrite).mockResolvedValue({ hash: "utf8-hash" });
 
@@ -360,43 +506,41 @@ describe("editorStore", () => {
     expect(useEditorStore.getState().tabs[0]?.savedEncoding).toBe("UTF-8");
   });
 
-  it("prompts before leaving a dirty tab and can discard the edit", async () => {
+  it("switches tabs freely without prompting for dirty buffers", () => {
     useEditorStore.setState({
       activePath: "/tmp/a.ts",
+      primaryPath: "/tmp/a.ts",
       tabs: [
-        {
-          path: "/tmp/a.ts",
-          name: "a.ts",
-          content: "changed",
-          savedContent: "original",
-          ...tabEncoding,
-          hash: "h1",
-          truncated: false,
-          longLines: false,
-          readOnly: false,
-        },
-        {
-          path: "/tmp/b.ts",
-          name: "b.ts",
-          content: "other",
-          savedContent: "other",
-          ...tabEncoding,
-          hash: "h2",
-          truncated: false,
-          longLines: false,
-          readOnly: false,
-        },
+        makeTab({ path: "/tmp/a.ts", name: "a.ts", content: "changed", savedContent: "original", hash: "h1" }),
+        makeTab({ path: "/tmp/b.ts", name: "b.ts", content: "other", savedContent: "other", hash: "h2" }),
       ],
     });
 
-    const navigation = useEditorStore.getState().activateTab("/tmp/b.ts");
-    expect(useUnsavedChangesStore.getState().pending?.name).toBe("a.ts");
-    useUnsavedChangesStore.getState().decide("discard");
-    await navigation;
-
+    useEditorStore.getState().activateTab("/tmp/b.ts");
     const state = useEditorStore.getState();
+    expect(useUnsavedChangesStore.getState().pending).toBeNull();
     expect(state.activePath).toBe("/tmp/b.ts");
-    expect(state.tabs[0]?.content).toBe("original");
+    // The dirty buffer survives the switch untouched.
+    expect(state.tabs[0]?.content).toBe("changed");
+  });
+
+  it("prompts before closing a dirty tab and can discard the edit", async () => {
+    useEditorStore.setState({
+      activePath: "/tmp/a.ts",
+      primaryPath: "/tmp/a.ts",
+      tabs: [
+        makeTab({ path: "/tmp/a.ts", name: "a.ts", content: "changed", savedContent: "original", hash: "h1" }),
+      ],
+    });
+
+    const closing = useEditorStore.getState().closeTab("/tmp/a.ts");
+    await vi.waitFor(() => {
+      expect(useUnsavedChangesStore.getState().pending?.name).toBe("a.ts");
+    });
+    useUnsavedChangesStore.getState().decide("discard");
+    await closing;
+
+    expect(useEditorStore.getState().tabs).toHaveLength(0);
   });
 
   it("creates an untitled buffer without touching disk", () => {
@@ -408,6 +552,18 @@ describe("editorStore", () => {
     expect(state.tabs[0]!.content).toBe("");
     expect(state.tabs[0]!.readOnly).toBe(false);
     expect(state.activePath).toBe(state.tabs[0]!.path);
+  });
+
+  it("never reuses the index of a restored untitled buffer", () => {
+    useEditorStore.setState({
+      tabs: [
+        makeTab({ path: "untitled://7", name: "Untitled-7", content: "recovered", savedContent: "" }),
+      ],
+    });
+    useEditorStore.getState().newUntitled();
+    const paths = useEditorStore.getState().tabs.map((tab) => tab.path);
+    expect(new Set(paths).size).toBe(paths.length);
+    expect(paths).toContain("untitled://8");
   });
 
   it("saves an untitled buffer through a Save As dialog and remaps the tab", async () => {
