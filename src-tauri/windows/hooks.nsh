@@ -9,7 +9,7 @@
 !macro REGISTER_GLYPHRA_TEXT_EXTENSION EXT
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile" "" "Open with Glyphra"
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.${EXT}\shell\Glyphra.OpenFile\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
   ; OpenWithProgids is additive: it never replaces the extension's default value.
   WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "Glyphra.TextFile" ""
 !macroend
@@ -23,18 +23,18 @@
   ; Explorer folder context menu.
   WriteRegStr SHCTX "Software\Classes\Directory\shell\Glyphra" "" "Open Folder with Glyphra"
   WriteRegStr SHCTX "Software\Classes\Directory\shell\Glyphra" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
-  WriteRegStr SHCTX "Software\Classes\Directory\shell\Glyphra\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+  WriteRegStr SHCTX "Software\Classes\Directory\shell\Glyphra\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
 
   ; Explorer background context menu passes the directory as %V.
   WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\Glyphra" "" "Open Folder with Glyphra"
   WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\Glyphra" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
-  WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\Glyphra\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%V$"'
+  WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\Glyphra\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%V$\"'
 
   ; Text files get a dedicated Explorer action without taking over the
   ; user's default file associations.
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile" "" "Open with Glyphra"
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile" "Icon" "$INSTDIR\${MAINBINARYNAME}.exe,0"
-  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+  WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\text\shell\Glyphra.OpenFile\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
 
   !insertmacro REGISTER_GLYPHRA_TEXT_EXTENSION "txt"
   !insertmacro REGISTER_GLYPHRA_TEXT_EXTENSION "md"
@@ -106,13 +106,13 @@
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe" "FriendlyAppName" "Glyphra"
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\DefaultIcon" "" "$INSTDIR\${MAINBINARYNAME}.exe,0"
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\shell\open" "FriendlyAppName" "Open with Glyphra"
-  WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\shell\open\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+  WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\shell\open\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
 
   ; Shared ProgID used only as an additive Open With target. Extension default
   ; values are deliberately left untouched.
   WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile" "" "Glyphra Text File"
   WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile\DefaultIcon" "" "$INSTDIR\${MAINBINARYNAME}.exe,0"
-  WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile\shell\open\command" "" '$"$INSTDIR\${MAINBINARYNAME}.exe$" $"%1$"'
+  WriteRegStr SHCTX "Software\Classes\Glyphra.TextFile\shell\open\command" "" '$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\"'
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\SupportedTypes" ".txt" ""
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\SupportedTypes" ".md" ""
   WriteRegStr SHCTX "Software\Classes\Applications\Glyphra.exe\SupportedTypes" ".markdown" ""
